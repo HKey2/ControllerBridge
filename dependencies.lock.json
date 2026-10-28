@@ -1,0 +1,18 @@
+{
+  "pico_sdk": {"version": "2.1.1", "commit": "bddd20f928ce76142793bef434d4f75f4af6e433"},
+  "pico_pio_usb": {"repository": "https://github.com/sekigon-gonnoc/Pico-PIO-USB", "commit": "b186e36bea0f3bcc2ee94ca1fa81e7f71281443a", "local_changes": false, "license": "MIT"},
+  "tinyusb_diagnostic_cdc_only": {
+    "commit": "86ad6e56c1700e85f1c5678607a762cfe3aa2f47",
+    "allowed_existing_changes": [
+      {
+        "path": "src/class/hid/hid.h",
+        "sha256": "4C796321BB325E1C24B447C1C320536A5EB6AA703301D7ED2DCF19315EC35142",
+        "note": "Pre-existing local joystick typedef additions, preserved without modification. HID host/device classes are disabled in diagnostic CDC. A clean upstream checkout is also accepted."
+      }
+    ]
+  },
+  "arm_toolchain": "14_2_Rel1 / GCC 14.2.1",
+  "cmake": "3.31.5",
+  "ninja": "1.12.1",
+  "picotool": "2.1.1"
+}

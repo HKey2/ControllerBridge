@@ -1,0 +1,13 @@
+; One 24-bit pixel, MSB first; byte order is set by the board/C driver.
+; 800 kbit/s. At 8 MHz, zero is high for 3 cycles and
+; one for 6 cycles, with 10 cycles per bit. An empty FIFO holds DIN low.
+.program bridge_status_led
+.side_set 1
+.wrap_target
+next_bit:
+    out x, 1        side 0 [3]
+    jmp !x zero_bit side 1 [2]
+    jmp next_bit    side 1 [2]
+zero_bit:
+    nop             side 0 [2]
+.wrap

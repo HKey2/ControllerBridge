@@ -1,0 +1,11 @@
+/build/
+/.cache/
+/dist/
+/captures/
+/gui/**/bin/
+/gui/**/obj/
+__pycache__/
+*.pyc
+.vs/
+*.user
+*.suo

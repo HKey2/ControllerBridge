@@ -1,0 +1,16 @@
+* text=auto
+*.c text eol=lf
+*.h text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.cmake text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bin binary
+*.png binary
+*.jpg binary
+*.pdf binary
+third_party/Pico-PIO-USB/** -text -eol

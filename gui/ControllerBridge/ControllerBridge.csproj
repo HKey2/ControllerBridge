@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <PublishTrimmed>false</PublishTrimmed>
+    <AssemblyName>ControllerBridge</AssemblyName>
+    <Product>ControllerBridge</Product>
+    <Title>ControllerBridge</Title>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../firmware-version.txt').Trim())</Version>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>../../Resources/ControllerBridge_icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../Resources/ControllerBridge_icon.ico" LogicalName="ControllerBridge.App.ico" />
+    <EmbeddedResource Include="../../build/ControllerBridge.uf2" LogicalName="ControllerBridge.Firmware.uf2" />
+    <EmbeddedResource Include="../../build/firmware-package.json" LogicalName="ControllerBridge.Firmware.json" />
+  </ItemGroup>
+</Project>

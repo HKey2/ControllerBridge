@@ -1,0 +1,15 @@
+# Build an instrumented copy; keep the pinned vendor checkout untouched.
+# The hook runs after the packet/handshake has finished, outside PIO timing paths.
+file(READ "${CMAKE_SOURCE_DIR}/third_party/Pico-PIO-USB/src/pio_usb_host.c" _pio_host)
+set(_trace_point "  uint8_t const receive_pid = pp->usb_rx_buffer[1];\n")
+string(FIND "${_pio_host}" "${_trace_point}" _trace_offset)
+if(_trace_offset EQUAL -1)
+    message(FATAL_ERROR "Pinned PIO USB trace point changed")
+endif()
+string(REPLACE "${_trace_point}" "${_trace_point}  extern void uc_pio_trace_in(uint8_t, uint8_t, uint8_t, int, uint8_t);\n  uc_pio_trace_in(ep->dev_addr, ep->ep_num, receive_pid, receive_len, expect_pid);\n" _pio_traced "${_pio_host}")
+set(_trace_file "${CMAKE_BINARY_DIR}/generated/pio_usb_host_traced.c")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
+file(CONFIGURE OUTPUT "${_trace_file}" CONTENT "${_pio_traced}" @ONLY)
+get_target_property(_pio_sources pico_pio_usb INTERFACE_SOURCES)
+list(REMOVE_ITEM _pio_sources "${CMAKE_SOURCE_DIR}/third_party/Pico-PIO-USB/src/pio_usb_host.c")
+set_property(TARGET pico_pio_usb PROPERTY INTERFACE_SOURCES "${_pio_sources};${_trace_file}")
