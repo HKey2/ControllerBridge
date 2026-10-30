@@ -1,6 +1,6 @@
 # GPIO assignment and board porting
 
-The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.18.1. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
+The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.19.0. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
 
 Consult the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB-A/RP2350-USB-A.pdf) and [board wiki](https://www.waveshare.com/wiki/RP2350-USB-A) for wiring. Software restrictions below come from this repository.
 

@@ -1,14 +1,14 @@
 # Firmware update
 
-ControllerBridge 0.18.1 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.19.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
 
 ## Automatic startup guidance
 
 The main window checks the firmware identity before reading capabilities or profile data. Only an exact match with the bundled version proceeds to normal settings reads. The window distinguishes a detected bridge with different firmware, a detected bridge without readable version information, and no supported interface detected.
 
-- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.18.1?** confirmation follows. Lower and higher versions are treated alike.
+- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.19.0?** confirmation follows. Lower and higher versions are treated alike.
 - A detected bridge without version-query support automatically opens the BOOT connection guide, followed by the separate overwrite confirmation if accepted.
-- If no supported interface is detected at startup, the guide explains USB-C connection and first installation for factory firmware or other software. Such firmware may expose no identifiable interface, so the PC cannot reliably distinguish it from an unplugged board. This initial guide also appears when no board is connected.
+- If no supported interface is detected, the tool shows **Device not connected** and waits without opening an update guide or recording a startup error. This applies at startup, during background retries, and after manual reconnect. Factory firmware, BOOT mode, or other software may expose no recognizable bridge interface; use **Firmware update** manually for those states.
 
 Opening a guide never starts programming by itself. **No**, Escape, or closing a confirmation exits without writing. The main window retains its explanatory status and continues discovery about every two seconds without disabling/re-enabling the editor. Unsaved drafts remain editable. The same device/version condition is prompted once per application session; declining does not cause a recurring popup. **Firmware update** remains available to reopen it. A newly detected different firmware condition can prompt once, while an ordinary disconnection after a working connection does not open an installation guide.
 
@@ -20,7 +20,7 @@ Background discovery pauses while another modal editor is open. Manual firmware 
 
 1. Choose **Firmware update**. The dialog shows **Checking firmware version...**.
 2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing.
-3. If a supported device reports a different version, the dialog asks **Install v0.18.1?**. **No** exits; **Yes** starts automatic programming.
+3. If a supported device reports a different version, the dialog asks **Install v0.19.0?**. **No** exits; **Yes** starts automatic programming.
 4. If no supported version response is available, the dialog asks you to hold **BOOT** while connecting the **TYPE-C** port of the **RP2350-USB-A** to the PC. After you choose **Yes**, it separately asks whether to overwrite the board with this tool's firmware. Both confirmations are required. **No** at either prompt exits without writing.
 
 ![BOOT connection prompt](gui-firmware-boot-en.png)
@@ -63,6 +63,6 @@ Feature command **47** returns a 56-byte payload: `CBV1` at offset 0, schema 1 a
     .\dist\ControllerBridge.exe --check-startup-readonly captures/startup-check --language en
     .\dist\ControllerBridge.exe --inspect-firmware captures/firmware-readonly.json
 
-The firmware and connection UI checks use simulated devices and render dialogs. The startup read-only check requires an attached older/different bridge, automatically declines its guide, and observes background retries without rebooting or programming it. The inspection command only reads version/USB identity and detects BOOT disks. See [verification](verification.md) for the actual checks performed and remaining hardware validation.
+The firmware and connection UI checks use simulated devices and render dialogs. The startup read-only check accepts either no detected bridge or an attached older/different bridge. It verifies that absence produces no guide; for an older/different bridge it automatically declines the guide. Both cases observe background retries without rebooting or programming a device. The inspection command only reads version/USB identity and detects BOOT disks. See [verification](verification.md) for the actual checks performed and remaining hardware validation.
 
 The device-selection design follows the [Raspberry Pi USB PID allocation](https://github.com/raspberrypi/usb-pid), [RP2350 boot ROM disk implementation](https://github.com/raspberrypi/pico-bootrom-rp2350/blob/master/src/nsboot/usb_virtual_disk.c), and Microsoft's [USB location property](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-locationpaths) and [storage device-number query](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-ioctl_storage_get_device_number).

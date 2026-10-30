@@ -62,6 +62,21 @@ internal sealed partial class AxisDialog
             Check(form.analogPanel.ClientRectangle.Contains(form.analogLayout.Bounds), "calibration controls remain visible");
         }
         CheckLayout(dialog);
+        Button recordCenter = Descendants(dialog).OfType<Button>().Single(b => b.Text == L.T("中心を記録", "Record center"));
+        Button descriptorRange = Descendants(dialog).OfType<Button>().Single(b => b.Text == L.T("記述子の範囲を使う", "Use descriptor range"));
+        Rectangle recordBounds = recordCenter.Bounds, descriptorBounds = descriptorRange.Bounds, liveBounds = dialog.live.Bounds;
+        List<object> stablePositions = [];
+        foreach (int value in new[] { 0, 9, 99, 999, -1, -32768, 32767, int.MinValue, int.MaxValue })
+        {
+            Input(dialog, signed, value); dialog.PerformLayout(); Application.DoEvents();
+            Check(recordCenter.Bounds == recordBounds && descriptorRange.Bounds == descriptorBounds && dialog.live.Bounds == liveBounds,
+                "live reading digit/sign changes leave adjacent control positions fixed");
+            Check(TextRenderer.MeasureText(dialog.live.Text, dialog.live.Font).Width <= dialog.live.ClientSize.Width,
+                "full signed 32-bit live value fits its reserved width");
+            stablePositions.Add(new { value, live = dialog.live.Bounds.ToString(), record = recordCenter.Bounds.ToString(), descriptor = descriptorRange.Bounds.ToString() });
+            if (value == 0 || value == int.MinValue) Capture(dialog, Path.Combine(directory, value == 0 ? "axis-value-short.png" : "axis-value-long.png"));
+        }
+        File.WriteAllText(Path.Combine(directory, "stable-value-positions.json"), JsonSerializer.Serialize(stablePositions, new JsonSerializerOptions { WriteIndented = true }));
         int[] first = [-32768, -16384, 0, 16384, 255, 0];
         for (int i = 0; i < fields.Count; i++) Input(dialog, fields[i], first[i]);
         Check(dialog.source.SelectedItem == signed && dialog.live.Text.Contains("-32768"), "all axes update while selected input remains selected");

@@ -13,8 +13,10 @@
 #define UPR_CMD_BANK_CHUNK 43
 #define UPR_CMD_BANK_COMMIT 44
 #define UPR_CMD_BANK_ABORT 45
+#define UPR_CMD_REGISTER_BEGIN 48
 #define UPR_FEATURE_BANK_TRANSFER 2048u
 #define UPR_FEATURE_PROFILE_OUTPUT 4096u
+#define UPR_FEATURE_GUARDED_REGISTRATION 8192u
 void upr_init(void);
 // True means the outgoing state must be reset to neutral (new device/profile).
 bool upr_event(const uc_event *event);

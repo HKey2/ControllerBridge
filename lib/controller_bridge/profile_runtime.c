@@ -37,6 +37,8 @@ static int stage_slot=-1;
 static uint32_t stage_crc,stage_generation;
 static uint8_t staged_id[UP_ID_BYTES];
 static bool stage_has_id;
+static bool stage_registration;
+static uint32_t stage_connection_generation;
 static up_bank staged_bank;
 static unsigned bank_received;
 static uint32_t bank_stage_crc,bank_stage_generation;
@@ -138,7 +140,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     return true;
 }
 void upr_init(void) {
-    bank_staging=false;bank_received=0;stage_slot=-1;
+    bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
     mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
     switch_guard.keys=switch_guard.held=0;
     pending_selection=-1;selection_unsaved=false;
@@ -202,6 +204,8 @@ bool upr_event(const uc_event *e) {
     if(e->type==UC_STATUS) {
         host_status=e->code;
         if(e->code==UC_PROBING || e->code==UC_DISCONNECTED) {
+            // Registration belongs to this attachment, even if the same model returns.
+            if(stage_registration)stage_slot=-1;
             switch_guard.keys=switch_guard.held=0;
             connected=false;partial=false;binding_error=false;active=-1;field_count=received=0;
             mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
@@ -302,7 +306,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;
@@ -332,17 +336,27 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         memcpy(reply,(const uint8_t *)&bank.profiles[slot]+offset,n);break;
     }
     case 24:
+    case UPR_CMD_REGISTER_BEGIN:
         if(busy || pending_selection>=0) { *status=2;break; }
         bank_staging=false;
-        stage_slot=-1;
+        stage_slot=-1;stage_registration=false;
         if(arg[9]>1) { *status=1;break; }
         if(arg[0]>=UP_PROFILE_COUNT || get32(arg+5)!=bank.generation) { *status=4;break; }
+        if(cmd==UPR_CMD_REGISTER_BEGIN) {
+            if(arg[9]!=1 || !connected || (bank.profiles[arg[0]].flags&UP_ENABLED) ||
+               get32(arg+26)!=connection_generation || get32(arg+30)!=~descriptor_crc ||
+               get16(arg+34)!=vid || get16(arg+36)!=pid || get16(arg+38)!=revision || arg[40]!=input_protocol) {
+                *status=4;break;
+            }
+            stage_registration=true;stage_connection_generation=connection_generation;
+        }
         stage_slot=arg[0];stage_crc=get32(arg+1);stage_generation=get32(arg+5);
         stage_has_id=arg[9]!=0;memcpy(staged_id,arg+10,UP_ID_BYTES);
         memset(&staged,0,sizeof(staged));memset(seen,0,sizeof(seen));break;
     case 25: {
         unsigned offset=get16(arg),n=arg[2];
-        if(stage_slot<0 || !n || n>52 || offset+n>UP_PROFILE_BYTES) { *status=1;break; }
+        if(stage_slot<0) { *status=stage_registration?4:1;break; }
+        if(!n || n>52 || offset+n>UP_PROFILE_BYTES) { *status=1;break; }
         memcpy((uint8_t *)&staged+offset,arg+4,n);
         for(unsigned i=offset;i<offset+n;++i)seen[i/8]|=(uint8_t)(1u<<(i%8));
         break;
@@ -352,6 +366,13 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         if(stage_slot<0 || stage_generation!=bank.generation) { *status=4;break; }
         for(unsigned i=0;i<sizeof(seen);++i)if(seen[i]!=255) { *status=1;return true; }
         if(up_crc32(&staged,sizeof(staged))!=stage_crc || !up_profile_valid(&staged)) { *status=1;break; }
+        if(stage_registration && (!connected || stage_connection_generation!=connection_generation ||
+           (bank.profiles[stage_slot].flags&UP_ENABLED) ||
+           (staged.flags&(UP_ENABLED|UP_MATCH_DESCRIPTOR))!=(UP_ENABLED|UP_MATCH_DESCRIPTOR) ||
+           staged.vid!=vid || staged.pid!=pid || staged.bcd_device!=revision ||
+           staged.descriptor_hash!=~descriptor_crc || !profile_exists(&staged))) {
+            stage_slot=-1;*status=4;break;
+        }
         if(!up_registry_save_identified(&bank,(unsigned)stage_slot,&staged,stage_has_id?staged_id:NULL)) { *status=3;break; }
         stage_slot=-1;persisted=true;selection_unsaved=false;select_profile();*changed=true;put32(reply,bank.generation);break;
     case UPR_CMD_MOUSE_PROFILE:

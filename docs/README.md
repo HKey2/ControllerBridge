@@ -1,6 +1,6 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator 0.18.1 and normal firmware 0.18.1. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator 0.19.0 and normal firmware 0.19.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
 | Document | Contents |
 |---|---|

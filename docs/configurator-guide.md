@@ -1,34 +1,67 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.18.1 and RP2350-USB-A firmware 0.18.1. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and all repository screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.19.0 and RP2350-USB-A firmware 0.19.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and all repository screenshots use English. Saved profile names are not translated.
 
 ## Connect and start
 
 1. Connect the input controller directly to the board's USB-A port.
 2. Connect USB-C to a Windows PC.
 3. Run `ControllerBridge.exe`.
-4. Follow the automatic firmware guide if the tool detects a different version or cannot obtain one. You can also open **Firmware update** manually. Follow its BOOT connection and overwrite-confirmation prompts if the existing firmware is not recognized. See [firmware update](firmware-update.md).
+4. Follow the automatic firmware guide if the tool detects a bridge with a different or unreadable version. You can also open **Firmware update** manually. Follow its BOOT connection and overwrite-confirmation prompts if the existing firmware is not recognized. See [firmware update](firmware-update.md).
 5. Check the connection status and the **Profile list**. Installing this release over firmware older than 0.16.0 starts with all 16 slots unused; choose **Add controller** to register each controller again. New registrations persist across restarts.
 
 The executable includes its runtime; no separate .NET installation is required. Only one instance can run. Close other bridge configuration tools while using the GUI. When the board is disconnected, the application retries about every two seconds. **Connect / Reconnect** starts an attempt immediately. An empty USB-A port shows a stable waiting message during enumeration retries.
 
-The initial guide also covers factory firmware, other software, and no detected board; the PC cannot always tell these apart. Declining leaves a stable status message and does not repeat the same popup during retries. Use **Firmware update** when ready. Background retries keep the editor enabled and preserve unsaved edits. A firmware mismatch is shown as an update requirement, rather than an unexplained disconnected state.
+When no supported interface is detected, the window shows **Device not connected** and waits without displaying a firmware update confirmation, including at startup and after manual reconnect. Connecting a recognizable bridge starts normal detection automatically. For first installation, BOOT mode, or factory/other software with no recognizable interface, choose **Firmware update** manually. Declining a guide for a detected bridge leaves a stable status message and does not repeat the same popup during retries. Background retries keep the editor enabled and preserve unsaved edits. A firmware mismatch is shown as an update requirement.
 
-![Current English profile list](gui-main-en.png)
+The initial and minimum main-window client size is 1290 × 1100 at 100% scaling (1306 × 1139 including the window frame in the checked environment). This fits the profile details in Japanese and English, including **Mouse + Gamepad → Controller** with all analog-axis buttons visible. The Clear mapping action sizes to its label so the English text stays on one line.
+
+![Saved profiles with EGRET Arcade stick connected](gui-main-en.png)
+
+These screenshots were refreshed on 2026-10-30 from the four profiles saved on the device: **EGRET Paddle**, **EGRET Arcade stick**, **Cyber analog**, and **z Gamepad**. The main window shows slot 02, **EGRET Arcade stick**, connected and active.
 
 ## Profiles and slots
 
-The board stores 16 profiles in total, including multiple profiles for one controller. Each stores its name, device matching information, output mode, button behavior, mappings, rapid fire, input interval, mouse settings, and LED color. The active profile has an indicator in the list.
+The board stores 16 profiles in total, including multiple profiles for one controller. Each stores its name, device matching information, output mode, button behavior, mappings, rapid fire, input interval, mouse settings, and LED color. The profile currently active for the connected controller is bold and outlined in blue in the list, with a **Connected** label. This remains visible when another row is selected and clears when the controller or bridge disconnects. The bold styling applies only inside the list; the editor keeps its normal fonts.
 
-Selecting a registered slot opens its settings without changing the active profile on the board. **Use this profile** activates a saved profile matching the connected controller. Unsaved edits have a `*`; choose **Save slot to device** to apply them. An unused slot shows **Unused**, hides the settings, and offers **Add controller**.
+Selecting a registered slot opens its settings without changing the active profile on the board. **Use this profile** activates a saved profile matching the connected controller. Unsaved edits have a `*`; choose **Save slot to device** to apply them. An unused slot shows **Unused** in a disabled gray profile-name field, hides the settings, and offers **Add controller**. Selecting a registered slot restores the normal editable name field.
+
+When a supported controller finishes initialization and has no matching saved or draft profile, the GUI selects the first available slot from the top. This only changes the list selection: no confirmation opens, no wizard starts automatically, and nothing is written to the board. Later manual selection is preserved until another attachment. Unsaved edits, another modal window, and ongoing operations defer this selection. A pending deletion is not an available slot until it is saved.
+
+If there is no matching profile and no usable empty slot, the connection header displays **A controller without a profile is connected, but no empty slot is available.** It does not open a popup or overwrite an existing profile. The message clears when the condition no longer applies. Matching uses the existing VID/PID and optional descriptor/revision rules, not individual physical unit serial numbers.
+
+![Unused slot 05 selected in the current saved profile bank](gui-controller-arrival-en.png)
+
+In this screenshot, unused slot 05 was selected manually to show its controls. The connected **EGRET Arcade stick** remains active in slot 02, with its bold label and blue outline. This image shows the unused-slot interface; it does not depict an unregistered controller arriving.
 
 ### Add, duplicate, and delete
 
-**Add controller** opens a registration wizard. Confirm the detected device, assign inputs, configure any analog axes, and save to the board. Registration requires valid input from the connected controller.
+**Add controller** opens a registration wizard. Confirm the detected device, assign inputs, configure any analog axes, and save to the board. Registration requires valid input from the connected controller and an empty slot in both the saved bank and the editor. The GUI retains the original bridge handle and input identity; firmware 0.19.0 checks the input connection generation and identity at transfer start and again at commit. Disconnecting, reconnecting even the same controller, changing the input identity, or occupying the destination cancels that registration transaction. Ordinary saved-profile edits keep their existing offline behavior.
 
 **Duplicate profile** copies the selection into the nearest unused slot below it. It creates a new ID and appends an available `[2]`, `[3]`, and so on to the stored name. Copying a numbered copy does not nest suffixes. The original name stays unchanged. Reordering or deleting other profiles does not renumber names. Names are shortened at complete Unicode character boundaries when necessary to fit the 47-byte UTF-8 limit. Save the new slot to persist it. Duplication does not wrap to unused slots above the source.
 
 **Delete profile** marks the selected slot unused after confirmation. Save that slot to apply the deletion. Before saving, **Reload device** can discard the draft.
+
+### Inspect raw inputs during registration
+
+On **Add controller → 2 Map inputs**, choose **Input log…**. The separate window stays open while you select output buttons, press physical inputs, or calibrate an axis. It starts with a snapshot of all parsed fields and then records each received value change, including releases and inputs that are not assigned to any output.
+
+Press and release one physical button at a time, then compare these columns:
+
+| Column | Meaning |
+|---|---|
+| Index | ControllerBridge's internal input-field index, starting at zero; it is not a Switch output-button index |
+| Input / Usage | Parsed input name and the hexadecimal usage page/ID; two distinct fields can report the same button number |
+| IF / ID / bit / bits | Interface, report ID, bit offset, and field width identifying the source used by mappings |
+| Raw / Hex | Value before mapping, calibration, inversion, or dead zone; hexadecimal is limited to the field's bit width |
+| State / range | Pressed/released state or axis kind, followed by the descriptor's logical range |
+| PC time / Device µs | PC receipt time and the device's 32-bit microsecond event timestamp; device time wraps at 2^32 |
+
+Two rows named **Button 1** can still be distinguished by their Index and IF/ID/bit. If two physical buttons send exactly the same USB data, the software cannot identify which one was pressed. HID fields and normalized XInput/Switch fields use the same log; it is a parsed-field change log, not a capture of every raw USB packet. Unchanged reports are not repeated, and relative-input fields follow the firmware's existing change notifications.
+
+**Pause recording** stops only logging; mapping and live input continue. Resuming marks the omitted interval and adds a new current-state snapshot. **Follow latest** controls scrolling. **Clear** starts a fresh history with current values. **Copy all** copies the retained log, and **Save log…** writes a UTF-8 tab-separated `.tsv` or `.txt` file.
+
+The window retains the latest 2,000 rows and reports how many older rows were discarded. A firmware event-ring overrun is explicitly marked and stops registration through the existing input-loss guard. Closing, cancelling, or completing the wizard stops recording but leaves an already-open log available for copying or saving. Closing and reopening the log during registration starts a new history. Viewing and recording inputs never saves a profile.
 
 ### LED color
 
@@ -36,11 +69,13 @@ Select a profile, then choose **LED RGB settings** directly below **Delete profi
 
 **OK** changes the selected draft; **Cancel** leaves it unchanged. Choose **Save slot to device** to persist it. The color is shown when that profile is active, input is received, and the output host is ready. Browsing another slot does not change the hardware color. Error, save, waiting, and profile-number indications retain their existing colors and priority. After an indication ends, the active profile color returns.
 
-![LED RGB settings](gui-led-rgb-en.png)
+![Saved LED setting for EGRET Arcade stick](gui-led-rgb-en.png)
+
+The screenshot shows the saved **EGRET Arcade stick** setting: **Default dim blue**, R=0, G=0, B=1 (#000001).
 
 The `#` field below the R/G/B spinners accepts six hexadecimal digits with or without a leading `#`; the prefix is removed automatically. For example, paste `000004` or `#000004` to set R=0, G=0, B=4. Uppercase and lowercase letters are accepted. Editing either the code or a spinner updates the other controls and the preview. Incomplete, invalid or overlong codes cannot be confirmed; they are not silently shortened into another color. **Cancel** remains available while editing an incomplete code.
 
-The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The bundled firmware remains 0.18.1, so replacing the configurator EXE is sufficient.
+The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The preview itself does not require a firmware change. This release bundles 0.19.0 for the separate guarded-registration feature, so install its matching firmware.
 
 New profiles and existing 0.16.x/0.17.x profiles default to dim blue. Duplicating a profile copies its color; reordering, individual export/import, and whole-bank backup/restore retain it. Selecting **Default dim blue** removes the custom setting. The color is not assigned automatically or required to be unique; use a different color for each profile if desired.
 
@@ -73,9 +108,13 @@ Select an output control, release the physical input, and perform the action to 
 
 Analog axes support measured minimum, center, maximum, a 0-50% dead zone, and inversion. Alternatively, use two digital inputs for negative and positive movement; pressing both produces center.
 
+The live **Input value** readout reserves enough width for a signed 32-bit value. **Record center** and **Use descriptor range** keep their positions when the value changes sign or number of digits.
+
 The analog dialog displays all candidate axes with live centered meters and raw values. Move the physical control to identify its axis, then select the matching row. Unselected axes update too. Large sets use multiple columns when needed.
 
-![Current English analog input dialog](gui-axis-en.png)
+![Saved Left stick X settings for the disconnected Cyber analog profile](gui-axis-en.png)
+
+The screenshot shows the saved **Cyber analog** profile's **Left stick X** settings: minimum 0, center 129, maximum 255, dead zone 5%, and no inversion. That controller was not connected during capture, so the input list and live value are empty and learning controls are disabled. Connect the matching controller to identify and measure its live axes.
 
 The meter uses the descriptor range before calibration, inversion, or dead zone. A range crossing zero uses zero as its reference; other ranges use their midpoint. Missing input shows a waiting state; out-of-range values appear gray. Select the source, measure its travel, record the released center, and apply the result.
 

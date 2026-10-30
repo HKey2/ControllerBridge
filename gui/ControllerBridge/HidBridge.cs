@@ -25,6 +25,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsExtendedTrackballGain => (Features & 512) != 0;
     public bool SupportsBankTransfer => (Features & 2048) != 0;
     public bool SupportsProfileOutput => (Features & 4096) != 0;
+    public bool SupportsGuardedRegistration => (Features & 8192) != 0;
     public bool SelectionUnsaved => (Flags & 16) != 0;
     public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
@@ -270,9 +271,11 @@ internal sealed class HidBridge : IDisposable
         }
         return new PollResult(caps, cursor, changes, false);
     });
-    public Task<uint> SaveAsync(int slot, DeviceProfile profile, uint expectedGeneration) => Run(() =>
+    public Task<uint> SaveAsync(int slot, DeviceProfile profile, uint expectedGeneration, InputConnection? registration = null) => Run(() =>
     {
         Capabilities before = Caps();
+        if (registration is not null && (!before.SupportsGuardedRegistration || !registration.Matches(before)))
+            throw new IOException(L.T("登録対象の接続を確認できません。コントローラーの接続を確認し、登録をやり直してください。", "The registration connection could not be verified. Check the controller and start registration again."));
         if ((profile.Version >= 2 || profile.HasRapidFire) && !before.SupportsRapidFire)
             throw new InvalidDataException(L.T("連射設定にはファームウェア0.6.0-dev以降が必要です。先に本体を更新してください。", "Rapid fire requires firmware 0.6.0-dev or later. Update the device first."));
         if (profile.ProfileId != Guid.Empty && !before.SupportsProfileIdentity)
@@ -280,15 +283,23 @@ internal sealed class HidBridge : IDisposable
         if (slot < 0 || slot >= DeviceProfile.SlotCount || !before.SupportsMouseProfiles) throw new InvalidDataException(L.T("16スロットと個別感度にはファームウェア0.10.0以降が必要です。", "16 slots and per-profile gain require firmware 0.10.0 or later."));
         if (profile.Mouse.TrackballGain > 10 && !before.SupportsExtendedTrackballGain)
             throw new InvalidDataException(L.T("10.0倍を超えるトラックボール感度にはファームウェア0.13.0以降が必要です。", "Trackball gain above 10.0 requires firmware 0.13.0 or later."));
-        byte[] data = profile.Encode(), begin = new byte[before.SupportsProfileIdentity ? 26 : 9]; begin[0] = checked((byte)slot);
+        byte[] data = profile.Encode(), begin = new byte[registration is not null ? 41 : before.SupportsProfileIdentity ? 26 : 9]; begin[0] = checked((byte)slot);
         if (before.SupportsProfileIdentity) { begin[9] = 1; (profile.Enabled ? profile.ProfileId : Guid.Empty).TryWriteBytes(begin.AsSpan(10)); }
-        Wire.W32(begin, 1, Wire.Crc(data)); Wire.W32(begin, 5, expectedGeneration); Command(24, begin);
+        Wire.W32(begin, 1, Wire.Crc(data)); Wire.W32(begin, 5, expectedGeneration);
+        registration?.WriteRegistrationGuard(begin);
+        byte[] SaveCommand(byte command, byte[]? payload = null)
+        {
+            try { return Command(command, payload); }
+            catch (BridgeCommandException ex) when (registration is not null && ex.Status == 4)
+            { throw new IOException(L.T("登録対象の接続または保存先が変更されました。登録をやり直してください。", "The controller connection or destination changed. Start registration again."), ex); }
+        }
+        SaveCommand(registration is null ? (byte)24 : (byte)48, begin);
         for (int off = 0; off < data.Length; off += 52)
         {
             int n = Math.Min(52, data.Length - off); byte[] chunk = new byte[n + 4]; Wire.W16(chunk, 0, (ushort)off); chunk[2] = (byte)n;
-            data.AsSpan(off, n).CopyTo(chunk.AsSpan(4)); Command(25, chunk);
+            data.AsSpan(off, n).CopyTo(chunk.AsSpan(4)); SaveCommand(25, chunk);
         }
-        uint generation = Wire.U32(Command(26), 0);
+        uint generation = Wire.U32(SaveCommand(26), 0);
         Capabilities after = Caps();
         if (after.BankGeneration != generation || !ReadProfile(slot, after).SameContent(profile))
             throw new IOException(L.T("保存後の設定・IDの照合に失敗しました。再読込してください。", "The saved settings or ID could not be verified. Reload the device."));

@@ -110,7 +110,7 @@ internal sealed class MappingEditor : UserControl
         }
         root.Controls.Add(grid, 0, 1);
         TableLayoutPanel guide = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 2, Padding = new(6), BackColor = Ui.Selected };
-        guide.ColumnStyles.Add(new(SizeType.Percent, 100)); guide.ColumnStyles.Add(new(SizeType.Absolute, 124));
+        guide.ColumnStyles.Add(new(SizeType.Percent, 100)); guide.ColumnStyles.Add(new(SizeType.AutoSize));
         guide.RowStyles.Add(new(SizeType.AutoSize)); guide.RowStyles.Add(new(SizeType.AutoSize));
         instruction = Ui.Label(L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller"), 11, true); instruction.Dock = DockStyle.Fill;
         detail = Ui.Label(L.T("ボタンを選ぶと、ここに操作手順を表示します。", "Select an output button to see the instructions here."), 9); detail.Dock = DockStyle.Fill; detail.ForeColor = Ui.Muted;

@@ -56,8 +56,9 @@ internal sealed partial class MainForm : Form
     public MainForm(bool preview = false, bool autoConnect = true, bool automaticFirmwareGuidance = true)
     {
         this.preview = preview; this.automaticFirmwareGuidance = automaticFirmwareGuidance;
-        Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1000));
-        MinimumSize = new(1210, 800); StartPosition = FormStartPosition.CenterScreen;
+        Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100));
+        // The combined controller layout needs room for tuning and all mappings.
+        MinimumSize = Size; StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16, 12, 16, 12), ColumnCount = 1, RowCount = 3 };
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize));
@@ -193,6 +194,7 @@ internal sealed partial class MainForm : Form
         using Graphics g = slots.CreateGraphics(); using Font small = new(L.FontFamily, 9);
         slots.ItemHeight = Math.Max(LogicalToDeviceUnits(58), TextRenderer.MeasureText(g, "Agあ", Font).Height + TextRenderer.MeasureText(g, "Agあ", small).Height + LogicalToDeviceUnits(16));
     }
+    private int ConnectedSlot => caps is { Connected: true } && caps.ActiveSlot < profiles.Length ? caps.ActiveSlot : -1;
     private void DrawSlot(object? sender, DrawItemEventArgs e)
     {
         if (e.Index < 0) return; bool current = (e.State & DrawItemState.Selected) != 0;
@@ -200,14 +202,22 @@ internal sealed partial class MainForm : Form
         using SolidBrush bg = new(face); e.Graphics.FillRectangle(bg, e.Bounds);
         using Pen separator = new(Color.FromArgb(51, 51, 51)); e.Graphics.DrawLine(separator, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
         if (current) { using SolidBrush marker = new(Ui.Focus); e.Graphics.FillRectangle(marker, e.Bounds.Left, e.Bounds.Top, LogicalToDeviceUnits(3), e.Bounds.Height); }
-        DeviceProfile p = profiles[e.Index]; using Font small = new(L.FontFamily, 9);
-        int pad = LogicalToDeviceUnits(10), top = LogicalToDeviceUnits(7), firstHeight = TextRenderer.MeasureText(e.Graphics, "Agあ", Font).Height;
+        DeviceProfile p = profiles[e.Index]; bool connected = p.Enabled && ConnectedSlot == e.Index;
+        using Font titleFont = new(Font, connected ? Font.Style | FontStyle.Bold : Font.Style);
+        using Font small = new(L.FontFamily, 9, connected ? FontStyle.Bold : FontStyle.Regular);
+        int pad = LogicalToDeviceUnits(10), top = LogicalToDeviceUnits(7), firstHeight = TextRenderer.MeasureText(e.Graphics, "Agあ", titleFont).Height;
         Rectangle first = new(e.Bounds.X + pad, e.Bounds.Y + top, e.Bounds.Width - 2 * pad, firstHeight);
         Rectangle second = new(e.Bounds.X + pad, first.Bottom + LogicalToDeviceUnits(3), e.Bounds.Width - 2 * pad, e.Bounds.Bottom - first.Bottom - LogicalToDeviceUnits(7));
         string title = $"{e.Index + 1:00}  {ProfileSlots.Name(profiles, e.Index)}" + (dirty[e.Index] ? " *" : "");
-        TextRenderer.DrawText(e.Graphics, title, Font, first, p.Enabled ? Ui.Ink : Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-        string sub = p.Enabled ? $"{p.Vid:X4}:{p.Pid:X4}" + (caps?.ActiveSlot == e.Index ? L.T("   ● 使用中", "   ● Active") : "") : "";
+        TextRenderer.DrawText(e.Graphics, title, titleFont, first, p.Enabled ? Ui.Ink : Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        string sub = p.Enabled ? $"{p.Vid:X4}:{p.Pid:X4}" + (connected ? L.T("   接続中", "   Connected") : "") : "";
         TextRenderer.DrawText(e.Graphics, sub, small, second, Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        if (connected)
+        {
+            int inset = LogicalToDeviceUnits(2);
+            Rectangle outline = Rectangle.Inflate(e.Bounds, -inset, -inset); outline.Width--; outline.Height--;
+            using Pen border = new(Ui.Focus, LogicalToDeviceUnits(2)); e.Graphics.DrawRectangle(border, outline);
+        }
         e.DrawFocusRectangle();
     }
     private void RefreshSlots()
@@ -245,8 +255,9 @@ internal sealed partial class MainForm : Form
         bool online = bridge is not null || preview, enabled = profiles[selected].Enabled, clean = !dirty.Any(x => x);
         body.Enabled = !working; connect.Enabled = !working; firmwareUpdate.Enabled = !working && !preview;
         reload.Enabled = online && !working; saveButton.Enabled = online && !working && (dirty[selected] || caps is { Persisted: false });
-        name.Enabled = !working; interval.Enabled = enabled && !working;
-        delete.Enabled = !working && (enabled || online && (preview || caps is { Connected: true } && fields.Any(f => f.Learnable && f.Valid)));
+        name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
+        interval.Enabled = enabled && !working;
+        delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (preview || CanRegisterInput && caps!.SupportsGuardedRegistration && fields.Any(f => f.Learnable && f.Valid)));
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;
         ledSettings.Enabled = enabled && !working;
         SetTip(duplicate, ProfileSlots.EmptyBelow(profiles, selected) >= 0 ? L.T("下側の最も近い未使用スロットへ複製します。", "Copy to the nearest unused slot below this profile.") : L.T("このスロットより下に未使用スロットがありません。", "There are no unused slots below this profile."));
@@ -288,8 +299,9 @@ internal sealed partial class MainForm : Form
             if (read.Status.Kind != ConnectionKind.Ready)
             {
                 ClearDeviceState();
-                StartupError = read.Status.Guidance(bundledFirmware.Value.Version);
-                SetText(connection, read.Status.Summary); SetConnectionDetail(StartupError);
+                string detail = read.Status.Guidance(bundledFirmware.Value.Version);
+                StartupError = read.Status.Kind == ConnectionKind.NotDetected ? null : detail;
+                SetText(connection, read.Status.Summary); SetConnectionDetail(detail);
                 if (firmwareNotices.Observe(read.Status, allowFirmwareNotice && automaticFirmwareGuidance)) guidance = StartupError;
                 return;
             }
@@ -325,11 +337,13 @@ internal sealed partial class MainForm : Form
                     else await UpdateFirmware(guidance);
                 }
                 if (!working && !preview) timer.Start();
+                HandleControllerArrival();
             }
         }
     }
     private void ClearDeviceState()
     {
+        controllerArrivals.Reset();
         bool wasConnected = caps is not null;
         caps = null; outputState = null; fields.Clear();
         if (displayedActiveSlot >= 0 && displayedActiveSlot < profiles.Length) slots.Invalidate(slots.GetItemRectangle(displayedActiveSlot));
@@ -373,7 +387,7 @@ internal sealed partial class MainForm : Form
             L.T("本体 接続済み  •  入力コントローラーをUSB-Aへ接続してください。", "Device connected  •  Connect an input controller to USB-A.");
         string stateText = !caps.Connected ? WaitingState(caps) : caps.InvalidBinding ? L.T("入力形式が保存済みの割り当てと一致しません。再登録してください。", "The input layout does not match the saved mapping. Register the controller again.") :
             caps.ActiveSlot < profiles.Length ? L.T($"スロット {caps.ActiveSlot + 1} を使用中", $"Slot {caps.ActiveSlot + 1} is active") :
-            L.T("未登録のコントローラーです。未使用スロットから追加してください。", "This controller is not registered. Select an unused slot to add it.");
+            L.T("このコントローラーに一致するプロファイルがありません。未使用スロットから追加してください。", "This controller has no matching profile. Use an empty slot to add it.");
         if (caps.Connected && caps.ProfileCount > 1) stateText += L.T($"  •  [{caps.ProfileNumber}/{caps.ProfileCount}]  ", $"  •  [{caps.ProfileNumber}/{caps.ProfileCount}]  ") +
             (caps.SwitchKeys == 0 ? L.T("BOOT長押しで切替", "Hold BOOT to cycle") : L.T("ショートカットで切替", "Use the shortcut to cycle"));
         if (caps.Connected && caps.Partial && outputState?.Active.Mouse != true) stateText += L.T("  •  一部の入力形式は未対応", "  •  Some inputs are unsupported");
@@ -385,14 +399,15 @@ internal sealed partial class MainForm : Form
             stateText = L.T("本体の設定が変更されています。「本体から再読込」を押してください。", "The device settings have changed. Choose “Reload device”.");
             SetText(saved, stateText);
         }
+        if (InputNeedsSpace) { stateText = NoProfileSpace; connectionText += "\n" + NoProfileSpace; }
         // Compose the complete strings before assigning. Appending status text
         // directly to Labels repainted them on every poll, even with no input.
         SetText(connection, connectionText); SetConnectionDetail(stateText); UpdateProfileOutputStatus();
-        if (displayedActiveSlot != caps.ActiveSlot)
+        if (displayedActiveSlot != ConnectedSlot)
         {
-            int previous = displayedActiveSlot; displayedActiveSlot = caps.ActiveSlot;
+            int previous = displayedActiveSlot; displayedActiveSlot = ConnectedSlot;
             if (previous >= 0 && previous < profiles.Length) slots.Invalidate(slots.GetItemRectangle(previous));
-            if (displayedActiveSlot < profiles.Length) slots.Invalidate(slots.GetItemRectangle(displayedActiveSlot));
+            if (displayedActiveSlot >= 0) slots.Invalidate(slots.GetItemRectangle(displayedActiveSlot));
         }
         UpdateEnabled();
     }
@@ -411,8 +426,12 @@ internal sealed partial class MainForm : Form
         string? latest = null;
         foreach (InputChange change in changes)
         {
+            InputField? f = fields.FirstOrDefault(f => f.Index == change.Index);
+            // Observe every received change, including baseline draining and a
+            // final overrun event, independently of whether learning accepts it.
+            wizard?.ObserveInput(f, change);
             if (change.Lost) { AbortLearning(L.T("入力の観測が追いつかなかったため、割り当てを中止しました。", "Assignment stopped because input events were missed.")); wizard?.ConnectionLost(); deliver = false; }
-            InputField? f = fields.FirstOrDefault(f => f.Index == change.Index); if (f is null) continue;
+            if (f is null) continue;
             f.Value = change.Value; f.Valid = true;
             latest = L.T($"入力: {f.Label} = {change.Value}", $"Input: {f.Label} = {change.Value}");
             if (deliver) { ActiveEditor.OnInput(f, change.Value); wizard?.OnInput(f, change.Value); }
@@ -464,7 +483,7 @@ internal sealed partial class MainForm : Form
             ClearDeviceState();
             SetConnectionDetail(ex.Message); SetText(connection, L.T("本体の再接続待ち。編集内容は保持しています。", "Waiting for the device to reconnect. Your edits are kept.")); UpdateEnabled();
         }
-        finally { polling = false; }
+        finally { polling = false; HandleControllerArrival(); }
     }
     private async Task<bool> PrepareLearning()
     {
@@ -558,12 +577,19 @@ internal sealed partial class MainForm : Form
     }
     private async Task AddController()
     {
-        if (working || profiles[selected].Enabled || caps is not { Connected: true } && !preview) return;
-        int slot = selected; AbortLearning(); if (!await PrepareLearning()) return;
+        if (working || closing || !CanRegisterSlot(selected) || !preview && (!CanRegisterInput || !caps!.SupportsGuardedRegistration || !fields.Any(f => f.Learnable && f.Valid))) return;
+        int slot = selected; HidBridge? targetBridge = bridge; InputConnection input = InputConnection.From(caps!);
+        uint expectedBank = bankGeneration;
+        bool SameTarget() => !closing && caps is not null && input.Matches(caps) && ReferenceEquals(bridge, targetBridge) &&
+            (preview || bridge is not null) && CanRegisterSlot(slot) && bankGeneration == expectedBank && caps.BankGeneration == expectedBank;
+        AbortLearning(); if (!await PrepareLearning() || !SameTarget()) return;
         using RegistrationWizard dialog = new(slot, caps!, fields, PrepareLearning, async p =>
         {
             CheckDuplicate(slot, p); working = true; await WaitForPoll();
-            try { p.ProfileId = Guid.NewGuid(); if (!preview) bankGeneration = observedBankGeneration = await bridge!.SaveAsync(slot, p, bankGeneration);
+            try {
+                if (!SameTarget()) throw new IOException(L.T("登録対象の接続または保存先が変更されました。登録をやり直してください。", "The controller connection or destination changed. Start registration again."));
+                p.ProfileId = Guid.NewGuid();
+                if (!preview) bankGeneration = observedBankGeneration = await targetBridge!.SaveAsync(slot, p, expectedBank, input);
                 profiles[slot] = p; persistedProfiles[slot] = p.Clone(); dirty[slot] = false; }
             finally { working = false; }
         });

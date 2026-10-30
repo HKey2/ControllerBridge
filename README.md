@@ -2,7 +2,7 @@
 
 ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
 
-**Current development release: firmware 0.18.1 and Windows configurator 0.18.1.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
+**Current development release: firmware 0.19.0 and Windows configurator 0.19.0.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
 
 ![ControllerBridge profile list, English interface](docs/gui-main-en.png)
 
@@ -11,12 +11,14 @@ ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse 
 1. Connect the board's USB-C port to Windows and run `ControllerBridge.exe`. It includes its Windows x64 runtime and matching firmware; no separate .NET installation is needed.
 2. Follow the automatic firmware guide if it appears, or choose **Firmware update**. If prompted, reconnect the TYPE-C port while holding BOOT and confirm overwriting the board. The tool transfers the bundled firmware and checks its version after restart.
 3. Connect the input controller directly to USB-A.
-4. Select an unused slot and choose **Add controller**. Confirm the device, map its inputs, configure any axes, and save.
+4. For a controller without a matching profile, the first available slot is selected automatically. Choose **Add controller**, confirm the device, map its inputs, configure any axes, and save.
 5. Reconnect USB-C to the Switch 2. The board selects the matching saved profile without a PC.
 
 Only one configurator instance can run. Close other bridge configuration tools while using it. **Firmware update** compares only whether the running version equals the bundled version. An equal version finishes without writing; a different version requires confirmation. Firmware without the version-query command follows the BOOT connection and overwrite-confirmation route. See the [firmware update guide](docs/firmware-update.md).
 
-At startup the tool checks firmware before reading settings. A different version or an unavailable version opens guidance automatically. If no supported interface is found, the initial guide covers USB-C connection, factory firmware, and other software; these cannot always be distinguished from an unplugged board. Declining keeps the status visible without reopening the same guide during background retries. Those retries preserve drafts and do not repeatedly disable or repaint the editor.
+At startup the tool checks firmware before reading settings. A detected bridge with a different or unreadable version opens guidance automatically. If no supported interface is found, the tool shows **Device not connected** and waits for a connection without opening a firmware prompt. Use **Firmware update** manually for first installation, BOOT mode, or other firmware that exposes no recognizable interface. Declining a detected-device guide keeps the status visible without reopening the same guide during background retries. Those retries preserve drafts and do not repeatedly disable or repaint the editor.
+
+New input detection never opens a registration confirmation or writes settings. Selection happens once per attachment, so later manual browsing is preserved. Unsaved edits and modal operations defer the move. A full bank shows a nonmodal no-empty-slot message only when no matching profile exists. Slots with unsaved profiles or pending deletions are protected. Registration in 0.19.0 verifies the original input connection and empty destination at both transfer start and commit; install the matching bundled firmware to use this protection.
 
 This release keeps the storage generation introduced in 0.16.0. Settings from versions earlier than 0.16.0 are ignored, and those boards start with all 16 slots unused. Register controllers again; subsequent saves remain persistent across restarts.
 
@@ -82,7 +84,7 @@ Use the existing pinned Pico SDK 2.1.1, Arm GCC 14.2.1, and .NET 9 SDK. The GUI 
 
 The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation. Developer previews accept `--preview --language en` or `--preview --language ja`.
 
-Current checks pass: 72 LED setting checks, 134 GUI self-tests, 44 connection checks, and 82 firmware workflow/dialog checks in each language. Host-side C checks include exact RGB-to-PIO output and profile color persistence. The updater checks use simulated devices. A read-only probe of the connected board verified USB identification and the unsupported-version response; physical programming and the BOOT-to-application transition still require hardware validation. See [verification and its limits](docs/verification.md).
+The latest input-arrival, connection, and firmware workflow checks pass: 42, 44, and 82 checks respectively in each language. Real USB discovery also confirms disconnected startup and three background retries with no firmware prompt. The current executable also passed 162 LED setting checks and 134 GUI self-tests in each language. Forty new firmware registration checks cover stale connections, same-model reconnection, different controllers, occupied slots, identity mismatches, and failure before commit. Host-side C checks include exact RGB-to-PIO output and profile color persistence. The updater checks use simulated devices. An earlier read-only probe of the connected board verified USB identification and the unsupported-version response; physical programming and the BOOT-to-application transition still require hardware validation. See [verification and its limits](docs/verification.md).
 
 ## Memory budget
 
@@ -90,12 +92,12 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 86,460; persistent storage 32,768 | 1,977,924 |
-| SRAM, 532,480 bytes | Static data 123,444; two stacks 8,192 | 400,844 |
+| Flash, 2,097,152 bytes | Code/initial values 86,884; persistent storage 32,768 | 1,977,500 |
+| SRAM, 532,480 bytes | Static data 123,448; two stacks 8,192 | 400,840 |
 | One bank copy, 8,192 bytes | Payload 8,148 + header 16 | 28 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 
-Static SRAM is vector table 272 + initialized data 31,920 + BSS 91,252 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. The profile remains 488 bytes, the bank 8,148 bytes, and the UF2 file 173,056 bytes.
+Static SRAM is vector table 272 + initialized data 31,920 + BSS 91,256 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. The profile remains 488 bytes, the bank 8,148 bytes, and the UF2 file 174,080 bytes.
 
 ## Repository contents and license
 

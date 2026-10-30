@@ -9,24 +9,23 @@ internal sealed record ConnectionStatus(ConnectionKind Kind, string DeviceKey = 
     {
         ConnectionKind.DifferentFirmware => L.F("本体 接続済み • ファームウェア v{0} • 更新が必要です", "Device connected • Firmware v{0} • Update required", Version!),
         ConnectionKind.UnknownFirmware => L.T("本体を検出 • ファームウェアの導入・更新が必要です", "Device detected • Firmware installation/update required"),
-        _ => L.T("対応する本体を検出できません。USB-C接続またはファームウェアを確認してください。", "No supported device detected. Check USB-C or the firmware.")
+        _ => L.T("本体 未接続 • USB-CでPCに接続してください。", "Device not connected • Connect USB-C to this PC.")
     };
     internal string Guidance(string bundled) => Kind switch
     {
         ConnectionKind.DifferentFirmware => L.F("本体は v{0}、ツール同梱は v{1} です。本体の設定を読み書きするには同梱版に揃えてください。", "The device has v{0}; this tool includes v{1}. Install the bundled version to read or save device settings.", Version!, bundled),
         ConnectionKind.UnknownFirmware => L.T("デバイスを検出しましたが、対応するファームウェアが書き込まれていません。", "The device was detected, but supported firmware is not installed."),
-        _ => L.F("対応ファームウェアを検出できません。USB-C接続を確認してください。工場出荷状態や別のソフトが動作している場合は、BOOT接続で同梱の v{0} を導入できます。", "Supported firmware was not detected. Check the USB-C connection. For factory firmware or other software, use BOOT mode to install the bundled v{0}.", bundled)
+        _ => L.T("本体は未接続です。USB-CでPCに接続すると、自動的に接続を確認します。", "The device is not connected. Connect USB-C to this PC; the application will detect it automatically.")
     };
 }
 
 internal sealed class FirmwareNoticeTracker
 {
     private readonly HashSet<string> shown = [];
-    private bool first = true;
     internal bool Observe(ConnectionStatus status, bool allowNotice)
     {
-        bool startup = first; first = false;
-        if (status.Kind == ConnectionKind.Ready || status.Kind == ConnectionKind.NotDetected && !startup) return false;
+        // No device is a normal waiting state, including the very first discovery.
+        if (status.Kind is not (ConnectionKind.UnknownFirmware or ConnectionKind.DifferentFirmware)) return false;
         // Remember declined/manual notices for this process. Polling and transient
         // detach/reattach must not repeatedly open the same modal window.
         return shown.Add(status.NoticeKey) && allowNotice;

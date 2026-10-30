@@ -54,6 +54,10 @@ internal sealed partial class AxisDialog : Form
             minimum.Value = maximum.Value = center.Value = f.Value; measuring = true; detect = false;
             message.Text = L.T("両端まで往復した後、手を離して「中心を記録」を押してください。", "Move to both ends, release the control, then choose “Record center”.");
         }); calibrate.Enabled = canLearn; tools.Controls.Add(calibrate); a.Controls.Add(tools, 0, 2);
+        // Reserve the full signed 32-bit value width so adjacent controls never
+        // move when the live reading changes sign or number of digits.
+        Size liveSize = TextRenderer.MeasureText(L.T("入力値: -2147483648", "Input value: -2147483648"), live.Font);
+        live.AutoSize = false; live.Size = new(liveSize.Width + 8, liveSize.Height + 2);
         FlowLayoutPanel read = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false }; read.Controls.Add(live);
         Button setCenter = Ui.Button(L.T("中心を記録", "Record center"), (_, _) => { if (source.SelectedItem is InputField f && f.Valid) { center.Value = f.Value; measuring = false; message.Text = L.T("中心を記録しました。最小・中心・最大を確認して適用します。", "Center recorded. Check the minimum, center, and maximum before applying."); } });
         setCenter.Enabled = canLearn; read.Controls.Add(setCenter);

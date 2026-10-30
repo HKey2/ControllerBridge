@@ -20,11 +20,14 @@ internal static class Program
         {
             if (args.Length >= 2 && args[0] == "--self-test") { SelfTest.Run(args[1]); return 0; }
             if (args.Length >= 2 && args[0] == "--check-led-rgb") { MainForm.RunLedChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-controller-arrival") { MainForm.RunControllerArrivalChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-firmware-update") { FirmwareChecks.Run(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] is "--check-connection-ui" or "--check-startup-readonly")
             { MainForm.RunConnectionChecks(Path.GetFullPath(args[1]), args[0] == "--check-startup-readonly"); return 0; }
             if (args.Length >= 2 && args[0] == "--inspect-firmware") { FirmwareDevice.InspectAsync(Path.GetFullPath(args[1])).GetAwaiter().GetResult(); return 0; }
             if (args.Length >= 2 && args[0] == "--check-axis-dialog") { AxisDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-input-log") { MainForm.RunInputLogChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-input-log-paint") { InputLogForm.RunPaintChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 3 && args[0] == "--mouse-check")
             {
                 using MouseCheck check = new(args[1], int.Parse(args[2])); Application.Run(check);

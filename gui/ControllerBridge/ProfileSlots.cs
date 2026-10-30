@@ -4,6 +4,12 @@ namespace ControllerBridge;
 
 internal static class ProfileSlots
 {
+    internal static int FirstAvailable(IReadOnlyList<DeviceProfile> drafts, IReadOnlyList<DeviceProfile> saved, IReadOnlyList<bool> dirty)
+    {
+        for (int i = 0; i < drafts.Count; i++)
+            if (!drafts[i].Enabled && !saved[i].Enabled && !dirty[i]) return i;
+        return -1;
+    }
     public static string Name(IReadOnlyList<DeviceProfile> profiles, int slot)
     {
         DeviceProfile p = profiles[slot]; if (!p.Enabled) return L.T("未使用", "Unused");

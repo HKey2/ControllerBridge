@@ -1,6 +1,6 @@
 # Configuration and storage design
 
-This describes the current ControllerBridge configurator 0.18.1 and firmware 0.18.1. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
+This describes the current ControllerBridge configurator 0.19.0 and firmware 0.19.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
 
 ## Architecture and capabilities
 
@@ -97,12 +97,23 @@ Status values are 0 success, 1 malformed request, 2 measurement busy, 3 save fai
 | 45 | Abort bank staging |
 | 46 | Apply the active profile's output after checking expected generation and slot; return `OUT1` and current/pending/reconnect state |
 | 47 | Normal firmware identity (`CBV1`), version, and target board; see [firmware update](firmware-update.md) for the byte layout |
+| 48 | Begin registration into an empty slot, guarded by the captured input attachment and identity |
 
 The implementation is authoritative for byte-level command layouts: [`profile_runtime.c`](../lib/controller_bridge/profile_runtime.c), [`main.c`](../apps/egret_switch/main.c), [`HidBridge.cs`](../gui/ControllerBridge/HidBridge.cs), and [`controllerctl.py`](../tools/controllerctl.py).
 
-Capability bits 0-12 represent rapid fire, IDs, on-board variants, shortcuts, immediate switching, mouse output, 488-byte/16-slot profiles, combined output, combined full-gamepad buttons, extended trackball gain, 16-bit mouse output, whole-bank transfer, and per-profile output. The normal firmware advertises 8191. Clients must check the relevant bits rather than infer support from names.
+Capability bits 0-12 represent rapid fire, IDs, on-board variants, shortcuts, immediate switching, mouse output, 488-byte/16-slot profiles, combined output, combined full-gamepad buttons, extended trackball gain, 16-bit mouse output, whole-bank transfer, and per-profile output. Bit 13 (8192) adds guarded registration. The normal firmware advertises 16383. Clients must check the relevant bits rather than infer support from names.
+
+Command 48 keeps the first 26 bytes of command 24: slot at 0, profile CRC32 at 1, expected bank generation at 5, ID-present flag (must be 1) at 9, and 16-byte profile ID at 10. It adds expected input connection generation at 26, descriptor fingerprint at 30, VID/PID/revision at 34/36/38, and input protocol at 40. All multibyte integers are little endian. A dedicated command and capability prevent old firmware from silently ignoring the guard.
+
+Registration requires a connected matching attachment and an empty saved destination. Commands 25 and 26 retain the guard until commit. Probing/disconnection invalidates the staged registration even when the same controller returns. Commit rechecks connection generation, destination, exact staged identity, descriptor matching, and that mapped sources exist before any Flash save. Conflicts return status 4; a Flash failure remains status 3. Ordinary command-24 profile editing still permits editing saved profiles while the input is absent. Profile/bank/JSON layouts are unchanged.
 
 The 256-entry event ring stores field index, flags, value, and timestamp. GUI polling runs every 25 ms. Learning drains old events before taking its baseline and aborts on a connection generation change or an overrun. Captured input events do not trigger Flash writes.
+
+The registration input log observes this same parsed-field stream before the learning-delivery gate, including baseline-drain events and the last received overrun event. It makes no additional USB requests. Initial snapshots have no device timestamp; event rows retain the original 32-bit microsecond timestamp without treating a wrap as negative elapsed time. The index is the zero-based firmware field index, independent of HID Usage/button numbering and output mapping indexes. Decimal values and width-masked hexadecimal values are recorded before GUI calibration or mapping. Identical USB reports from two physical controls cannot be distinguished, and unchanged fields are not a packet trace.
+
+`InputLogBuffer` bounds PC history at 2,000 immutable rows with an eviction count. `InputLogForm` uses a virtual list and batches repainting at 100 ms; the existing learning path still receives every delivered change. `InputLogListView` explicitly enables the native double-buffer style. For pure appends, it preserves WinForms' managed item count while forwarding `LVM_SETITEMCOUNT` with `LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL`; offscreen appends do not repaint visible rows. Clearing or rotating the ring redraws item content, tracked by the buffer reset generation and eviction count. There is no unconditional whole-control invalidation on an ordinary update. Following only requests a scroll if the last row is outside the vertical viewport. Status text, including a retained notice, is composed before a single assignment, avoiding a temporary one-line layout on each two-line update. See Microsoft's [item-count flags](https://learn.microsoft.com/en-us/windows/win32/controls/lvm-setitemcount) and [native double-buffer style](https://learn.microsoft.com/en-us/windows/win32/controls/extended-list-view-styles).
+
+Pausing the log does not pause polling or learning; resuming records an omission notice and a new snapshot. The log is a modeless sibling of the modal registration wizard, owned by the main form. Wizard closure finishes the log without reparenting windows during closing, so diagnostics remain available for export. All storage is on the PC; firmware buffers, persistent layouts, and board memory requirements are unchanged.
 
 ## Output scheduling and measurements
 
@@ -118,11 +129,13 @@ The current saved measurement payload is 3,784 bytes. Its `DUO1` extension separ
 
 `ConnectionRead` reads command 47 before settings and owns the HID handle until the complete bank/input/output snapshot is ready. Unknown or different firmware returns a classified status without attempting to decode incompatible profiles. Background connection attempts have a separate `connecting` guard, so they do not toggle the main form's `working`/enabled state. Manual operations supersede pending attempts; late results after closure are disposed. A modal editor defers background discovery.
 
-`FirmwareNoticeTracker` records each device/version notice for the session and only offers an unidentified-device guide on the initial discovery. The updater is opened after releasing the connection guard and performs its own fresh version check. Its return reconnects with automatic guidance suppressed, preventing cancellation loops. Version matching is exact equality, with no upgrade/downgrade ordering.
+`FirmwareNoticeTracker` records each detected device/version notice for the session. No detected bridge is a normal disconnected state and never opens automatic firmware guidance. The updater is opened after releasing the connection guard and performs its own fresh version check. Its return reconnects with automatic guidance suppressed, preventing cancellation loops. Version matching is exact equality, with no upgrade/downgrade ordering.
+
+`ControllerArrivalTracker` consumes one navigation per initialized input attachment. It checks saved and draft profiles with the normal matching rules. The destination is the first slot with no saved profile, enabled draft, or dirty flag. Navigation runs after the polling/connection guard is released and waits for clean drafts, an up-to-date bank/input snapshot, and no foreground/modal operation. It only selects a list row; no device command is sent. The no-space condition is persistent header text, not a modal prompt. Registration captures the original bridge object, bank generation, and input identity and rechecks them after waiting for polling; firmware command 48 supplies the commit guard.
 
 Status labels change only when the complete displayed text changes. Input events all reach the learning logic, while the live label receives only the final value in each polling batch. Empty USB-A host retry counters do not rebind the editor. Layout containers, the main form, firmware dialog, and custom buttons use buffered painting. Repeated offline discovery retains status, selection, and drafts without repeated enable/disable changes, layout, invalidation, or rebinding.
 
-Names are persisted with duplicate suffixes; the list does not derive changing numbers from slot order. The standard client area is 1290 x 1000 and minimum window size is 1210 x 800 at 96 DPI. The profile pane is 400 pixels wide, with ellipsis for longer names. Analog sources use a live list with centered meters and multiple columns when needed. Documentation images are current English previews; the application retains both UI languages.
+Names are persisted with duplicate suffixes; the list does not derive changing numbers from slot order. The initial and minimum client area is 1290 x 1100 at 96 DPI (1306 x 1139 with the checked window frame). The profile pane is 400 pixels wide, with ellipsis for longer names. Analog sources use a live list with centered meters and multiple columns when needed. The live numeric label reserves the measured localized signed-32-bit width, so adjacent calibration buttons do not shift with its value. Documentation images use English; saved-profile images reflect the device bank described in the guide. The application retains both UI languages.
 
 ## Application icon
 

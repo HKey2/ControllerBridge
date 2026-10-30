@@ -1,12 +1,15 @@
 namespace ControllerBridge;
 
-internal sealed class RegistrationWizard : Form
+internal sealed partial class RegistrationWizard : Form
 {
     private readonly DeviceProfile profile;
     private readonly MappingEditor editor = new();
     private readonly Label steps = Ui.Label("", 11, true), hint = Ui.Label("", 10);
     private readonly Panel page = new() { Dock = DockStyle.Fill, BackColor = Ui.Surface, Padding = new(12) };
-    private readonly Button next, back;
+    private readonly Button next, back, logButton;
+    private readonly List<InputField> fields;
+    private InputLogForm? inputLog;
+    private string? logEndReason;
     private readonly TextBox name = new() { Width = 380, MaxLength = 47 };
     private readonly Func<DeviceProfile, Task> save;
     private readonly Capabilities caps;
@@ -16,7 +19,7 @@ internal sealed class RegistrationWizard : Form
     internal void PreviewStep(int number) { step = number; ShowStep(); }
     public RegistrationWizard(int slot, Capabilities caps, List<InputField> fields, Func<Task<bool>> prepare, Func<DeviceProfile, Task> save)
     {
-        this.caps = caps; this.save = save;
+        this.caps = caps; this.save = save; this.fields = fields;
         profile = new() { Flags = 3, Vid = caps.Vid, Pid = caps.Pid, Revision = caps.Revision, DescriptorHash = caps.DescriptorHash,
             Name = $"{(caps.InputProtocol == 2 ? "XInput" : caps.InputProtocol == 4 ? "Switch" : "HID")} {caps.Vid:X4}:{caps.Pid:X4}", InputInterval = 0 };
         Ui.Form(this, L.T("コントローラーを追加", "Add controller"), new(1000, 680));
@@ -28,14 +31,26 @@ internal sealed class RegistrationWizard : Form
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft };
         next = Ui.Button(L.T("次へ", "Next"), async (_, _) => await Next(), true); back = Ui.Button(L.T("戻る", "Back"), (_, _) => { step--; ShowStep(); });
         Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); }); CancelButton = cancel;
-        footer.Controls.Add(next); footer.Controls.Add(back); footer.Controls.Add(cancel); root.Controls.Add(footer, 0, 3); Controls.Add(root);
+        logButton = Ui.Button(L.T("入力ログ…", "Input log…"), (_, _) => ShowInputLog());
+        footer.Controls.Add(next); footer.Controls.Add(back); footer.Controls.Add(cancel); footer.Controls.Add(logButton); root.Controls.Add(footer, 0, 3); Controls.Add(root);
         editor.PrepareLearningAsync = prepare; editor.Bind(profile, fields, true, caps.SupportsRapidFire); name.Text = profile.Name;
         Tag = slot; ShowStep(); Ui.ThemeInputs(this);
-        FormClosing += (_, e) => { if (saving) e.Cancel = true; };
+        FormClosing += (_, e) =>
+        {
+            if (saving) { e.Cancel = true; return; }
+            // Keep the final diagnostics available for copying after cancellation,
+            // saving, or a lost connection. Its owner is the main window.
+            if (inputLog is { IsDisposed: false } log)
+            {
+                log.Finish(logEndReason ?? L.T("登録ウィザードを終了しました。", "The registration wizard has closed."));
+                inputLog = null;
+            }
+        };
     }
     private void ShowStep()
     {
-        page.Controls.Clear(); back.Enabled = step > 0; next.Text = step == 2 ? L.T("本体に保存して完了", "Save to device and finish") : L.T("次へ", "Next");
+        page.Controls.Clear(); back.Enabled = step > 0; logButton.Visible = step == 1;
+        next.Text = step == 2 ? L.T("本体に保存して完了", "Save to device and finish") : L.T("次へ", "Next");
         steps.Text = (step == 0 ? "●" : "✓") + L.T(" 1 機器を確認   →   ", " 1 Check device   →   ") + (step == 1 ? "●" : step > 1 ? "✓" : "○") + L.T(" 2 入力を割り当て   →   ", " 2 Map inputs   →   ") + (step == 2 ? "●" : "○") + L.T(" 3 保存", " 3 Save");
         editor.AbortLearning();
         if (step == 0)
@@ -76,8 +91,19 @@ internal sealed class RegistrationWizard : Form
         catch (Exception ex) { saving = false; next.Enabled = page.Enabled = true; back.Enabled = step > 0; Ui.Error(this, ex); hint.Text = L.T("保存できませんでした。内容はこの画面に保持されています。", "Could not save. Your edits remain on this page."); }
     }
     public void OnInput(InputField f, int value) { if (step == 1) editor.OnInput(f, value); }
+    internal void ShowInputLog()
+    {
+        if (inputLog is { IsDisposed: false }) { inputLog.Activate(); return; }
+        InputLogForm log = new(caps, fields) { ShowInTaskbar = ShowInTaskbar, Opacity = Opacity }; inputLog = log;
+        log.FormClosed += (_, _) => { if (ReferenceEquals(inputLog, log)) inputLog = null; };
+        // A sibling window remains usable after this modal wizard has closed;
+        // do not reparent owned windows during their owner's closing sequence.
+        log.Show(Owner ?? this);
+    }
+    public void ObserveInput(InputField? field, InputChange change) => inputLog?.Observe(field, change);
     public void ConnectionLost()
     {
+        logEndReason = L.T("接続・使用中のプロファイル・入力履歴が変わったため、登録を中止しました。", "Registration stopped because the connection, active profile, or input history changed.");
         editor.AbortLearning();
         if (!saving) { DialogResult = DialogResult.Cancel; Close(); }
     }
