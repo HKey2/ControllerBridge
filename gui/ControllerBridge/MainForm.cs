@@ -56,7 +56,7 @@ internal sealed partial class MainForm : Form
     public MainForm(bool preview = false, bool autoConnect = true, bool automaticFirmwareGuidance = true)
     {
         this.preview = preview; this.automaticFirmwareGuidance = automaticFirmwareGuidance;
-        Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100));
+        Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r2", new(1290, 1100));
         // The combined controller layout needs room for tuning and all mappings.
         MinimumSize = Size; StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
