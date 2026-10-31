@@ -18,10 +18,11 @@ internal sealed class FirmwareUpdateDialog : Form
     internal FirmwareUpdateDialog(FirmwarePackage package, IFirmwareDevice device, string? introduction = null)
     {
         this.package = package; this.device = device; this.introduction = introduction;
-        Ui.Form(this, L.T("ファームウェア更新", "Firmware update"), new(640, introduction is null ? 250 : 360));
+        using IDisposable formLayout = Ui.Form(this, L.T("ファームウェア更新", "Firmware update"), new(640, introduction is null ? 250 : 360));
         DoubleBuffered = true;
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false; ShowInTaskbar = false; ControlBox = false;
         BufferedTableLayoutPanel layout = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 4 };
+        layout.ColumnStyles.Add(new(SizeType.Percent, 100));
         layout.RowStyles.Add(new(SizeType.AutoSize)); layout.RowStyles.Add(new(SizeType.Percent, 100));
         layout.RowStyles.Add(new(SizeType.Absolute, 28)); layout.RowStyles.Add(new(SizeType.AutoSize));
         status.Dock = detail.Dock = DockStyle.Fill; detail.MaximumSize = new(580, 0); detail.ForeColor = Ui.Muted;
@@ -94,7 +95,7 @@ internal sealed class FirmwareUpdateDialog : Form
         cancelWait.Visible = waitingForBootsel;
         if (waitingForBootsel)
         {
-            ClientSize = new(ClientSize.Width, Math.Max(ClientSize.Height, 360));
+            ClientSize = new(ClientSize.Width, Math.Max(ClientSize.Height, LogicalToDeviceUnits(360)));
             detail.Text = (introduction is null ? "" : introduction + "\r\n\r\n") + FirmwareWorkflow.BootWaitInstructions;
             yes.Visible = no.Visible = close.Visible = false;
             cancelWait.Enabled = true; ControlBox = true; AcceptButton = null; CancelButton = cancelWait; cancelWait.Focus();

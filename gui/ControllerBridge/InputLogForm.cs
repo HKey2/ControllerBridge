@@ -103,9 +103,9 @@ internal sealed partial class InputLogForm : Form
     {
         this.fields = fields;
         identity = $"VID {caps.Vid:X4} / PID {caps.Pid:X4}  •  {caps.ProtocolLabel}  •  Layout {caps.DescriptorHash:X8}";
-        Ui.Form(this, L.T("入力ログ", "Input log") + $" — {caps.Vid:X4}:{caps.Pid:X4}", new(1280, 540));
-        MinimumSize = new(960, 420);
+        using IDisposable formLayout = Ui.Form(this, L.T("入力ログ", "Input log") + $" — {caps.Vid:X4}:{caps.Pid:X4}", new(1280, 540), new(960, 420));
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(12), ColumnCount = 1, RowCount = 5 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.Controls.Add(Ui.Label(identity, 10, true), 0, 0);

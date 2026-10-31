@@ -131,11 +131,13 @@ public sealed class DeviceProfile
 {
     // Stored beside the profile on the board; included in JSON exports.
     public Guid ProfileId { get; set; }
-    public const int ByteCount = 488;
+    public const int ByteCount = 848;
+    public const int LegacyByteCount = 488;
     public const int SlotCount = 16;
     public static readonly string[] Targets = ["Y", "B", "A", "X", "L", "R", "ZL", "ZR", "−", "+", L.T("L押込", "L stick"), L.T("R押込", "R stick"), "HOME", "CAPTURE", "↑", "→", "↓", "←"];
     public static readonly string[] AxisNames = [L.T("左スティック X", "Left stick X"), L.T("左スティック Y", "Left stick Y"), L.T("右スティック X", "Right stick X"), L.T("右スティック Y", "Right stick Y")];
-    public ushort Version { get; set; } = 5;
+    public ushort Version { get; set; } = 6;
+    public ShiftSettings Shift { get; set; } = new();
     public MouseProfileSettings Mouse { get; set; } = new();
     public byte OutputMode { get; set; } // 0 gamepad, 1 USB mouse, 2 combined.
     public bool ControllerButtons { get; set; }
@@ -163,15 +165,15 @@ public sealed class DeviceProfile
     public DigitalBinding[] Buttons { get; set; } = Enumerable.Range(0, 18).Select(_ => new DigitalBinding()).ToArray();
     public AxisBinding[] Axes { get; set; } = Enumerable.Range(0, 4).Select(_ => new AxisBinding()).ToArray();
     public bool Enabled => (Flags & 1) != 0;
-    public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 });
+    public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 }) || Shift.Buttons.Where((b, i) => (Shift.Overrides & (1u << i)) != 0).Any(b => b.RapidHz > 0);
     public byte[] Encode()
     {
-        if (Version != 5 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
+        if (Version != 6 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
             (Enabled && (Vid == 0 || string.IsNullOrWhiteSpace(Name))) || Buttons is null || Buttons.Length != 18 || Axes is null || Axes.Length != 4)
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));
         // v5 stores per-profile output in one former reserved byte, without
-        // enlarging the 488-byte profile or the 16-slot Flash bank.
-        const ushort wireVersion = 5;
+        // changing the original prefix. Shift data follows at offset 488.
+        const ushort wireVersion = 6;
         byte[] b = new byte[ByteCount]; Wire.W16(b, 0, wireVersion); Wire.W16(b, 2, Flags); Wire.W16(b, 4, Vid);
         Wire.W16(b, 6, Pid); Wire.W16(b, 8, Revision); b[10] = InputInterval; Wire.W32(b, 12, DescriptorHash);
         Encoding.UTF8.GetBytes(Name).CopyTo(b, 16);
@@ -187,11 +189,16 @@ public sealed class DeviceProfile
         (Mouse ?? throw new InvalidDataException(L.T("マウス設定が欠落しています。", "Mouse settings are missing."))).Write(b, 480);
         b[484] = (byte)(OutputMode | (ControllerButtons ? 4 : 0));
         b[485] = LedRed; b[486] = LedGreen; b[487] = LedBlue;
+        (Shift ?? throw new InvalidDataException()).Write(b);
         return b;
     }
     public static DeviceProfile Decode(byte[] b)
     {
-        if (b.Length != ByteCount || Wire.U16(b, 0) != 5)
+        if (b.Length == LegacyByteCount && Wire.U16(b, 0) == 5)
+        {
+            byte[] migrated = new byte[ByteCount]; b.CopyTo(migrated, 0); Wire.W16(migrated, 0, 6); b = migrated;
+        }
+        if (b.Length != ByteCount || Wire.U16(b, 0) != 6)
             throw new InvalidDataException(L.T("プロファイル形式・長さが不正です。", "The profile format or length is invalid."));
         int end = Array.IndexOf(b, (byte)0, 16, 48);
         if (end < 16) throw new InvalidDataException(L.T("プロファイル名が不正です。", "The profile name is invalid."));
@@ -208,6 +215,7 @@ public sealed class DeviceProfile
         if ((b[484] & ~7) != 0) throw new InvalidDataException(L.T("未対応の出力方式です。", "This output mode is not supported."));
         p.OutputMode = (byte)(b[484] & 3); p.ControllerButtons = (b[484] & 4) != 0;
         p.LedRed = b[485]; p.LedGreen = b[486]; p.LedBlue = b[487];
+        p.Shift = ShiftSettings.Read(b);
         _ = p.Encode(); return p;
     }
     public DeviceProfile Clone() { DeviceProfile p = Decode(Encode()); p.ProfileId = ProfileId; return p; }
@@ -222,7 +230,7 @@ public sealed class DeviceProfile
 internal sealed class ProfileFile
 {
     public string Format { get; set; } = "ControllerBridge.Profile";
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public DeviceProfile Profile { get; set; } = new();
     public static void Save(string path, DeviceProfile p)
     {
@@ -240,7 +248,12 @@ internal sealed class ProfileFile
     {
         if (new FileInfo(path).Length > 256 * 1024) throw new InvalidDataException(L.T("プロファイルファイルが大きすぎます。", "The profile file is too large."));
         ProfileFile f = JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(path)) ?? throw new InvalidDataException(L.T("JSON形式が不正です。", "The JSON format is invalid."));
-        if (f.Format != "ControllerBridge.Profile" || f.Version != 2 || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
+        if (f.Format != "ControllerBridge.Profile" || f.Version is not (2 or 3) || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
+        if (f.Version == 2 && f.Profile.Version == 5)
+        {
+            if (!f.Profile.Shift.IsEmpty) throw new InvalidDataException("Legacy profiles cannot contain shift settings.");
+            f.Profile.Version = 6;
+        }
         return f.Profile.Clone();
     }
 }

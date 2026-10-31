@@ -56,14 +56,15 @@ internal sealed partial class MainForm : Form
     public MainForm(bool preview = false, bool autoConnect = true, bool automaticFirmwareGuidance = true)
     {
         this.preview = preview; this.automaticFirmwareGuidance = automaticFirmwareGuidance;
-        Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r2", new(1290, 1100));
-        // The combined controller layout needs room for tuning and all mappings.
-        MinimumSize = Size; StartPosition = FormStartPosition.CenterScreen;
+        using IDisposable formLayout = Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100), new(1290, 700));
+        // Keep the full initial layout, but let the editor scroll on shorter screens.
+        StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16, 12, 16, 12), ColumnCount = 1, RowCount = 3 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize));
         BufferedTableLayoutPanel header = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, RowCount = 1, Padding = new(2, 0, 2, 8) };
-        header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.Absolute, 180)); header.ColumnStyles.Add(new(SizeType.Absolute, 170)); header.ColumnStyles.Add(new(SizeType.Absolute, 216));
+        header.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) header.ColumnStyles.Add(new(SizeType.AutoSize));
         header.RowStyles.Add(new(SizeType.AutoSize));
         connection.Dock = DockStyle.Fill; connection.ForeColor = Ui.Muted;
         header.Controls.Add(connection, 0, 0);
@@ -73,15 +74,19 @@ internal sealed partial class MainForm : Form
         root.Controls.Add(header, 0, 0);
 
         body = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        body.RowStyles.Add(new(SizeType.Percent, 100));
         body.ColumnStyles.Add(new(SizeType.Absolute, 400)); body.ColumnStyles.Add(new(SizeType.Percent, 100));
         BufferedTableLayoutPanel left = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new(0, 0, 12, 0), Margin = Padding.Empty };
+        left.ColumnStyles.Add(new(SizeType.Percent, 100));
         left.RowStyles.Add(new(SizeType.Percent, 100)); left.RowStyles.Add(new(SizeType.AutoSize));
         RaisedTableLayoutPanel listPane = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        listPane.ColumnStyles.Add(new(SizeType.Percent, 100));
         listPane.RowStyles.Add(new(SizeType.AutoSize)); listPane.RowStyles.Add(new(SizeType.Percent, 100)); listPane.RowStyles.Add(new(SizeType.AutoSize));
         listPane.Controls.Add(Ui.Label(L.T("プロファイルリスト", "Profile list"), 12, true), 0, 0); listPane.Controls.Add(slots, 0, 1);
         Label dragHint = Ui.Label(L.T("ドラッグで順番を変更", "Drag profiles to change their order"), 9); dragHint.ForeColor = Ui.Muted; listPane.Controls.Add(dragHint, 0, 2);
         left.Controls.Add(listPane, 0, 0);
         RaisedTableLayoutPanel files = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
+        files.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) files.RowStyles.Add(new(SizeType.AutoSize));
         files.Controls.Add(Ui.Label(L.T("保存／復帰", "Backup / Restore"), 12, true), 0, 0);
         backup = Ui.Button(L.T("全スロットをバックアップ", "Back up all slots"), async (_, _) => await BackupAll());
@@ -89,16 +94,19 @@ internal sealed partial class MainForm : Form
         backup.Dock = restore.Dock = DockStyle.Fill; files.Controls.Add(backup, 0, 1); files.Controls.Add(restore, 0, 2); left.Controls.Add(files, 0, 1);
 
         RaisedTableLayoutPanel right = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        right.ColumnStyles.Add(new(SizeType.Percent, 100));
         right.RowStyles.Add(new(SizeType.AutoSize)); right.RowStyles.Add(new(SizeType.Percent, 100));
         BufferedTableLayoutPanel metadata = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(2, 0, 2, 4) };
         metadata.ColumnStyles.Add(new(SizeType.Percent, 100)); metadata.ColumnStyles.Add(new(SizeType.Absolute, 190));
         metadata.RowStyles.Add(new(SizeType.AutoSize));
         BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+        nameRow.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 4; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3);
         metadata.Controls.Add(nameRow, 0, 0);
         BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(8, 0, 0, 0) };
+        profileActions.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) profileActions.RowStyles.Add(new(SizeType.AutoSize));
         delete = Ui.Button(L.T("プロファイル削除", "Delete profile"), async (_, _) => { if (profiles[selected].Enabled) DeleteProfile(); else await AddController(); });
         duplicate = Ui.Button(L.T("プロファイル複製", "Duplicate profile"), (_, _) => DuplicateProfile());
@@ -107,6 +115,7 @@ internal sealed partial class MainForm : Form
         ledSettings.Dock = DockStyle.Fill; profileActions.Controls.Add(ledSettings, 0, 2);
         metadata.Controls.Add(profileActions, 1, 0); right.Controls.Add(metadata, 0, 0);
         details = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        details.ColumnStyles.Add(new(SizeType.Percent, 100));
         details.RowStyles.Add(new(SizeType.Percent, 100)); details.RowStyles.Add(new(SizeType.AutoSize));
         identity.Dock = outputStatus.Dock = live.Dock = DockStyle.Fill;
         identity.ForeColor = outputStatus.ForeColor = live.ForeColor = Ui.Muted;
@@ -116,6 +125,7 @@ internal sealed partial class MainForm : Form
         {
             TabPage page = new(titles[i]) { BackColor = Ui.Surface, Padding = new(5) };
             BufferedTableLayoutPanel content = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            content.ColumnStyles.Add(new(SizeType.Percent, 100));
             content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.Percent, 100));
             tabContents[i] = content; page.Controls.Add(content); outputTabs.TabPages.Add(page);
         }
@@ -126,8 +136,10 @@ internal sealed partial class MainForm : Form
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
         tabContents[0].Controls.Add(editor, 0, 1);
         mouseContent = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        mouseContent.ColumnStyles.Add(new(SizeType.Percent, 100));
         mouseContent.RowStyles.Add(new(SizeType.AutoSize)); mouseContent.RowStyles.Add(new(SizeType.Percent, 100));
         BufferedTableLayoutPanel tuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
+        tuning.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) tuning.RowStyles.Add(new(SizeType.AutoSize));
         BufferedTableLayoutPanel ballRow = TuningRow(trackballOn, mouseGain, invertX, invertY);
         BufferedTableLayoutPanel paddleRow = TuningRow(paddleOn, paddleGain, invertPaddle);
@@ -135,7 +147,13 @@ internal sealed partial class MainForm : Form
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
         mouseContent.Controls.Add(tuning, 0, 0);
-        mouseContent.Controls.Add(mouseEditor, 0, 1);
+        // Keep both editors in the control tree while hidden so they receive
+        // the same font and monitor-DPI changes as the visible editor.
+        Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        mappingPages.Controls.Add(mouseEditor); mappingPages.Controls.Add(combinedEditor);
+        combinedEditor.Visible = false;
+        mouseContent.Controls.Add(mappingPages, 0, 1);
+        tabContents[1].Controls.Add(mouseContent, 0, 1);
         body.Controls.Add(left, 0, 0); body.Controls.Add(right, 1, 0); root.Controls.Add(body, 0, 1);
         BufferedTableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(0, 12, 0, 0) };
         footer.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) footer.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -174,7 +192,8 @@ internal sealed partial class MainForm : Form
         };
         timer.Tick += async (_, _) => await Poll();
         Shown += async (_, _) => { if (preview) LoadPreview(); else if (autoConnect) await Connect(false); };
-        Shown += (_, _) => SizeSlotRows(); DpiChanged += (_, _) => SizeSlotRows(); FormClosing += OnClosing;
+        Shown += (_, _) => SizeSlotRows();
+        DpiChanged += (_, _) => BeginInvoke(() => { if (!IsDisposed) SizeSlotRows(); }); FormClosing += OnClosing;
         Ui.ThemeInputs(this); SyncMousePage(); RefreshSlots(); BindSelected(); UpdateEnabled();
     }
     private static BufferedTableLayoutPanel TuningRow(CheckBox toggle, NumericUpDown gain, params CheckBox[] options)
@@ -191,7 +210,7 @@ internal sealed partial class MainForm : Form
     private void SetConnectionDetail(string value) { connectionDetail = value; SetTip(connection, value); }
     private void SizeSlotRows()
     {
-        using Graphics g = slots.CreateGraphics(); using Font small = new(L.FontFamily, 9);
+        using Graphics g = slots.CreateGraphics(); using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f);
         slots.ItemHeight = Math.Max(LogicalToDeviceUnits(58), TextRenderer.MeasureText(g, "Agあ", Font).Height + TextRenderer.MeasureText(g, "Agあ", small).Height + LogicalToDeviceUnits(16));
     }
     private int ConnectedSlot => caps is { Connected: true } && caps.ActiveSlot < profiles.Length ? caps.ActiveSlot : -1;
@@ -204,7 +223,7 @@ internal sealed partial class MainForm : Form
         if (current) { using SolidBrush marker = new(Ui.Focus); e.Graphics.FillRectangle(marker, e.Bounds.Left, e.Bounds.Top, LogicalToDeviceUnits(3), e.Bounds.Height); }
         DeviceProfile p = profiles[e.Index]; bool connected = p.Enabled && ConnectedSlot == e.Index;
         using Font titleFont = new(Font, connected ? Font.Style | FontStyle.Bold : Font.Style);
-        using Font small = new(L.FontFamily, 9, connected ? FontStyle.Bold : FontStyle.Regular);
+        using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f, connected ? FontStyle.Bold : FontStyle.Regular);
         int pad = LogicalToDeviceUnits(10), top = LogicalToDeviceUnits(7), firstHeight = TextRenderer.MeasureText(e.Graphics, "Agあ", titleFont).Height;
         Rectangle first = new(e.Bounds.X + pad, e.Bounds.Y + top, e.Bounds.Width - 2 * pad, firstHeight);
         Rectangle second = new(e.Bounds.X + pad, first.Bottom + LogicalToDeviceUnits(3), e.Bounds.Width - 2 * pad, e.Bounds.Bottom - first.Bottom - LogicalToDeviceUnits(7));
@@ -513,7 +532,15 @@ internal sealed partial class MainForm : Form
             if (p.Enabled && p.ProfileId == Guid.Empty) p.ProfileId = Guid.NewGuid();
             working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
             SetText(saved, L.T("スロットを保存し、読み戻して照合しています…", "Saving and verifying the slot…"));
-            if (!preview) bankGeneration = await bridge!.SaveAsync(slot, p, bankGeneration);
+            if (!preview)
+            {
+                if (p.Enabled)
+                {
+                    int groupSlot = Array.FindIndex(persistedProfiles, old => old.SameController(p));
+                    if (groupSlot >= 0) p.Shift.ValidateSwitchKeys(p, await bridge!.ReadSwitchKeysAsync(groupSlot));
+                }
+                bankGeneration = await bridge!.SaveAsync(slot, p, bankGeneration);
+            }
             profiles[slot] = p; persistedProfiles[slot] = p.Clone(); dirty[slot] = false; observedBankGeneration = bankGeneration;
             if (!preview) await RefreshDevice(); RefreshSlots(); BindSelected();
             SetText(saved, L.F("スロット {0} を本体に保存しました。", "Saved slot {0} to the device.", slot + 1));
@@ -545,8 +572,9 @@ internal sealed partial class MainForm : Form
         if (timing.Parent != tabContents[index]) tabContents[index].Controls.Add(timing, 0, 0);
         if (index > 0 && mouseContent.Parent != tabContents[index]) tabContents[index].Controls.Add(mouseContent, 0, 1);
         bool combined = index == 2; buttonBehavior.Visible = combined;
-        MappingEditor mapping = combined && gamepadButtons.Checked ? combinedEditor : mouseEditor;
-        if (mapping.Parent != mouseContent) { mouseContent.Controls.Remove(mouseEditor); mouseContent.Controls.Remove(combinedEditor); mouseContent.Controls.Add(mapping, 0, 1); }
+        bool controller = combined && gamepadButtons.Checked;
+        mouseEditor.Visible = !controller; combinedEditor.Visible = controller;
+        (controller ? combinedEditor : mouseEditor).BringToFront();
         mouseEditor.SetNavigationMode(combined);
         string mouseHint = combined && gamepadButtons.Checked ? L.T("マウス移動と、下のボタン・方向・スティックを送信します。マウスクリックは出力しません。", "Sends mouse movement and the buttons, D-pad and sticks below. No mouse clicks.") :
             combined ? L.T("B→左クリック、A→右クリック。コントローラー側は−／＋／HOMEのみ送信します。", "B → left click, A → right click. The controller sends only − / + / HOME.") :

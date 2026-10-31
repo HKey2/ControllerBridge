@@ -1,18 +1,22 @@
 # Configuration and storage design
 
-This describes the current ControllerBridge configurator 0.19.0 and firmware 0.19.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
+This describes the current ControllerBridge configurator 0.20.0 and firmware 0.20.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
 
 ## Architecture and capabilities
 
 Core 1 runs the PIO input host. Core 0 handles mapping, output, configuration, and the status LED. Input uses the pinned Pico-PIO-USB transport; the native RP2350 USB device path is implemented by this project. TinyUSB is used only by the separate CDC diagnostic target.
 
-The GUI is a self-contained Windows x64 WinForms application built with the existing .NET 9 SDK. It edits the board's 16 slots directly. It requires 488-byte profiles, 16 slots, and capability bit 12 before writing per-profile output settings. Single-slot writes are read back with their identity before command 46 applies the effective output.
+The GUI is a self-contained Windows x64 WinForms application built with the existing .NET 9 SDK. It edits the board's 16 slots directly. It requires 848-byte profiles, 16 slots, and capability bit 12 for the current settings format; saving enabled shift settings additionally requires bit 14. The explicit profile-size field is authoritative. Single-slot writes are read back with their identity before command 46 applies the effective output.
+
+The GUI uses per-monitor V2 DPI awareness. Every form holds layout suspended from `Ui.Form` until its constructor has populated the entire 96-DPI control tree. Disposing the returned layout scope enables the initial scaling pass. Consuming this baseline before adding the controls can leave their dimensions unscaled, then shrink them again when a high-system-DPI process opens on a lower-DPI monitor. Mapping editors use the same baseline and stay parented while hidden; the registration wizard also retains all three pages so they receive font and DPI changes. Single-column layouts explicitly follow the available width, while mapping-cell dimensions retain their logical size. Owner-drawn secondary text derives its size from the scaled control font.
+
+On show and after a DPI change, windows fit within the current monitor's working area. Content retains its logical minimum size with scrollbars when necessary. The main window starts at 1290×1100 logical pixels and permits a 1290×700 content minimum, with the mapping area scrolling independently. The DPI regression runner is `tools/check-gui-dpi.ps1`; it exercises synthetic startup DPI and native DPI-change notifications without changing Windows settings or opening a USB device. See [verification](verification.md) for the tested conditions and limits.
 
 The input path supports one directly connected Full Speed device, up to four HID interfaces, eight IN endpoints, 64-byte input packets, and 256 observed fields. Variable HID inputs, report IDs, absolute axes, and four/eight-direction hats are supported. Relative movement uses the dedicated mouse path. See [compatibility](compatibility.md) for tested and untested devices.
 
 ## Profile wire format
 
-The canonical profile is version 5, 488 bytes, little endian. The C definitions and C# codec validate fixed sizes and field ranges. Only version 5 is accepted. Earlier 480-byte and 488-byte versions are rejected without conversion.
+The canonical profile is version 6, 848 bytes, little endian. The C definitions and C# codec validate fixed sizes and field ranges. The original 488-byte prefix retains its fields; version-5 profiles migrate by changing the version and appending disabled shift settings. Versions 1–4 remain unsupported. Normal USB profile transfers use only the current 848-byte format; legacy conversion applies to stored banks and JSON imports.
 
 | Offset | Bytes | Field |
 |---:|---:|---|
@@ -31,10 +35,15 @@ The canonical profile is version 5, 488 bytes, little endian. The C definitions 
 | 483 | 1 | High byte of trackball gain; combined range 10-640 |
 | 484 | 1 | Bits 0-1: gamepad=0, mouse=1, combined=2; bit 2: controller-button behavior |
 | 485 / 486 / 487 | 1 each | LED red / green / blue (RGB888), each 0-255 |
+| 488 | 4 | Shift override mask, bits 0–17 in digital output order |
+| 492 | 1 | Modifier count: 0 disables shift; 1–4 require all keys held |
+| 493 | 3 | Reserved, zero |
+| 496 | 64 | Four physical modifier bindings, 16 bytes each; unused entries disabled |
+| 560 | 288 | 18 shifted digital bindings, 16 bytes each |
 
-Flag bit 3 (`UP_LED_CUSTOM`) enables the three LED bytes. With the bit clear all three bytes must be zero, and ready output is the existing R=0/G=0/B=1. With the bit set, bytes are output exactly; all-zero custom RGB means off. Matching still uses only flag bits 1 and 2 (values 2 and 4), so color does not change controller grouping, profile selection, or shortcuts. The 488-byte profile and 8,148-byte bank do not grow. The three former tail-reserved bytes are now fully allocated (48 bytes across 16 slots); the flags field still has 12 unused bits. Bank-copy spare space remains 28 bytes.
+Flag bit 3 (`UP_LED_CUSTOM`) enables the three LED bytes. With the bit clear all three bytes must be zero, and ready output is the existing R=0/G=0/B=1. With the bit set, bytes are output exactly; all-zero custom RGB means off. Matching still uses only flag bits 1 and 2 (values 2 and 4), so color does not change controller grouping, profile selection, or shortcuts. The three RGB bytes retain their existing offsets. The profile flag field still has 12 unused bits. The appended shift block adds 360 bytes per profile; bank-copy spare space is now 2,460 bytes.
 
-This extends the accepted version-5 values while retaining 0.16.x/0.17.x banks without migration: their LED flag/bytes are zero. JSON version 2 remains unchanged; missing LED properties decode as zero. Custom-color records require firmware/configurator 0.18.1 or later; older implementations reject the new flag/nonzero tail bytes. The normal GUI checks for exact matching firmware before editing the bank.
+Migration preserves version-5 LED values, including the zero default in 0.16.x/0.17.x records. Missing LED properties in old JSON decode as zero. The normal GUI checks for exact matching firmware before editing the bank; older configurators cannot edit the expanded version-6 bank.
 
 Valid output bytes are 0, 1, 2, 4, 5, and 6. The controller-button preference is retained even while another tab is selected. Every accepted profile includes this field. Whole-bank operations preserve original profile bytes rather than rewriting unrelated slots.
 
@@ -46,21 +55,33 @@ An analog binding contains interface (1), report ID (1), bit offset (2), bit wid
 
 ## Profile bank and Flash
 
-The version-5 bank is 8,148 bytes: 16-byte bank header, 16 x 488-byte profiles, 256 bytes of IDs, 4 bytes of preferred selections, and 64 bytes of shortcuts. IDs use the byte order of .NET `Guid.ToByteArray()` / `new Guid(bytes)`. The 16-byte outer CRC header makes a stored copy 8,164 bytes, leaving 28 bytes in each 8 KiB bank area.
+The version-6 bank is 13,908 bytes: 16-byte bank header, 16 x 848-byte profiles, 256 bytes of IDs, 4 bytes of preferred selections, and 64 bytes of shortcuts. IDs use the byte order of .NET `Guid.ToByteArray()` / `new Guid(bytes)`. The 16-byte outer CRC header makes a stored copy 13,924 bytes, leaving 2,460 bytes in each 16 KiB bank area.
 
 | Storage slot | Offset with 2 MiB Flash | Size | Purpose |
 |---:|---:|---:|---|
-| 4 | `0x1F8000` | 8,192 | Bank A |
-| 5 | `0x1FA000` | 8,192 | Bank B |
+| 4 | `0x1F4000` | 16,384 | Bank A; first version-6 commit after migration |
+| 5 | `0x1F8000` | 16,384 | Bank B; overlaps both old 8 KiB bank copies |
 | Unused | `0x1FC000` | 8,192 | Reserved; no reads or writes |
-| 0 | `0x1FE000` | 4,096 | Common settings |
-| 1 | `0x1FF000` | 4,096 | Saved measurement |
+| 0 | `0x1FE000` | 4,096 | Common settings, unchanged |
+| 1 | `0x1FF000` | 4,096 | Saved measurement, unchanged |
 
-The Flash header uses magic `CBST` (`0x54534243`), storage version 1, payload length, and CRC-32. This identity intentionally rejects all pre-0.16.0 Flash records, including profiles, common settings, and measurements. The newest valid current bank wins. If neither copy is valid, startup creates 16 unused slots in RAM with generation zero and `persisted=false`. It does not create an EGRET preset, inspect older bank areas, or write a migrated bank. The first normal save starts the new persistent bank; subsequent restarts read it normally.
+The Flash header retains magic `CBST` (`0x54534243`), storage version 1, payload length, and CRC-32. The newest valid version-6 bank wins. If none exists, startup reads the version-5 copies at `0x1F8000` and `0x1FA000`, checks CRC and structure, selects the newest valid generation, and expands all profiles in RAM while preserving IDs, selections and shortcuts. Loading never writes Flash. The first migrated save writes/verifies Bank A before old banks can be overwritten; a later save can use Bank B only after a valid new copy exists. Tests simulate interrupted first and subsequent commits.
 
-Normal updates write and verify the inactive copy before adopting it. The total reserved tail is 32 KiB, and writes check for overlap with code. The unused 8 KiB remains reserved. The reset is a change in accepted storage identity, not a chip-wide secure erase.
+If neither a current bank nor a valid version-5 bank exists, startup creates 16 unused slots in RAM with generation zero and `persisted=false`. Pre-0.16.0 storage identities remain rejected. No EGRET preset is created. Common settings and saved measurements keep their existing addresses and identity.
 
-Whole-slot JSON uses `ControllerBridge.Slots`, JSON version 2, UTC creation time, Base64 bank bytes, and SHA-256. Individual JSON uses `ControllerBridge.Profile`, JSON version 2, and excludes bank metadata. Both require the current product identifier and JSON version; previous exports are rejected. The binary profile/bank layouts remain version 5. Exports write a temporary file, read it back for verification, then replace the destination. Individual imports are limited to 256 KiB and validated before any draft is changed.
+Normal updates write and verify the inactive copy before adopting it. The total reserved tail is 48 KiB, and writes check for overlap with code. The unused 8 KiB remains reserved. The application UF2 validator rejects payload addresses at or above `0x101F4000` on the standard 2 MiB board.
+
+Whole-slot JSON uses `ControllerBridge.Slots`, JSON version 3, UTC creation time, Base64 bank bytes, and SHA-256. Individual JSON uses `ControllerBridge.Profile`, JSON version 3, and excludes bank metadata. Version-2 exports with version-5 data are validated and migrated with shift disabled. JSON version 1 and binary profile versions 1–4 remain unsupported. Exports write a temporary file, read it back for verification, then replace the destination. Imports are limited to 256 KiB and validated before drafts change. Older firmware/configurators cannot read new records; retain a pre-upgrade backup for downgrade recovery.
+
+## Button shift runtime
+
+Each profile has one main button page and one shifted page; axes, identity, output mode, input interval and mouse settings are common. Each override bit replaces one output binding, including its rapid rate. A disabled override explicitly mutes that output. Unset bits inherit the main page. Active overrides suppress inherited button outputs driven by the same overlapping physical input, preventing a moved button from generating both its old and new output. Overlap compares interface, report ID, bit range, signed/report-ID flags and activation values; it is not based on button labels.
+
+The mapper retains both pages' pressed states, raw modifiers, digital axis pairs and analog values across report IDs/interfaces. Modifier AND detection precedes output for the current report. On any modifier release the main page returns; modifier bindings remain consumed until all are released. Inputs already held are recomputed for the newly active page. Profile activation seeds all cached field values; detach clears state. Conflict masks are calculated at attach rather than by an all-pairs scan per report. Page edges reset rapid phases without changing the selected profile or writing Flash.
+
+Modifier consumption includes a shared physical source used by a common axis. Otherwise the four axes keep their main-page behavior. Partially held multi-key chords can produce their main mappings before the chord first completes; single-key modifiers are consumed immediately. No tap/hold or chord timing window is implemented. Dedicated unmapped physical modifiers avoid pre-chord normal outputs.
+
+Permanent profile shortcuts read the main physical bindings and are suppressed during modifier consumption. The profile/bank validators reject overlapping modifier/shortcut inputs, including individual edits and shortcut changes. No shifted page alters the stored active profile ID. See [button shift](button-shift.md) for the user workflow and examples.
 
 ## Feature transport
 
@@ -101,11 +122,11 @@ Status values are 0 success, 1 malformed request, 2 measurement busy, 3 save fai
 
 The implementation is authoritative for byte-level command layouts: [`profile_runtime.c`](../lib/controller_bridge/profile_runtime.c), [`main.c`](../apps/egret_switch/main.c), [`HidBridge.cs`](../gui/ControllerBridge/HidBridge.cs), and [`controllerctl.py`](../tools/controllerctl.py).
 
-Capability bits 0-12 represent rapid fire, IDs, on-board variants, shortcuts, immediate switching, mouse output, 488-byte/16-slot profiles, combined output, combined full-gamepad buttons, extended trackball gain, 16-bit mouse output, whole-bank transfer, and per-profile output. Bit 13 (8192) adds guarded registration. The normal firmware advertises 16383. Clients must check the relevant bits rather than infer support from names.
+Capability bits 0-12 represent rapid fire, IDs, on-board variants, shortcuts, immediate switching, mouse output, extended-profile/16-slot support (originally 488 bytes; read the explicit size field), combined output, combined full-gamepad buttons, extended trackball gain, 16-bit mouse output, whole-bank transfer, and per-profile output. Bit 13 (8192) adds guarded registration. Bit 14 (16384) adds button shift and the 848-byte profile. The normal firmware advertises 32767. Clients must check the relevant bits rather than infer support from names.
 
 Command 48 keeps the first 26 bytes of command 24: slot at 0, profile CRC32 at 1, expected bank generation at 5, ID-present flag (must be 1) at 9, and 16-byte profile ID at 10. It adds expected input connection generation at 26, descriptor fingerprint at 30, VID/PID/revision at 34/36/38, and input protocol at 40. All multibyte integers are little endian. A dedicated command and capability prevent old firmware from silently ignoring the guard.
 
-Registration requires a connected matching attachment and an empty saved destination. Commands 25 and 26 retain the guard until commit. Probing/disconnection invalidates the staged registration even when the same controller returns. Commit rechecks connection generation, destination, exact staged identity, descriptor matching, and that mapped sources exist before any Flash save. Conflicts return status 4; a Flash failure remains status 3. Ordinary command-24 profile editing still permits editing saved profiles while the input is absent. Profile/bank/JSON layouts are unchanged.
+Registration requires a connected matching attachment and an empty saved destination. Commands 25 and 26 retain the guard until commit. Probing/disconnection invalidates the staged registration even when the same controller returns. Commit rechecks connection generation, destination, exact staged identity, descriptor matching, and that mapped sources exist before any Flash save. Conflicts return status 4; a Flash failure remains status 3. Ordinary command-24 profile editing still permits editing saved profiles while the input is absent. Guarded registration uses the current version-6 profile and validates modifier and overridden input sources as well as main mappings.
 
 The 256-entry event ring stores field index, flags, value, and timestamp. GUI polling runs every 25 ms. Learning drains old events before taking its baseline and aborts on a connection generation change or an overrun. Captured input events do not trigger Flash writes.
 

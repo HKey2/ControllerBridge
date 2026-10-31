@@ -1,10 +1,11 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator 0.19.0 and normal firmware 0.19.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator 0.20.0 and normal firmware 0.20.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
 | Document | Contents |
 |---|---|
 | [User guide](configurator-guide.md) | Setup, profiles, mapping, calibration, output modes, backup and restore |
+| [Button shift](button-shift.md) | Hold-to-shift keys, inherited and overridden buttons, rapid fire, shared axes and migration |
 | [Firmware update](firmware-update.md) | Bundled-version comparison, confirmations, automatic programming, first installation and recovery |
 | [Configuration and storage design](configurator-design.md) | Current profile/bank formats, Feature commands, scheduling, and GUI behavior |
 | [GPIO assignment and board porting](gpio-assignment.md) | Standard pins and exact source locations to change for another board |
@@ -13,4 +14,4 @@ These documents describe the current Windows configurator 0.19.0 and normal firm
 | [Compatibility](compatibility.md) | Tested controllers, unsupported cases, and unresolved limitations |
 | [Verification](verification.md) | Current build checks, current-format validation, empty startup, screenshots, and memory budget |
 
-The main-window and firmware-update screenshots use the current English GUI. The unchanged axis dialog retains its 0.16.0 reference image.
+The button-shift screenshot uses the 0.20.0 English GUI. The general main-window and firmware-update screenshots retain their 0.19.0 reference images; the unchanged axis dialog retains its 0.16.0 image. Their version labels describe those captures.

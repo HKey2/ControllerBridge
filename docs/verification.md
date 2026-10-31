@@ -1,6 +1,52 @@
 # Current verification
 
-Applies to ControllerBridge Windows configurator and normal firmware 0.19.0. This release adds first-empty-slot selection for an input without a profile and guards registration against connection changes and occupied destinations. It retains the RGB wire order introduced in 0.18.1. Custom, status, and diagnostic colors share the same board-order conversion. Default dim blue and the low-brightness notification levels are preserved. Custom colors use the three previously reserved profile bytes and flag bit 3 without increasing the stored sizes. It preserves the Flash storage identity introduced in 0.16.0, binary profile/bank layout version 5, and JSON backup/export version 2.
+Applies to ControllerBridge Windows configurator and normal firmware 0.20.0. This release adds a button-only shifted page, AND modifiers and inherited mappings, and migrates version-5 settings to the expanded version-6 profile/bank format. New JSON exports use version 3 and retain version-2 import support. The dated 0.19.0 entries below describe the checks and images at those times; their old hashes and compatibility statements are historical. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+
+## 2026-11-01: DPI layout correction
+
+The reported half-width controls and clipped LED dialog were reproduced with a synthetic 192-DPI startup baseline followed by display on a 96-DPI window. The form was consuming its DPI baseline before its control tree was complete. Forms now defer the initial scaling pass until construction ends. Hidden mapping/wizard pages retain their parents, single-column tables follow the window width during repeated scaling, and owner-drawn secondary fonts use the scaled control font. Windows fit the monitor's working area and provide scrolling when their content minimum is larger than the screen. The English square Capture button displays **CAP**, retaining its full tooltip and accessible name.
+
+The final .NET 9 build passed these checks:
+
+| Verification | Result |
+|---|---|
+| Japanese/English × initial DPI 96, 120, 144, 192 | All 8 cases passed |
+| Native DPI notifications, each language | 96 → 120 → 144 → 192 → 96 → 192 → 96 passed |
+| Main output tabs and combined-mode radio changes | Button text fit, mapping-cell dimensions and reachable controls passed at every step |
+| LED, shift, rapid fire, axis, profile switching, registration, input log and simulated updater | Visible buttons fit and remain reachable; registration pages keep their mapping size when opened |
+| Working areas 1920×1040 and 1280×680 | Window bounds fit; selecting the shift dialog's Apply button scrolls it fully into view |
+| DPI assertions across the above cases | 43,912 passed; includes repeated text/bounds checks through control ancestors |
+| Published EXE functional suites | 692 per language, 1,384 total passed: self 134, shift 30, LED 162, updater 124, connection 46, profile 23, arrival 42, axis 82, input log 33 and output tabs 16 |
+
+The first English self-test encountered an `IOException` in `File.Replace` while replacing a test JSON file. Its log remains at `build/dpi/function-checks/en/self/error.txt`. The same published EXE passed the self-test and remaining English suites in a fresh output directory without a production-code change. The underlying cause of that file-operation failure has not been established.
+
+The DPI runner uses the .NET 9 startup-DPI cache and native DPI-change notifications for controlled layout checks; it does not change Windows display settings. Both connected monitors were actually at 96 DPI during verification. Synthetic startup screenshots do not reproduce all native font-rasterization behavior at another system DPI. These checks are not a physical 4K-at-200% / FHD-at-100% monitor-move test. Native 96-DPI captures and captures after simulated DPI transitions were also visually inspected. The images below come from the published EXE at native 96 DPI using synthetic profiles.
+
+![DPI-corrected combined output controls](gui-dpi-main-en.png)
+
+![DPI-corrected LED settings with complete instructions and actions](gui-dpi-led-en.png)
+
+Run the regression matrix after preparing the normal firmware package and restoring the existing GUI dependencies:
+
+```powershell
+.\tools\check-gui-dpi.ps1 -OutputDirectory build/dpi-new-run
+```
+
+Use a fresh output directory. The runner opens only preview forms and a fake updater device. It records results and captures per case, and leaves OS settings, physical USB devices and saved profiles untouched. The project and runner continue to use the installed .NET 9 SDK. The current 0.20.0 firmware UF2 remains byte-identical (`3588776F42A03FCD91E895E3A07C98205E89F8F0ACD439554B485E1B4DC7E30D`), so the board memory figures below are unchanged.
+
+## 2026-11-01: button shift and format migration
+
+The RP2350 Release firmware built successfully with the pinned Pico toolchain. The self-contained Windows x64 configurator was published with the existing .NET 9 SDK. The UF2 is 192,512 bytes, SHA-256 `3588776F42A03FCD91E895E3A07C98205E89F8F0ACD439554B485E1B4DC7E30D`.
+
+- C tests: **13,051 checks passed**, including 78 dedicated shift checks using the real mapper, runtime, and Flash store implementation with simulated hardware. Coverage includes AND detection, inherited/remapped/muted outputs, modifier consumption and full-release guard, held inputs, split report IDs, common axes, rapid phases, shortcut conflicts, detach/seed, and no Flash write during page changes. Version-5 migration preserves all 16 slots and metadata; simulated first/second commit interruptions retain a valid bank and preserve common settings/measurements. C also executes the C#-generated version-6 shift fixture.
+- CLI: **17 checks passed**, including the 848-byte/version-6 encoding. Existing stateless live-validation scripts accept current profiles only when shift is disabled and explicitly reject shifted profiles; they are not used as a shift oracle.
+- GUI: Japanese and English each pass shift 30, general self-test 134, firmware update 124, connection 46, profile menu 23, controller arrival 42, axes 82, input log 33, and LED 162: **676 per language, 1,352 total**. Shift checks open the actual modal dialog from the main window, deliver input through the normal path, apply only to an unsaved draft, and cover cancellation of delayed learning after selecting No output or Inherit from main. The full suites passed before the final learning-cancellation/text polish; affected shift/self/axis/input-log suites were rerun on the final EXE.
+- Japanese and English shift captures were inspected for complete controls, readable instructions, override marks, and absence of independent axis controls. The new English [shift screenshot](gui-shift-en.png) uses synthetic settings, not a read from a user's board.
+
+An earlier English connection-suite run failed an existing state assertion. The assertion was extended to record the actual state; a diagnostic rerun and the complete final bilingual run passed. The original failure log is retained under `build/shift/checks/en/connection/error.txt`; its cause remains undetermined. No production connection behavior was changed to make it pass.
+
+No physical USB device was opened or programmed by the shift tests. Real controller/gameplay response, hardware Flash interruption, and timing under hardware load remain unverified. Host tests establish state transitions and simulated recovery, not physical power-loss performance. Direction correction is deferred and unchanged.
+
 
 ## 2026-10-31 cancellable BOOT connection wait
 
@@ -145,6 +191,7 @@ The GUI contains its own diagnostic entry points, so the following checks run fr
 .\dist\ControllerBridge.exe --check-input-log captures/input-log --language ja
 .\dist\ControllerBridge.exe --check-input-log-paint captures/input-log-paint --language ja
 .\dist\ControllerBridge.exe --check-axis-dialog captures/axis-dialog --language ja
+.\dist\ControllerBridge.exe --check-button-shift captures/shift --language ja
 ```
 
 No SDK/runtime is installed or updated by these scripts. The target framework remains `net9.0-windows`. The board has not been flashed by this change. Use the new **Firmware update** workflow to install the embedded firmware. Settings written by 0.16.0 remain supported; older Flash records are ignored.
@@ -153,13 +200,13 @@ No SDK/runtime is installed or updated by these scripts. The target framework re
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 86,884; persistent storage 32,768 | 1,977,500 |
-| SRAM, 532,480 bytes | Static data 123,448; two stacks 8,192 | 400,840 |
-| One bank copy, 8,192 bytes | Payload 8,148 + header 16 | 28 |
+| Flash, 2,097,152 bytes | Code/initial values 96,148; persistent storage 49,152 | 1,951,852 |
+| SRAM, 532,480 bytes | Static data 151,588; two stacks 8,192 | 372,700 |
+| One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 
-Static SRAM consists of vector table 272, initialized data 31,920, and BSS 91,256 bytes. The linker minimum heap of 2,048 bytes is part of the remaining SRAM, not an additional subtraction. These are allocation figures, not measured peak stack or free-heap values.
+Static SRAM consists of vector table 272, initialized data 34,016, and BSS 117,300 bytes. The linker minimum heap of 2,048 bytes is part of the remaining SRAM, not an additional subtraction. These are allocation figures, not measured peak stack or free-heap values.
 
-These figures were remeasured from the 0.19.0 ELF/linker map. Compared with 0.18.1, guarded registration adds 424 Flash bytes and 4 static SRAM bytes. The profile remains 488 bytes, with all three tail bytes used for RGB888. The bank remains 8,148 bytes and the UF2 is 174,080 bytes. Optional diagnostic builds have separate memory requirements.
+These figures were measured from the 0.20.0 ELF/linker map. Compared with 0.19.0, code/initial values grow by 9,264 bytes, static SRAM by 28,140 bytes, and reserved Flash by 16,384 bytes. The profile is 848 bytes (488-byte main prefix plus a 360-byte shift block); the bank is 13,908 bytes. The UF2 is 192,512 bytes. Optional diagnostic builds have separate memory requirements.
 
-The GUI arrival tracker runs on the PC. The firmware guard adds only transient state; it does not enlarge stored profiles, banks, or their reserved Flash areas.
+Button-page transitions use runtime state only; they do not write Flash. Both pages share all four axis settings. The GUI editor and test image buffers allocate PC memory, outside the board figures above.

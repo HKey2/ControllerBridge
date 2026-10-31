@@ -8,8 +8,11 @@ namespace ControllerBridge;
 // editor does not change. Device generation is assigned afresh when committing.
 internal sealed class SlotBank
 {
-    public const int ByteCount = 8148;
-    private const int ProfilesAt = 16, IdsAt = 7824, PreferredAt = 8080, KeysAt = 8084;
+    public const int ByteCount = 13908;
+    public const int LegacyByteCount = 8148;
+    private const int ProfilesAt = 16;
+    internal const int IdsAt = ProfilesAt + DeviceProfile.SlotCount * DeviceProfile.ByteCount;
+    private const int PreferredAt = IdsAt + 256, KeysAt = PreferredAt + 4;
     private readonly byte[] bytes;
     public uint Generation => Wire.U32(bytes, 8);
     public uint PreferredSlots => Wire.U32(bytes, PreferredAt);
@@ -17,7 +20,15 @@ internal sealed class SlotBank
     public DeviceProfile[] Profiles { get; }
     public SlotBank(byte[] data)
     {
-        if (data.Length != ByteCount || Wire.U32(data, 0) != 0x31425055 || Wire.U32(data, 4) != 5 || Wire.U32(data, 12) != ByteCount)
+        if (data.Length == LegacyByteCount && Wire.U32(data, 0) == 0x31425055 && Wire.U32(data, 4) == 5 && Wire.U32(data, 12) == LegacyByteCount)
+        {
+            byte[] migrated = new byte[ByteCount]; data.AsSpan(0, 16).CopyTo(migrated);
+            for (int i = 0; i < DeviceProfile.SlotCount; i++)
+                DeviceProfile.Decode(data.AsSpan(16 + i * DeviceProfile.LegacyByteCount, DeviceProfile.LegacyByteCount).ToArray()).Encode().CopyTo(migrated, 16 + i * DeviceProfile.ByteCount);
+            data.AsSpan(7824, 324).CopyTo(migrated.AsSpan(IdsAt));
+            Wire.W32(migrated, 4, 6); Wire.W32(migrated, 12, ByteCount); data = migrated;
+        }
+        if (data.Length != ByteCount || Wire.U32(data, 0) != 0x31425055 || Wire.U32(data, 4) != 6 || Wire.U32(data, 12) != ByteCount)
             throw new InvalidDataException(L.T("未対応のスロット保存形式です。", "This slot backup format is not supported."));
         bytes = (byte[])data.Clone();
         Profiles = Enumerable.Range(0, DeviceProfile.SlotCount).Select(i =>
@@ -34,6 +45,7 @@ internal sealed class SlotBank
         for (int i = 0; i < Profiles.Length; i++)
         {
             DeviceProfile p = Profiles[i]; uint keys = SwitchKeys(i);
+            p.Shift.ValidateSwitchKeys(p, keys);
             if (!p.Enabled && (p.ProfileId != Guid.Empty || keys != 0 || (PreferredSlots & (1u << i)) != 0)) throw Invalid();
             if (p.ProfileId != Guid.Empty && !ids.Add(p.ProfileId)) throw Invalid();
             if (keys != 0 && ((keys & ~0x3ffffu) != 0 || (keys & (keys - 1)) == 0 ||
@@ -70,7 +82,7 @@ internal sealed class SlotBank
     internal static SlotBank FromProfiles(DeviceProfile[] profiles, uint preferred = 0, uint[]? keys = null)
     {
         if (profiles.Length != DeviceProfile.SlotCount || keys is not null && keys.Length != profiles.Length) throw new ArgumentException("slots");
-        byte[] data = new byte[ByteCount]; Wire.W32(data, 0, 0x31425055); Wire.W32(data, 4, 5); Wire.W32(data, 12, ByteCount);
+        byte[] data = new byte[ByteCount]; Wire.W32(data, 0, 0x31425055); Wire.W32(data, 4, 6); Wire.W32(data, 12, ByteCount);
         for (int i = 0; i < profiles.Length; i++)
         {
             profiles[i].Encode().CopyTo(data, ProfilesAt + i * DeviceProfile.ByteCount);
@@ -83,7 +95,7 @@ internal sealed class SlotBank
 internal sealed class SlotBackup
 {
     public string Format { get; set; } = "ControllerBridge.Slots";
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public DateTimeOffset CreatedUtc { get; set; }
     public string Sha256 { get; set; } = "";
     public byte[] Bank { get; set; } = [];
@@ -104,7 +116,7 @@ internal sealed class SlotBackup
     {
         if (new FileInfo(path).Length > 256 * 1024) throw new InvalidDataException(L.T("バックアップファイルが大きすぎます。", "The backup file is too large."));
         SlotBackup file = JsonSerializer.Deserialize<SlotBackup>(File.ReadAllText(path)) ?? throw new InvalidDataException(L.T("バックアップを読み込めません。", "The backup could not be read."));
-        if (file.Format != "ControllerBridge.Slots" || file.Version != 2 || file.Bank is null || file.Bank.Length != SlotBank.ByteCount ||
+        if (file.Format != "ControllerBridge.Slots" || file.Version is not (2 or 3) || file.Bank is null || file.Bank.Length is not (SlotBank.ByteCount or SlotBank.LegacyByteCount) ||
             !string.Equals(file.Sha256, Convert.ToHexString(SHA256.HashData(file.Bank)), StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(L.T("バックアップの形式またはチェックサムが不正です。", "The backup format or checksum is invalid."));
         return new(file.Bank);

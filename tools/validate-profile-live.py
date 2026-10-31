@@ -43,8 +43,10 @@ def main():
     ap.add_argument('--statistics', action='store_true', help='Capture volatile firmware statistics; no Flash writes')
     args = ap.parse_args()
     profile = args.profile.read_bytes()
-    if len(profile) not in (480, 488) or profile[11]:
+    if len(profile) not in (480, 488, 848) or profile[11]:
         raise ValueError('Expected a supported profile with all analog outputs disabled')
+    if len(profile) == 848 and profile[492]:
+        raise ValueError('This stateless live check requires button shift to be disabled')
     if any(profile[64 + i * 16 + 7] for i in range(18)):
         raise ValueError('This stable-input check requires rapid-fire OFF; generated transitions need a timed check')
     usb.bind(usb.h, 'HidD_GetInputReport', [usb.P, usb.P, usb.U32], c.c_ubyte)

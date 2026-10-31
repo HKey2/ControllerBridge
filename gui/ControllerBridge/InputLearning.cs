@@ -46,7 +46,9 @@ internal sealed class ButtonLearner
 // until the owning window explicitly calls SaveAsync.
 internal sealed class MappingEditor : UserControl
 {
-    private readonly bool mouseMode;
+    private readonly bool mouseMode, shiftPage;
+    private readonly Button shift, inherit;
+    private ShiftDialog? shiftDialog;
     private readonly TableLayoutPanel buttonGrid;
     private readonly Label outputHeading;
     private readonly Button[] buttons = new Button[18];
@@ -67,13 +69,16 @@ internal sealed class MappingEditor : UserControl
     public event EventHandler? Modified;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<Task<bool>>? PrepareLearningAsync { get; set; }
-    public MappingEditor(bool mouseMode = false)
+    public MappingEditor(bool mouseMode = false, bool shiftPage = false)
     {
-        this.mouseMode = mouseMode;
-        Dock = DockStyle.Fill; BackColor = Ui.Surface; Padding = new(8); AutoScaleMode = AutoScaleMode.Inherit; AutoScroll = true;
+        this.mouseMode = mouseMode; this.shiftPage = shiftPage;
+        SuspendLayout();
+        Dock = DockStyle.Fill; BackColor = Ui.Surface; Padding = new(8);
+        AutoScaleDimensions = new(96, 96); AutoScaleMode = AutoScaleMode.Dpi; AutoScroll = true;
         // Keep complete controls at their preferred height, even when the host
         // window is small or an instruction wraps. The editor scrolls as needed.
         TableLayoutPanel root = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 6 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
@@ -81,7 +86,10 @@ internal sealed class MappingEditor : UserControl
         heading.ColumnStyles.Add(new(SizeType.Percent, 100)); heading.ColumnStyles.Add(new(SizeType.AutoSize));
         outputHeading = Ui.Label(mouseMode ? L.T("1  マウスの出力ボタンを選択", "1  Select a mouse output button") : L.T("1. コンソール側の対応ボタンを選択", "1. Select the corresponding console button"), 12, true);
         heading.Controls.Add(outputHeading, 0, 0);
-        rapid = Ui.Button(L.T("連射設定…", "Rapid fire…"), (_, _) => EditRapidFire()); heading.Controls.Add(rapid, 1, 0); root.Controls.Add(heading, 0, 0);
+        rapid = Ui.Button(L.T("連射設定…", "Rapid fire…"), (_, _) => EditRapidFire());
+        shift = Ui.Button(L.T("シフト設定…", "Button shift…"), (_, _) => EditShift()); shift.Visible = !shiftPage;
+        FlowLayoutPanel actions = new() { AutoSize = true, Anchor = AnchorStyles.Right, WrapContents = false };
+        actions.Controls.Add(rapid); actions.Controls.Add(shift); heading.Controls.Add(actions, 1, 0); root.Controls.Add(heading, 0, 0);
         rapid.Visible = !mouseMode;
         // Empty cells preserve the Switch controller's spatial groups. These
         // values are existing output IDs; their wire/profile order never changes.
@@ -114,10 +122,16 @@ internal sealed class MappingEditor : UserControl
         guide.RowStyles.Add(new(SizeType.AutoSize)); guide.RowStyles.Add(new(SizeType.AutoSize));
         instruction = Ui.Label(L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller"), 11, true); instruction.Dock = DockStyle.Fill;
         detail = Ui.Label(L.T("ボタンを選ぶと、ここに操作手順を表示します。", "Select an output button to see the instructions here."), 9); detail.Dock = DockStyle.Fill; detail.ForeColor = Ui.Muted;
-        clear = Ui.Button(L.T("割り当て解除", "Clear mapping"), (_, _) => { if (selected < 0) return; profile.Buttons[selected] = new(); learner = null; UpdateButtons(); detail.Text = L.T("割り当てを解除しました。本体に保存すると反映されます。", "Mapping cleared. Save to the device to apply it."); Modified?.Invoke(this, EventArgs.Empty); });
-        guide.Controls.Add(instruction, 0, 0); guide.Controls.Add(detail, 0, 1); guide.Controls.Add(clear, 1, 0); guide.SetRowSpan(clear, 2); root.Controls.Add(guide, 0, 2);
+        clear = Ui.Button(shiftPage ? L.T("出力なし", "No output") : L.T("割り当て解除", "Clear mapping"), (_, _) => { if (selected < 0) return; learningRequest++; SetBinding(selected, new()); learner = null; UpdateButtons(); detail.Visible = true; instruction.Text = TargetName(selected) + L.T("：出力なし", ": no output"); detail.Text = L.T("割り当てを解除しました。本体に保存すると反映されます。", "Mapping cleared. Save to the device to apply it."); Modified?.Invoke(this, EventArgs.Empty); });
+        guide.Controls.Add(instruction, 0, 0); guide.Controls.Add(detail, 0, 1); inherit = Ui.Button(L.T("表から継承", "Inherit from main"), (_, _) => {
+            if (selected < 0) return; learningRequest++; profile.Shift.Overrides &= ~(1u << selected); profile.Shift.Buttons[selected] = new(); learner = null;
+            UpdateButtons(); detail.Visible = true; instruction.Text = TargetName(selected) + L.T("：表から継承", ": inherit from main"); detail.Text = L.T("表ページの割り当てを引き継ぎます。", "This output inherits its main-page mapping."); Modified?.Invoke(this, EventArgs.Empty);
+        }); inherit.Visible = shiftPage;
+        FlowLayoutPanel mappingActions = new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        mappingActions.Controls.Add(clear); mappingActions.Controls.Add(inherit);
+        guide.Controls.Add(mappingActions, 1, 0); guide.SetRowSpan(mappingActions, 2); root.Controls.Add(guide, 0, 2);
         Label axisHeading = Ui.Label(L.T("アナログ・スティック（必要な軸だけ設定）", "Analog sticks (configure only the axes you need)"), 11, true);
-        axisHeading.Visible = !mouseMode; root.Controls.Add(axisHeading, 0, 3);
+        axisHeading.Visible = !mouseMode && !shiftPage; root.Controls.Add(axisHeading, 0, 3);
         TableLayoutPanel axisRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, RowCount = 1 };
         for (int i = 0; i < 4; i++)
         {
@@ -125,7 +139,7 @@ internal sealed class MappingEditor : UserControl
             Button b = Ui.Button(""); b.Dock = DockStyle.Fill; b.Click += (_, _) => EditAxis(axis); axes[i] = b; axisRow.Controls.Add(b, i, 0);
         }
         root.Controls.Add(axisRow, 0, 4);
-        axisRow.Visible = !mouseMode;
+        axisRow.Visible = !mouseMode && !shiftPage;
         Label axisHelp = Ui.Label(L.T("出力軸: Xは左→右、Yは上→下。2つのボタンからスティック軸も作れます。", "Output axes: X is left → right; Y is up → down. Two buttons can also control an axis."), 9);
         axisHelp.Dock = DockStyle.Fill; axisHelp.ForeColor = Ui.Muted;
         if (mouseMode) {
@@ -137,13 +151,15 @@ internal sealed class MappingEditor : UserControl
         }
         Controls.Add(root); UpdateButtons();
         if (mouseMode) SetNavigationMode(false);
+        ResumeLayout(true);
     }
     public void SetNavigationMode(bool enabled)
     {
         if (!mouseMode) return;
         outputHeading.Text = enabled ? L.T("1  マウス・操作ボタンの出力を選択", "1  Select a mouse or navigation output button") : L.T("1  マウスの出力ボタンを選択", "1  Select a mouse output button");
         foreach (int index in new[] { 8, 9, 12 }) buttons[index].Visible = enabled;
-        buttonGrid.RowStyles[1].Height = enabled ? LogicalToDeviceUnits(72) : 0;
+        // Use the already-scaled first row, including during initial construction.
+        buttonGrid.RowStyles[1].Height = enabled ? buttonGrid.RowStyles[0].Height : 0;
     }
     public void Bind(DeviceProfile value, List<InputField> source, bool allowLearn, bool allowRapid = false)
     {
@@ -158,13 +174,14 @@ internal sealed class MappingEditor : UserControl
         learningRequest++;
         learner = null;
         if (axisDialog is not null) axisDialog.ConnectionLost();
+        shiftDialog?.ConnectionLost();
         if (reason is not null) { instruction.Text = reason; detail.Text = L.T("入力を離してから、出力ボタンを選び直してください。", "Release all inputs, then select the output button again."); }
     }
     public async void SelectButton(int index)
     {
         int request = ++learningRequest; selected = index; learner = null; UpdateButtons();
         if (!profile.Enabled) { instruction.Text = L.T("先に「コントローラーを追加」を選んでください。", "Choose “Add controller” first."); return; }
-        if (!canLearn) { instruction.Text = L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."); detail.Text = profile.Buttons[index].ToString(); return; }
+        if (!canLearn) { instruction.Text = L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."); detail.Text = Binding(index).ToString(); return; }
         instruction.Text = L.T("現在の入力状態を確認しています…", "Checking the current input state…");
         if (PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
@@ -175,11 +192,11 @@ internal sealed class MappingEditor : UserControl
     }
     public void OnInput(InputField field, int value)
     {
-        axisDialog?.OnInput(field, value);
+        axisDialog?.OnInput(field, value); shiftDialog?.OnInput(field, value);
         if (learner?.Observe(field, value) is not LearnedInput learned || selected < 0) return;
         detail.Visible = true;
-        learned.Binding.RapidHz = profile.Buttons[selected].RapidHz;
-        profile.Buttons[selected] = learned.Binding; learner = null;
+        learned.Binding.RapidHz = Binding(selected).RapidHz;
+        SetBinding(selected, learned.Binding); learner = null;
         instruction.Text = L.T($"{TargetName(selected)} ← {learned.Field.Label} を割り当てました", $"Assigned {TargetName(selected)} ← {learned.Field.Label}");
         detail.Text = learned.Binding + L.T("　／　本体に保存すると反映されます。", " / Save to the device to apply it.");
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
@@ -200,17 +217,36 @@ internal sealed class MappingEditor : UserControl
     private void EditRapidFire()
     {
         AbortLearning();
-        using RapidFireDialog dialog = new(profile);
+        DeviceProfile effective = profile.Clone();
+        effective.Buttons = Enumerable.Range(0, 18).Select(i => ShiftSettings.Copy(Binding(i))).ToArray();
+        using RapidFireDialog dialog = new(effective);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
         bool changed = false;
         for (int i = 0; i < 18; i++)
         {
-            changed |= profile.Buttons[i].RapidHz != dialog.Rates[i];
-            profile.Buttons[i].RapidHz = dialog.Rates[i];
+            if (Binding(i).RapidHz == dialog.Rates[i]) continue;
+            DigitalBinding binding = ShiftSettings.Copy(Binding(i)); binding.RapidHz = dialog.Rates[i];
+            SetBinding(i, binding); changed = true;
         }
         if (!changed) return;
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
         instruction.Text = L.T("連射設定を変更しました", "Rapid fire settings changed"); detail.Text = L.T("本体に保存すると、設定したボタンを押している間だけ連射します。", "Save to the device to enable rapid fire while holding the configured buttons.");
+    }
+    private DigitalBinding Binding(int i) => shiftPage && (profile.Shift.Overrides & (1u << i)) != 0 ? profile.Shift.Buttons[i] : profile.Buttons[i];
+    private void SetBinding(int i, DigitalBinding value)
+    {
+        if (shiftPage) { profile.Shift.Overrides |= 1u << i; profile.Shift.Buttons[i] = value; }
+        else profile.Buttons[i] = value;
+    }
+    private void EditShift()
+    {
+        if (!profile.Enabled || shiftPage) return;
+        AbortLearning();
+        using ShiftDialog dialog = new(profile, fields, canLearn, supportsRapid, PrepareLearningAsync); shiftDialog = dialog;
+        try {
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+            profile.Shift = dialog.Result; UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
+        } finally { shiftDialog = null; }
     }
     private string TargetName(int index) => mouseMode ? index switch
         { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => "HOME", _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
@@ -219,16 +255,20 @@ internal sealed class MappingEditor : UserControl
         for (int i = 0; i < 18; i++)
         {
             if (buttons[i] is null) continue;
-            bool set = profile.Buttons[i].Mode != 0;
-            buttons[i].Text = mouseMode ? TargetName(i) + (i == 1 ? L.T("\nBと共通", "\nShared with B") : i == 2 ? L.T("\nAと共通", "\nShared with A") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "Capture"), _ => DeviceProfile.Targets[i] };
+            bool set = Binding(i).Mode != 0;
+            buttons[i].Text = mouseMode ? TargetName(i) + (i == 1 ? L.T("\nBと共通", "\nShared with B") : i == 2 ? L.T("\nAと共通", "\nShared with A") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
+            if (shiftPage && (profile.Shift.Overrides & (1u << i)) != 0) buttons[i].Text += " *";
             buttons[i].AccessibleName = TargetName(i) + L.T(" 出力ボタン", " output button");
-            buttons[i].AccessibleDescription = (set ? L.T("割り当て済み: ", "Assigned: ") : "") + profile.Buttons[i];
-            tips.SetToolTip(buttons[i], TargetName(i) + " ← " + profile.Buttons[i]);
+            buttons[i].AccessibleDescription = (set ? L.T("割り当て済み: ", "Assigned: ") : "") + Binding(i);
+            tips.SetToolTip(buttons[i], TargetName(i) + " ← " + Binding(i) + (shiftPage ? (profile.Shift.Overrides & (1u << i)) == 0 ? L.T("（表から継承）", " (inherited)") : L.T("（裏ボタン登録あり）", " (registered shifted mapping)") : ""));
             Ui.ButtonColors(buttons[i], i == selected, set);
             buttons[i].Invalidate();
         }
         clear.Enabled = selected >= 0 && profile.Enabled;
-        int rapidCount = profile.Buttons.Count(b => b.RapidHz != 0);
+        inherit.Enabled = shiftPage && selected >= 0 && profile.Enabled;
+        shift.Enabled = profile.Enabled;
+        shift.Text = profile.Shift.Keys.Count == 0 ? L.T("シフト設定…", "Button shift…") : L.T($"シフト設定…（{profile.Shift.Keys.Count}キー）", $"Button shift… ({profile.Shift.Keys.Count} {(profile.Shift.Keys.Count == 1 ? "key" : "keys")})");
+        int rapidCount = Enumerable.Range(0, 18).Count(i => Binding(i).RapidHz != 0);
         rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（本体の更新が必要）", "Rapid fire (update required)");
         rapid.Enabled = profile.Enabled && supportsRapid;
         tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒2～30回を設定します。", "Set each button to OFF or 2–30 presses per second.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));

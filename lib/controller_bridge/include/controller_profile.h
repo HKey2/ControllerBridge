@@ -6,7 +6,10 @@
 #define UP_PROFILE_COUNT 16
 #define UP_DIGITAL_COUNT 18
 #define UP_AXIS_COUNT 4
-#define UP_PROFILE_BYTES 488
+#define UP_PROFILE_BYTES 848
+#define UP_SHIFT_KEYS 4
+#define UP_LEGACY_PROFILE_BYTES 488
+#define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
 #define UP_ID_BYTES 16
 #define UP_RAPID_MIN_HZ 2
@@ -50,6 +53,12 @@ typedef struct {
 } up_analog;
 typedef union { up_analog analog; up_digital pair[2]; } up_axis;
 typedef struct {
+    uint32_t overrides; // One bit per output: 0 inherits, 1 replaces (disabled = mute).
+    uint8_t count,reserved[3]; // All configured physical modifiers must be held.
+    up_digital keys[UP_SHIFT_KEYS];
+    up_digital digital[UP_DIGITAL_COUNT];
+} up_shift;
+typedef struct {
     uint16_t version,flags,vid,pid,bcd_device;
     uint8_t input_interval_ms,axis_modes;
     uint32_t descriptor_hash;
@@ -57,6 +66,7 @@ typedef struct {
     up_digital digital[UP_DIGITAL_COUNT];
     up_axis axes[UP_AXIS_COUNT];
     up_mouse_options mouse;
+    up_shift shift;
 } up_profile;
 typedef struct {
     uint32_t magic,version,generation,bytes;
@@ -68,7 +78,12 @@ typedef struct {
 typedef struct {
     const up_profile *profile;
     bool digital[UP_DIGITAL_COUNT],pairs[UP_AXIS_COUNT][2];
-    uint8_t axes[UP_AXIS_COUNT];
+    bool base_digital[UP_DIGITAL_COUNT],shift_digital[UP_DIGITAL_COUNT];
+    bool shift_active,shift_consumed;
+    uint8_t shift_held,axes[UP_AXIS_COUNT],raw_axes[UP_AXIS_COUNT];
+    uint32_t inherited_conflicts[UP_DIGITAL_COUNT];
+    uint8_t base_modifiers[UP_DIGITAL_COUNT],back_modifiers[UP_DIGITAL_COUNT];
+    uint8_t pair_modifiers[UP_AXIS_COUNT][2],analog_modifiers[UP_AXIS_COUNT];
     uint32_t rapid_configured,rapid_held,rapid_on,physical;
     uint32_t rapid_time[UP_DIGITAL_COUNT],rapid_phase[UP_DIGITAL_COUNT],rapid_next[UP_DIGITAL_COUNT];
     sw_report last_output;
@@ -86,11 +101,16 @@ _Static_assert(sizeof(up_digital)==16,"digital wire ABI");
 _Static_assert(sizeof(up_analog)==32,"analog wire ABI");
 _Static_assert(sizeof(up_profile)==UP_PROFILE_BYTES,"profile wire ABI");
 _Static_assert(sizeof(up_mouse_options)==8,"mouse profile wire ABI");
-_Static_assert(sizeof(up_bank)==8148,"16 profiles fit two flash sectors with store header");
+_Static_assert(sizeof(up_shift)==360,"button shift wire ABI");
+_Static_assert(sizeof(up_bank)==13908,"16 profiles fit four flash sectors with store header");
 
 void up_profile_clear(up_profile *profile);
 void up_bank_clear(up_bank *bank);
 bool up_profile_valid(const up_profile *profile);
+bool up_digital_overlap(const up_digital *a,const up_digital *b);
+bool up_profile_shift_conflicts(const up_profile *profile,uint32_t switch_keys);
+// Expand a validated v5 payload already copied to the beginning of this bank.
+bool up_bank_upgrade_v5(up_bank *bank);
 uint8_t up_profile_output_options(const up_profile *profile);
 uint32_t up_profile_led_rgb(const up_profile *profile); // 0xRRGGBB; default 0x000001.
 bool up_bank_valid(const up_bank *bank);
@@ -105,12 +125,13 @@ uint32_t up_crc32(const void *data,unsigned length);
 void up_mapper_attach(up_mapper *mapper,const up_profile *profile);
 bool up_mapper_apply(up_mapper *mapper,uint8_t interface_number,const uint8_t *report,unsigned length,sw_report *output);
 void up_mapper_report(const up_mapper *mapper,sw_report *output);
+void up_mapper_seed(up_mapper *mapper,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value);
 // Apply hold-to-repeat after mapping, independently of USB input report timing.
 // Returns true only when the filtered output changed. No waits or catch-up burst.
 bool up_mapper_tick(up_mapper *mapper,uint32_t now_us,bool output_ready,sw_report *output);
 void up_release_guard_begin(up_release_guard *guard,const up_profile *profile,uint32_t keys);
 void up_release_guard_apply(up_release_guard *guard,uint8_t interface_number,const uint8_t *report,unsigned length);
-// Load the current bank from two-sector slots 4/5; otherwise return an empty bank.
+// Load four-sector slots 4/5, or migrate the read-only v5 banks in RAM.
 bool up_registry_load(up_bank *bank);
 bool up_registry_save(up_bank *bank,unsigned slot,const up_profile *profile);
 // NULL preserves the existing ID; disabled profiles always clear it.

@@ -2,7 +2,7 @@
 
 ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
 
-**Current development release: firmware 0.19.0 and Windows configurator 0.19.0.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
+**Current development release: firmware 0.20.0 and Windows configurator 0.20.0.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
 
 ![ControllerBridge profile list, English interface](docs/gui-main-en.png)
 
@@ -18,19 +18,20 @@ Only one configurator instance can run. Close other bridge configuration tools w
 
 At startup and during background discovery, the tool checks firmware before reading settings. A factory-state RP2350-USB-A exposing Pico SDK USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge with no readable version shows **Device unsupported** and automatically opens the firmware installation guide. A readable different version opens the update guide. With no recognized board, the status is **Device not connected** and no guide opens. Cancelling the wait or declining the final confirmation keeps the unsupported status visible without repeating the guide during that connection; an observed disconnection rearms guidance for the next attachment. Background retries preserve drafts and do not repeatedly disable or repaint the editor. **Firmware update** remains available for manual installation or USB identities outside these recognized cases.
 
-New input detection never opens a registration confirmation or writes settings. Selection happens once per attachment, so later manual browsing is preserved. Unsaved edits and modal operations defer the move. A full bank shows a nonmodal no-empty-slot message only when no matching profile exists. Slots with unsaved profiles or pending deletions are protected. Registration in 0.19.0 verifies the original input connection and empty destination at both transfer start and commit; install the matching bundled firmware to use this protection.
+New input detection never opens a registration confirmation or writes settings. Selection happens once per attachment, so later manual browsing is preserved. Unsaved edits and modal operations defer the move. A full bank shows a nonmodal no-empty-slot message only when no matching profile exists. Slots with unsaved profiles or pending deletions are protected. Registration since 0.19.0 verifies the original input connection and empty destination at both transfer start and commit; install the matching bundled firmware to use this protection.
 
-This release keeps the storage generation introduced in 0.16.0. Settings from versions earlier than 0.16.0 are ignored, and those boards start with all 16 slots unused. Register controllers again; subsequent saves remain persistent across restarts.
+This release adds hold-to-shift button mappings. Existing 0.16.0–0.19.0 settings migrate to the new format with shift disabled, preserving the main mappings, axes, IDs, shortcuts, output settings and LED colors. Back up all slots before updating if you may need to return to older firmware: old firmware cannot read the new format. Pre-0.16.0 records remain unsupported and start with 16 unused slots. See [button shift](docs/button-shift.md).
 
 ## Profiles and output
 
-The board stores **16 slots**, including multiple settings for one controller. Each profile stores matching information, a name and stable ID, mappings, rapid fire, input interval, mouse settings, output mode, combined-mode button behavior, and LED color.
+The board stores **16 slots**, including multiple settings for one controller. Each profile stores matching information, a name and stable ID, mappings, button shift, rapid fire, input interval, mouse settings, output mode, combined-mode button behavior, and LED color.
 
 - **Duplicate profile** copies into the closest unused slot below the selection and appends an available `[2]`, `[3]`, etc. to its stored name. Save the new slot to persist it.
 - **Delete profile** clears the selected slot when you save it.
 - **LED RGB settings**, below Delete profile, selects the default dim blue (0, 0, 1) or exact R/G/B values from 0 to 255. Save the slot to apply it. Black (0, 0, 0) turns the ready LED off; status notifications still take priority. A six-digit RGB code field below the spinners accepts web colors with or without a leading # and stays synchronized with the channels. The preview uses a fixed display-only gamma of 4.0; saved RGB values remain exact.
 - Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
-- **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 2. Earlier backup/export formats are rejected.
+- **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 3. Version-2 backups and individual exports are imported with shift disabled; version 1 remains unsupported.
+- **Button shift…**, in the mapping editor, learns one to four physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
 Selecting an output tab edits the profile. Choose **Save slot to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
@@ -78,13 +79,14 @@ Use the existing pinned Pico SDK 2.1.1, Arm GCC 14.2.1, and .NET 9 SDK. The GUI 
 .\dist\ControllerBridge.exe --self-test captures/gui-check --language en
 .\dist\ControllerBridge.exe --check-profile-menu captures/profile-check --language en
 .\dist\ControllerBridge.exe --check-axis-dialog captures/axis-check --language en
+.\dist\ControllerBridge.exe --check-button-shift captures/shift-check --language en
 .\dist\ControllerBridge.exe --check-led-rgb captures/led-check --language en
 .\dist\ControllerBridge.exe --check-firmware-update captures/firmware-check --language en
 ```
 
 The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation. Developer previews accept `--preview --language en` or `--preview --language ja`.
 
-The latest connection, firmware workflow, and GUI self-tests pass 46, 124, and 134 checks respectively in each language. A connected factory-state board also passes 16 read-only checks in each language: unsupported status, startup guidance with only Cancel, and background discovery after a simulated absence. Both waits are cancelled without rebooting or writing the board; subsequent retries cause no additional guides or UI changes. Simulated BOOT arrival verifies the transition to final confirmation, including cancellation at the detection boundary. Earlier checks cover input arrival (42), LED settings (162), and 40 firmware registration cases, plus host-side storage/runtime checks. The UF2 is unchanged. Physical BOOT reconnection, programming, and the BOOT-to-application transition still require hardware validation. See [verification and its limits](docs/verification.md).
+The 0.20.0 build passes 13,051 deterministic C checks and 17 CLI checks. Japanese and English GUI suites cover 676 checks each (1,352 total), including 30 shift checks per language, asynchronous learning cancellation, actual modal input delivery, old-format migration, and existing connection/update/axis/LED behavior. These use simulated inputs and Flash; no board was programmed for this change. Real controller/gameplay response and physical power interruption during migration remain unverified. See [verification and its limits](docs/verification.md).
 
 ## Memory budget
 
@@ -92,12 +94,12 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 86,884; persistent storage 32,768 | 1,977,500 |
-| SRAM, 532,480 bytes | Static data 123,448; two stacks 8,192 | 400,840 |
-| One bank copy, 8,192 bytes | Payload 8,148 + header 16 | 28 |
+| Flash, 2,097,152 bytes | Code/initial values 96,148; persistent storage 49,152 | 1,951,852 |
+| SRAM, 532,480 bytes | Static data 151,588; two stacks 8,192 | 372,700 |
+| One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 
-Static SRAM is vector table 272 + initialized data 31,920 + BSS 91,256 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. The profile remains 488 bytes, the bank 8,148 bytes, and the UF2 file 174,080 bytes.
+Static SRAM is vector table 272 + initialized data 34,016 + BSS 117,300 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. A profile is 848 bytes, the bank is 13,908 bytes, and the UF2 file is 192,512 bytes.
 
 ## Repository contents and license
 

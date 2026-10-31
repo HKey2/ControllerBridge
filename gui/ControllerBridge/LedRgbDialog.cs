@@ -15,9 +15,10 @@ internal sealed partial class LedRgbDialog : Form
 
     public LedRgbDialog(DeviceProfile profile)
     {
-        Ui.Form(this, L.T("LED RGB設定", "LED RGB settings"), new(610, 425));
+        using IDisposable formLayout = Ui.Form(this, L.T("LED RGB設定", "LED RGB settings"), new(610, 425));
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false; DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 7 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 6; i++) root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100));
         root.Controls.Add(standard, 0, 0); root.Controls.Add(custom, 0, 1);

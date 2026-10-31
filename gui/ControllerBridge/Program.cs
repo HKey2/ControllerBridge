@@ -19,6 +19,7 @@ internal static class Program
         try
         {
             if (args.Length >= 2 && args[0] == "--self-test") { SelfTest.Run(args[1]); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-button-shift") { ShiftDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-led-rgb") { MainForm.RunLedChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-controller-arrival") { MainForm.RunControllerArrivalChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-firmware-update") { FirmwareChecks.Run(Path.GetFullPath(args[1])); return 0; }
@@ -128,12 +129,12 @@ internal static class SelfTest
         p.Name = new string('あ', 16); rejected = false; try { p.Encode(); } catch (InvalidDataException) { rejected = true; } Check(rejected, "UTF8 field bound");
         p.Name = "rapid test"; p.Buttons[2].RapidHz = 7;
         byte[] rapidBytes = p.Encode();
-        Check(Wire.U16(rapidBytes, 0) == 5 && rapidBytes[64 + 2 * 16 + 7] == 7, "v5 keeps the rapid-fire wire offset");
+        Check(Wire.U16(rapidBytes, 0) == 6 && rapidBytes[64 + 2 * 16 + 7] == 7, "v6 keeps the rapid-fire wire offset");
         Check(p.Clone().Buttons[2].RapidHz == 7, "rapid profile clone");
         File.WriteAllBytes(Path.Combine(directory, "gui-rapid-profile.bin"), rapidBytes);
         string rapidJson = Path.Combine(directory, "gui-rapid-profile.json"); ProfileFile.Save(rapidJson, p);
         DeviceProfile imported = ProfileFile.Load(rapidJson);
-        Check(imported.Version == 5 && imported.Encode().SequenceEqual(rapidBytes), "JSON preserves rapid feature and v5 settings");
+        Check(imported.Version == 6 && imported.Encode().SequenceEqual(rapidBytes), "JSON preserves rapid feature and v5 settings");
         File.WriteAllText(rapidJson, JsonSerializer.Serialize(new ProfileFile { Version = 1, Profile = p }));
         rejected = false; try { ProfileFile.Load(rapidJson); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "previous JSON export format is rejected");
@@ -158,7 +159,7 @@ internal static class SelfTest
         foreach (decimal gain in new[] { 1m, 10m, 10.1m, 16m, 25.5m, 25.6m, 63.9m, 64m })
         {
             p.Mouse.TrackballGain = gain; byte[] encoded = p.Encode();
-            Check(p.Clone().Mouse.TrackballGain == gain && Wire.U16(encoded, 0) == 5, "v5 gain boundaries preserve gain values");
+            Check(p.Clone().Mouse.TrackballGain == gain && Wire.U16(encoded, 0) == 6, "v5 gain boundaries preserve gain values");
             Check((encoded[481] | encoded[483] << 8) == gain * 10 && encoded[482] == 99, "extended gain bytes preserve paddle");
             ProfileFile.Save(rapidJson, p); Check(ProfileFile.Load(rapidJson).SameContent(p), "extended gain JSON persistence");
         }
@@ -170,7 +171,7 @@ internal static class SelfTest
         {
             DeviceProfile outputProfile = p.Clone(); outputProfile.OutputMode = mode; outputProfile.ControllerButtons = controller;
             byte[] encoded = outputProfile.Encode(); DeviceProfile decoded = DeviceProfile.Decode(encoded);
-            Check(encoded.Length == 488 && encoded[484] == (mode | (controller ? 4 : 0)) && Wire.U16(encoded, 0) == 5, "output mode fits the v5 reserved byte");
+            Check(encoded.Length == DeviceProfile.ByteCount && encoded[484] == (mode | (controller ? 4 : 0)) && Wire.U16(encoded, 0) == 6, "output mode fits the v5 reserved byte");
             Check(decoded.OutputMode == mode && decoded.ControllerButtons == controller && decoded.Output.Encode() == (mode == 0 ? 0 : mode == 1 ? 1 : controller ? 193 : 65), "mode and button preference survive codec roundtrip independently");
         }
         foreach (byte invalidMode in new byte[] { 3, 7, 8, 255 })
@@ -213,18 +214,18 @@ internal static class SelfTest
         Check(reordered.SwitchKeys(1) == 0x4300 && reordered.SwitchKeys(3) == 0x4300 && reordered.PreferredSlots == ((1u << 1) | (1u << 5)), "switching settings and saved selections move with profiles");
         Check(reordered.Move(1, 6).Encode().SequenceEqual(originalBank.Encode()), "inverse move restores every bank byte");
         Check(originalBank.Move(6, 15).Move(15, 6).Encode().SequenceEqual(originalBank.Encode()), "move to last slot preserves empty slots and roundtrips");
-        byte[] invalidBank = originalBank.Encode(); invalidBank[7824 + 6 * 16] ^= 1;
+        byte[] invalidBank = originalBank.Encode(); invalidBank[SlotBank.IdsAt + 6 * 16] ^= 1;
         Check(new SlotBank(invalidBank).Profiles[6].ProfileId != variant.ProfileId, "profile identity is carried separately from mappings");
-        p.ProfileId.TryWriteBytes(invalidBank.AsSpan(7824 + 6 * 16)); rejected = false;
+        p.ProfileId.TryWriteBytes(invalidBank.AsSpan(SlotBank.IdsAt + 6 * 16)); rejected = false;
         try { _ = new SlotBank(invalidBank); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "bank rejects duplicate nonempty profile IDs");
         string allSlots = Path.Combine(directory, "all-slots.json"); SlotBackup.Save(allSlots, originalBank);
         Check(SlotBackup.Load(allSlots).Encode().SequenceEqual(originalBank.Encode()), "backup preserves exact bank payload and metadata");
         SlotBackup namedBackup = JsonSerializer.Deserialize<SlotBackup>(File.ReadAllText(allSlots))!;
-        Check(namedBackup.Format == "ControllerBridge.Slots" && namedBackup.Version == 2, "new backups use the current product and format");
+        Check(namedBackup.Format == "ControllerBridge.Slots" && namedBackup.Version == 3, "new backups use the current product and format");
         namedBackup.Version = 1; File.WriteAllText(allSlots, JsonSerializer.Serialize(namedBackup)); rejected = false;
         try { SlotBackup.Load(allSlots); } catch (InvalidDataException) { rejected = true; }
-        Check(rejected, "previous whole-bank backup format is rejected"); namedBackup.Version = 2;
+        Check(rejected, "previous whole-bank backup format is rejected"); namedBackup.Version = 3;
         namedBackup.Format = "Unrelated.Slots"; File.WriteAllText(allSlots, JsonSerializer.Serialize(namedBackup)); rejected = false;
         try { SlotBackup.Load(allSlots); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "unrelated backup format names remain rejected"); SlotBackup.Save(allSlots, originalBank);

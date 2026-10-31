@@ -15,8 +15,9 @@ internal sealed class SwitchMethodDialog : Form
     }
     public SwitchMethodDialog(IReadOnlyList<DeviceProfile> group, uint current, bool immediate)
     {
-        Ui.Form(this, L.T("プロファイルの切替方法", "Profile switching method"), new(760, 650)); MaximizeBox = false;
+        using IDisposable formLayout = Ui.Form(this, L.T("プロファイルの切替方法", "Profile switching method"), new(760, 650)); MaximizeBox = false;
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 6 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 6; i++) root.RowStyles.Add(new(i == 3 ? SizeType.Percent : SizeType.AutoSize, i == 3 ? 100 : 0));
         root.Controls.Add(Ui.Label(L.T("プロファイルの切替方法", "Profile switching method"), 19, true), 0, 0);
         Label intro = Ui.Label(L.T("このコントローラーのスロットすべてに適用します。\n", "Applies to all slots for this controller.\n") + (immediate
@@ -51,6 +52,7 @@ internal sealed class SwitchMethodDialog : Form
         {
             try {
                 uint mask = 0; if (chord.Checked) { for (int i = 0; i < keys.Length; i++) if (keys[i].Checked && (bool)keys[i].Tag!) mask |= 1u << i; Validate(mask); }
+                foreach (DeviceProfile profile in group) profile.Shift.ValidateSwitchKeys(profile, mask);
                 SwitchKeys = mask; DialogResult = DialogResult.OK; Close();
             } catch (Exception ex) { Ui.Error(this, ex); }
         }, true);

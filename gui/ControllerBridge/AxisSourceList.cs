@@ -58,7 +58,7 @@ internal sealed class AxisSourceList : ListBox
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
         TextRenderer.DrawText(g, field.Label, Font,
             new Rectangle(row.Left + U(12), row.Top + U(2), divider - row.Left - U(20), U(24)), Ui.Ink, flags);
-        using Font detailFont = new(Font.FontFamily, 8.5f);
+        using Font detailFont = new(Font.FontFamily, Font.SizeInPoints * .85f);
         TextRenderer.DrawText(g, $"IF{field.Interface} / ID{field.ReportId} / bit{field.BitOffset}", detailFont,
             new Rectangle(row.Left + U(12), row.Top + U(27), divider - row.Left - U(20), U(21)), Ui.Muted, flags);
 

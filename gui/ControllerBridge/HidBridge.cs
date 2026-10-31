@@ -26,6 +26,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsBankTransfer => (Features & 2048) != 0;
     public bool SupportsProfileOutput => (Features & 4096) != 0;
     public bool SupportsGuardedRegistration => (Features & 8192) != 0;
+    public bool SupportsButtonShift => (Features & 16384) != 0;
     public bool SelectionUnsaved => (Flags & 16) != 0;
     public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
@@ -283,6 +284,12 @@ internal sealed class HidBridge : IDisposable
         if (slot < 0 || slot >= DeviceProfile.SlotCount || !before.SupportsMouseProfiles) throw new InvalidDataException(L.T("16スロットと個別感度にはファームウェア0.10.0以降が必要です。", "16 slots and per-profile gain require firmware 0.10.0 or later."));
         if (profile.Mouse.TrackballGain > 10 && !before.SupportsExtendedTrackballGain)
             throw new InvalidDataException(L.T("10.0倍を超えるトラックボール感度にはファームウェア0.13.0以降が必要です。", "Trackball gain above 10.0 requires firmware 0.13.0 or later."));
+        if (profile.Shift.Keys.Count != 0)
+        {
+            if (!before.SupportsButtonShift) throw new InvalidDataException(L.T("シフト設定には同梱の0.20.0以降のファームウェアが必要です。", "Button shift requires the bundled firmware 0.20.0 or later."));
+            if (before.ActiveSlot < DeviceProfile.SlotCount && profile.SameController(ReadProfile(before.ActiveSlot, before)))
+                profile.Shift.ValidateSwitchKeys(profile, before.SwitchKeys);
+        }
         byte[] data = profile.Encode(), begin = new byte[registration is not null ? 41 : before.SupportsProfileIdentity ? 26 : 9]; begin[0] = checked((byte)slot);
         if (before.SupportsProfileIdentity) { begin[9] = 1; (profile.Enabled ? profile.ProfileId : Guid.Empty).TryWriteBytes(begin.AsSpan(10)); }
         Wire.W32(begin, 1, Wire.Crc(data)); Wire.W32(begin, 5, expectedGeneration);

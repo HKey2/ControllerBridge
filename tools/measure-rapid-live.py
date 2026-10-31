@@ -98,9 +98,11 @@ def main():
         caps = bridge.command(20)
         slot = caps[9]
         size = struct.unpack_from('<H', caps, 6)[0]
-        if slot >= caps[8] or size not in (480, 488) or not (int.from_bytes(caps[18:20], 'little') & 1):
+        if slot >= caps[8] or size not in (480, 488, 848) or not (int.from_bytes(caps[18:20], 'little') & 1):
             raise RuntimeError('No active connected profile')
         profile = b''.join(bridge.command(23, struct.pack('<BH', slot, offset)) for offset in range(0, size, 56))[:size]
+        if size == 848 and profile[492]:
+            raise RuntimeError('This rate measurement requires button shift to be disabled')
         before = bridge.info()
         rates = {name: profile[64+index*16+7] for name, index in TARGETS.items()}
         print(json.dumps(dict(ready=True, active_slot=slot+1, saved_rates=rates)), flush=True)

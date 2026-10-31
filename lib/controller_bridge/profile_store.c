@@ -15,6 +15,12 @@ bool up_registry_load(up_bank *bank) {
         *bank=scratch;active_store=5;return true;
     }
     if(first) { active_store=4;return true; }
+    bool migrated=false;
+    for(unsigned copy=0;copy<2;++copy) {
+        if(ub_store_load_legacy_bank(copy,&scratch,UP_LEGACY_BANK_BYTES) && up_bank_upgrade_v5(&scratch) &&
+           (!migrated || (int32_t)(scratch.generation-bank->generation)>0)) { *bank=scratch;migrated=true; }
+    }
+    if(migrated)return true; // active_store remains -1: preserve both v5 copies until slot 4 verifies.
     up_bank_clear(bank);return false;
 }
 bool up_registry_save(up_bank *bank,unsigned slot,const up_profile *profile) {
@@ -31,7 +37,7 @@ bool up_registry_save_identified(up_bank *bank,unsigned slot,const up_profile *p
     else if(id)memcpy(scratch.profile_ids[slot],id,UP_ID_BYTES);
     up_prefer_slot(&scratch,slot);
     unsigned target=active_store==4?5:4;
-    if(!ub_store_save(target,&scratch,sizeof(scratch),true))return false;
+    if(!up_bank_valid(&scratch) || !ub_store_save(target,&scratch,sizeof(scratch),true))return false;
     *bank=scratch;active_store=(int)target;return true;
 }
 bool up_registry_switch_keys(up_bank *bank,unsigned slot,uint32_t keys) {
@@ -41,7 +47,7 @@ bool up_registry_switch_keys(up_bank *bank,unsigned slot,uint32_t keys) {
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(group&(1u<<i))scratch.switch_keys[i]=keys;
     scratch.generation++;
     unsigned target=active_store==4?5:4;
-    if(!ub_store_save(target,&scratch,sizeof(scratch),true))return false;
+    if(!up_bank_valid(&scratch) || !ub_store_save(target,&scratch,sizeof(scratch),true))return false;
     *bank=scratch;active_store=(int)target;return true;
 }
 bool up_registry_select(up_bank *bank,unsigned slot) {
@@ -50,7 +56,7 @@ bool up_registry_select(up_bank *bank,unsigned slot) {
     if(scratch.preferred_slots==bank->preferred_slots)return true;
     scratch.generation++;
     unsigned target=active_store==4?5:4;
-    if(!ub_store_save(target,&scratch,sizeof(scratch),true))return false;
+    if(!up_bank_valid(&scratch) || !ub_store_save(target,&scratch,sizeof(scratch),true))return false;
     *bank=scratch;active_store=(int)target;return true;
 }
 bool up_registry_replace(up_bank *bank,const up_bank *replacement) {
@@ -65,6 +71,6 @@ bool up_registry_replace(up_bank *bank,const up_bank *replacement) {
     }
     scratch=*replacement;scratch.generation=bank->generation+1;
     unsigned target=active_store==4?5:4;
-    if(!ub_store_save(target,&scratch,sizeof(scratch),true))return false;
+    if(!up_bank_valid(&scratch) || !ub_store_save(target,&scratch,sizeof(scratch),true))return false;
     *bank=scratch;active_store=(int)target;return true;
 }

@@ -26,8 +26,9 @@ internal sealed partial class AxisDialog : Form
         this.prepareLearning = prepareLearning;
         Result = new DeviceProfile { Flags = 0, Axes = [original, new(), new(), new()] }.Clone().Axes[0];
         baselines = fields.Where(f => f.Valid).ToDictionary(f => f.Index, f => f.Value);
-        Ui.Form(this, DeviceProfile.AxisNames[axis] + L.T(" の設定", " settings"), new(860, 570)); MaximizeBox = false;
+        using IDisposable formLayout = Ui.Form(this, DeviceProfile.AxisNames[axis] + L.T(" の設定", " settings"), new(860, 570)); MaximizeBox = false;
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 5 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.Controls.Add(Ui.Label(DeviceProfile.AxisNames[axis], 17, true), 0, 0);
@@ -35,6 +36,7 @@ internal sealed partial class AxisDialog : Form
         mode.SelectedIndex = Result.Mode; root.Controls.Add(mode, 0, 1);
         Panel content = new() { Dock = DockStyle.Fill }; content.Controls.Add(analogPanel); content.Controls.Add(pairPanel); root.Controls.Add(content, 0, 2);
         TableLayoutPanel a = analogLayout = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 6 };
+        a.ColumnStyles.Add(new(SizeType.Percent, 100));
         a.RowStyles.Add(new(SizeType.AutoSize)); a.RowStyles.Add(new(SizeType.Absolute, 56));
         for (int row = 2; row < 6; row++) a.RowStyles.Add(new(SizeType.AutoSize));
         foreach (InputField f in fields.Where(f => f.Learnable && !f.Binary && !f.Hat)) source.Items.Add(f);
@@ -56,8 +58,7 @@ internal sealed partial class AxisDialog : Form
         }); calibrate.Enabled = canLearn; tools.Controls.Add(calibrate); a.Controls.Add(tools, 0, 2);
         // Reserve the full signed 32-bit value width so adjacent controls never
         // move when the live reading changes sign or number of digits.
-        Size liveSize = TextRenderer.MeasureText(L.T("入力値: -2147483648", "Input value: -2147483648"), live.Font);
-        live.AutoSize = false; live.Size = new(liveSize.Width + 8, liveSize.Height + 2);
+        live.AutoSize = false; live.Size = new(260, 26);
         FlowLayoutPanel read = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false }; read.Controls.Add(live);
         Button setCenter = Ui.Button(L.T("中心を記録", "Record center"), (_, _) => { if (source.SelectedItem is InputField f && f.Valid) { center.Value = f.Value; measuring = false; message.Text = L.T("中心を記録しました。最小・中心・最大を確認して適用します。", "Center recorded. Check the minimum, center, and maximum before applying."); } });
         setCenter.Enabled = canLearn; read.Controls.Add(setCenter);
@@ -69,6 +70,7 @@ internal sealed partial class AxisDialog : Form
         a.Controls.Add(numbers, 0, 4);
         FlowLayoutPanel options = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink }; options.Controls.Add(Ui.Label(L.T("デッドゾーン %", "Dead zone %"))); options.Controls.Add(deadzone); options.Controls.Add(invert); a.Controls.Add(options, 0, 5); analogPanel.Controls.Add(a);
         TableLayoutPanel p = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, RowCount = 4, ColumnCount = 1 };
+        p.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int row = 0; row < 4; row++) p.RowStyles.Add(new(SizeType.AutoSize));
         Button neg = Ui.Button(L.T("負方向（左 / 上）を学習", "Learn negative (left / up)"), (_, _) => LearnPair(0)); neg.Enabled = canLearn;
         Button pos = Ui.Button(L.T("正方向（右 / 下）を学習", "Learn positive (right / down)"), (_, _) => LearnPair(1)); pos.Enabled = canLearn;
@@ -92,10 +94,17 @@ internal sealed partial class AxisDialog : Form
         }
         else if (source.Items.Count > 0) source.SelectedIndex = 0;
         negative.Text = Result.Negative.ToString(); positive.Text = Result.Positive.ToString(); Ui.ThemeInputs(this); ShowMode();
+        DpiChanged += (_, _) => BeginInvoke(() => { if (!IsDisposed) { SizeLiveValue(); FitAxisList(); } });
     }
     protected override void OnShown(EventArgs e)
     {
-        base.OnShown(e); FitAxisList();
+        base.OnShown(e); SizeLiveValue(); FitAxisList();
+    }
+    private void SizeLiveValue()
+    {
+        using Graphics graphics = live.CreateGraphics();
+        Size needed = TextRenderer.MeasureText(graphics, L.T("入力値: -2147483648", "Input value: -2147483648"), live.Font);
+        live.Size = new(needed.Width + LogicalToDeviceUnits(8), needed.Height + LogicalToDeviceUnits(2));
     }
     private void FitAxisList()
     {
@@ -115,6 +124,7 @@ internal sealed partial class AxisDialog : Form
         MinimumSize = Size;
         Location = new(Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - Width)),
             Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - Height)));
+        Ui.FitToWorkingArea(this, new(860, 570));
     }
     private void ShowMode()
     {

@@ -1,6 +1,6 @@
 # GPIO assignment and board porting
 
-The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.19.0. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
+The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.20.0. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
 
 Consult the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB-A/RP2350-USB-A.pdf) and [board wiki](https://www.waveshare.com/wiki/RP2350-USB-A) for wiring. Software restrictions below come from this repository.
 
@@ -69,4 +69,4 @@ USB-A 5 V power comes from the board circuit. A GPIO-controlled power switch nee
 
 The standard board retains R13. The firmware attempts Full Speed initialization and checks EP0 communication instead of relying solely on the electrical attachment level. This does not imply Low Speed support or require the manufacturer's generic host modification procedure.
 
-The final 32 KiB of Flash hold settings, measurements, and profiles. [`store.c`](../lib/controller_bridge/store.c) calculates addresses from `PICO_FLASH_SIZE_BYTES`. Changing capacity moves those addresses; use a GUI backup to transfer profiles to the new board. See the current [memory budget](../README.md#memory-budget).
+The final 48 KiB of Flash hold settings, measurements, and profiles. [`store.c`](../lib/controller_bridge/store.c) calculates addresses from `PICO_FLASH_SIZE_BYTES`. Changing capacity moves those addresses; use a GUI backup to transfer profiles to the new board. See the current [memory budget](../README.md#memory-budget).

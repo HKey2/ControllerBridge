@@ -1,12 +1,12 @@
 # Firmware update
 
-ControllerBridge 0.19.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.20.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
 
 ## Automatic startup and connection guidance
 
 The main window checks the firmware identity before reading capabilities or profile data. Only an exact match with the bundled version proceeds to normal settings reads. Detection runs at startup and about every two seconds while waiting for a usable connection.
 
-- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.19.0?** confirmation follows. Lower and higher versions are treated alike.
+- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.20.0?** confirmation follows. Lower and higher versions are treated alike.
 - A factory-state RP2350-USB-A exposing Pico SDK CDC/reset USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge without readable firmware information shows **Device unsupported** and automatically opens the BOOT connection guide. It immediately monitors for BOOT connection and shows only **Cancel**. A valid BOOT connection advances to the final overwrite confirmation automatically. This works both when the board is already connected at startup and when it is detected while the tool is running.
 - With no recognized board, the tool shows **Device not connected** and waits without opening an update guide or recording a startup error. Unrelated USB peripherals do not trigger installation. Other firmware with unrecognized USB identities can still use **Firmware update** manually.
 
@@ -24,7 +24,7 @@ The factory-state screenshot was captured on 2026-10-31 with the supplied RP2350
 
 1. Choose **Firmware update**. The dialog shows **Checking firmware version...**.
 2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing.
-3. If a supported device reports a different version, the dialog asks **Install v0.19.0?**. **No** exits; **Yes** starts automatic programming.
+3. If a supported device reports a different version, the dialog asks **Install v0.20.0?**. **No** exits; **Yes** starts automatic programming.
 4. If no supported version response is available, the dialog immediately shows **Waiting for reconnection with BOOT held...** and only a **Cancel** button. Unplug the RP2350-USB-A's USB-C cable, hold **BOOT**, reconnect to the same PC USB port, then release BOOT. This wait has no timeout. **Cancel**, Escape, or the window close button exits without writing.
 5. Once the target's RP2350 BOOT USB identity and disk information are validated, the dialog automatically shows **Confirm firmware write** with **Yes/No** buttons. It states that BOOT connection was confirmed and names the bundled version. Only **Yes** starts the transfer; **No** exits without writing. If the board was already in validated BOOT mode, this final confirmation appears directly after detection.
 
@@ -46,12 +46,12 @@ Pico SDK USB identity is shared across boards, and BOOTSEL identifies the RP2350
 
 Manual BOOT reconnection waits until detection or cancellation. The automatic BOOT transition after confirming a readable version mismatch still has a 30-second timeout; restart verification has a 45-second timeout. If either times out, the dialog reports failure and gives recovery instructions. The updater does not retry a write automatically. Reconnect while holding BOOT and run **Firmware update** again. The embedded image is reused; no separate firmware download is needed.
 
-Unsaved profile edits remain in the main window, and the updater does not save or restore them. Current storage formats remain unchanged from 0.16.0. Updating from a pre-0.16.0 firmware starts with unused slots because those older records are intentionally ignored. This updater does not restore an old backup.
+Unsaved profile edits remain in the main window, and the updater does not save or restore them. Version-5 settings from 0.16.0–0.19.0 migrate to version 6 with button shift disabled. The main mappings, axes, IDs, shortcuts, output settings and RGB colors are preserved. Loading the old bank does not itself write Flash; the next explicit save uses the new format. Back up all slots before updating if downgrade recovery is needed: old firmware cannot read the new format, and the updater does not convert it back. Updating from a pre-0.16.0 firmware starts with unused slots because those older records are intentionally ignored. This updater does not restore an old backup.
 
 ## Image and device checks
 
 - The executable embeds a manifest and the exact UF2 produced by its build. It verifies the SHA-256 checksum before opening the update dialog.
-- The UF2 must contain consecutive, complete RP2350 Arm secure Flash blocks starting at `0x10000000`. Its addresses must remain below `0x101F8000`, preserving the last 32 KiB reserved for settings.
+- The UF2 must contain consecutive, complete RP2350 Arm secure Flash blocks starting at `0x10000000`. Its addresses must remain below `0x101F4000`, preserving the last 48 KiB reserved for settings.
 - Disk selection combines the Windows storage-device mapping, USB parent identity `2E8A:000F`, and RP2350 `INFO_UF2.TXT`. A volume label alone is insufficient.
 - USB location paths associate the normal HID application, BOOT disk, and returning application. This does not rely on a drive letter staying the same.
 - Cancelling the BOOT wait prevents the final confirmation and any write, including cancellation at the detection boundary. After the final confirmation, the selected disk and USB identity are checked again before opening the output file.

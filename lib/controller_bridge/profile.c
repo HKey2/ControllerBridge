@@ -4,11 +4,11 @@
 #include <string.h>
 
 void up_profile_clear(up_profile *p) {
-    memset(p,0,sizeof(*p));p->version=5;
+    memset(p,0,sizeof(*p));p->version=6;
     p->mouse=(up_mouse_options){.flags=UP_MOUSE_TRACKBALL|UP_MOUSE_PADDLE,.trackball_gain10=160,.paddle_gain10=10};
 }
 void up_bank_clear(up_bank *b) {
-    memset(b,0,sizeof(*b));b->magic=UP_BANK_MAGIC;b->version=5;b->bytes=sizeof(*b);
+    memset(b,0,sizeof(*b));b->magic=UP_BANK_MAGIC;b->version=6;b->bytes=sizeof(*b);
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)up_profile_clear(&b->profiles[i]);
 }
 uint32_t up_crc32(const void *data,unsigned length) {
@@ -42,7 +42,7 @@ static bool digital_valid(const up_digital *d,bool allow_rapid) {
     return d->mode==UP_RANGE || range==7 || range==3;
 }
 bool up_profile_valid(const up_profile *p) {
-    if(p->version!=5 || (p->flags&~15u) || !memchr(p->name,0,sizeof(p->name)))return false;
+    if(p->version!=6 || (p->flags&~15u) || !memchr(p->name,0,sizeof(p->name)))return false;
     const up_mouse_options *m=&p->mouse;
     unsigned gain=up_mouse_trackball_gain10(m);
     if((m->flags&~31u) || gain<10 || gain>640u || m->paddle_gain10<10 || m->paddle_gain10>100)return false;
@@ -63,15 +63,25 @@ bool up_profile_valid(const up_profile *p) {
                !number_fits(a->minimum,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
         } else return false;
     }
+    const up_shift *s=&p->shift;
+    if(s->count>UP_SHIFT_KEYS || (s->overrides&~0x3ffffu) || s->reserved[0] || s->reserved[1] || s->reserved[2])return false;
+    for(unsigned i=0;i<UP_SHIFT_KEYS;++i) {
+        if(!digital_valid(&s->keys[i],false) || (i<s->count && !s->keys[i].mode))return false;
+        for(unsigned j=0;j<i && i<s->count;++j) {
+            const up_digital *a=&s->keys[i],*b=&s->keys[j];
+            if(a->interface_number==b->interface_number && a->report_id==b->report_id && a->bit_offset==b->bit_offset && a->bits==b->bits)return false;
+        }
+    }
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(!digital_valid(&s->digital[i],true))return false;
     return true;
 }
 uint32_t up_profile_led_rgb(const up_profile *p) {
-    if(!p || !(p->flags&UP_ENABLED) || !(p->flags&UP_LED_CUSTOM) || p->version!=5)return 1;
+    if(!p || !(p->flags&UP_ENABLED) || !(p->flags&UP_LED_CUSTOM) || p->version!=6)return 1;
     const uint8_t *rgb=p->mouse.led_rgb;
     return ((uint32_t)rgb[0]<<16)|((uint32_t)rgb[1]<<8)|rgb[2];
 }
 uint8_t up_profile_output_options(const up_profile *p) {
-    if(!p || !(p->flags&UP_ENABLED) || p->version!=5)return 0;
+    if(!p || !(p->flags&UP_ENABLED) || p->version!=6)return 0;
     unsigned mode=p->mouse.output_mode&3u;
     // These bits retain the established MSE1 diagnostic wire representation.
     return mode==UP_OUTPUT_MOUSE?1u:mode==UP_OUTPUT_COMBINED?
@@ -82,10 +92,10 @@ bool up_switch_keys_valid(uint32_t keys) {
     return !(keys&~0x3ffffu) && (keys&(keys-1)) && (keys&0x14000u)!=0x14000u && (keys&0x28000u)!=0x28000u;
 }
 bool up_bank_valid(const up_bank *b) {
-    if(b->magic!=UP_BANK_MAGIC || b->version!=5 || b->bytes!=sizeof(*b) || (b->preferred_slots&~65535u))return false;
+    if(b->magic!=UP_BANK_MAGIC || b->version!=6 || b->bytes!=sizeof(*b) || (b->preferred_slots&~65535u))return false;
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!up_profile_valid(&b->profiles[i]))return false;
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i) {
-        if(!up_switch_keys_valid(b->switch_keys[i]) || (!(b->profiles[i].flags&UP_ENABLED) && b->switch_keys[i]))return false;
+        if(up_profile_shift_conflicts(&b->profiles[i],b->switch_keys[i]) || !up_switch_keys_valid(b->switch_keys[i]) || (!(b->profiles[i].flags&UP_ENABLED) && b->switch_keys[i]))return false;
         for(unsigned j=0;j<i;++j)if(up_same_controller(&b->profiles[i],&b->profiles[j]) && b->switch_keys[i]!=b->switch_keys[j])return false;
     }
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(b->preferred_slots&(1u<<i)) {
@@ -125,10 +135,35 @@ int up_find_profile(const up_bank *b,uint16_t vid,uint16_t pid,uint16_t revision
     }
     return found;
 }
+static bool same_source(const up_digital *a,const up_digital *b) {
+    return a->interface_number==b->interface_number && a->report_id==b->report_id &&
+        a->bit_offset==b->bit_offset && a->bits==b->bits && (a->flags&3)==(b->flags&3);
+}
+static uint8_t modifier_mask(const up_profile *p,const up_digital *d) {
+    uint8_t mask=0;
+    for(unsigned k=0;k<p->shift.count;++k)if(up_digital_overlap(d,&p->shift.keys[k]))mask|=(uint8_t)(1u<<k);
+    return mask;
+}
 void up_mapper_attach(up_mapper *m,const up_profile *p) {
-    memset(m,0,sizeof(*m));m->profile=p && up_profile_valid(p)?p:NULL;memset(m->axes,128,sizeof(m->axes));
-    if(m->profile && (p->flags&UP_ENABLED))
-        for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(p->digital[i].rapid_hz)m->rapid_configured|=1u<<i;
+    memset(m,0,sizeof(*m));m->profile=p && up_profile_valid(p)?p:NULL;
+    memset(m->axes,128,sizeof(m->axes));memset(m->raw_axes,128,sizeof(m->raw_axes));
+    if(!m->profile || !(p->flags&UP_ENABLED))return;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+        if(p->digital[i].rapid_hz)m->rapid_configured|=1u<<i;
+        m->base_modifiers[i]=modifier_mask(p,&p->digital[i]);
+        m->back_modifiers[i]=modifier_mask(p,&p->shift.digital[i]);
+        for(unsigned j=0;j<UP_DIGITAL_COUNT;++j)
+            if((p->shift.overrides&(1u<<j)) && up_digital_overlap(&p->digital[i],&p->shift.digital[j]))m->inherited_conflicts[i]|=1u<<j;
+    }
+    for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
+        unsigned mode=(p->axis_modes>>(2*i))&3;
+        if(mode==UP_AXIS_BUTTON_PAIR)for(unsigned j=0;j<2;++j)m->pair_modifiers[i][j]=modifier_mask(p,&p->axes[i].pair[j]);
+        if(mode==UP_AXIS_ANALOG) {
+            const up_analog *a=&p->axes[i].analog;
+            up_digital d={.interface_number=a->interface_number,.report_id=a->report_id,.bit_offset=a->bit_offset,.bits=a->bits,.flags=(uint8_t)(a->flags&3)};
+            for(unsigned k=0;k<p->shift.count;++k)if(same_source(&d,&p->shift.keys[k]))m->analog_modifiers[i]|=(uint8_t)(1u<<k);
+        }
+    }
 }
 static bool UC_RAM_FUNC(read_source)(uint8_t wanted_interface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,
                         uint8_t interface_number,const uint8_t *raw,unsigned n,int32_t *value) {
@@ -145,6 +180,31 @@ static inline bool digital_pressed(const up_digital *d,int32_t value) {
     return position==middle || position==((middle+1)&7) || position==((middle+7)&7);
 }
 bool up_digital_pressed_value(const up_digital *d,int32_t value) { return digital_pressed(d,value); }
+bool up_digital_overlap(const up_digital *a,const up_digital *b) {
+    if(!a->mode || !b->mode || !same_source(a,b))return false;
+    if(a->mode==UP_RANGE && b->mode==UP_RANGE)return a->low<=b->high && b->low<=a->high;
+    const up_digital *hat=a->mode==UP_RANGE?b:a;
+    for(int64_t v=hat->low;v<=hat->high;++v)if(digital_pressed(a,(int32_t)v) && digital_pressed(b,(int32_t)v))return true;
+    return false;
+}
+bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(keys&(1u<<i))
+        for(unsigned k=0;k<p->shift.count;++k)if(up_digital_overlap(&p->digital[i],&p->shift.keys[k]))return true;
+    return false;
+}
+bool up_bank_upgrade_v5(up_bank *b) {
+    if(b->magic!=UP_BANK_MAGIC || b->version!=5 || b->bytes!=UP_LEGACY_BANK_BYTES)return false;
+    uint8_t *raw=(uint8_t *)b,tail[324];
+    memcpy(tail,raw+7824,sizeof(tail));
+    for(unsigned i=UP_PROFILE_COUNT;i--;) {
+        uint16_t version;memcpy(&version,raw+16+i*UP_LEGACY_PROFILE_BYTES,2);
+        if(version!=5)return false;
+        memmove(&b->profiles[i],raw+16+i*UP_LEGACY_PROFILE_BYTES,UP_LEGACY_PROFILE_BYTES);
+        memset(&b->profiles[i].shift,0,sizeof(up_shift));b->profiles[i].version=6;
+    }
+    memcpy(b->profile_ids,tail,sizeof(tail));b->version=6;b->bytes=sizeof(*b);
+    return up_bank_valid(b);
+}
 static bool UC_RAM_FUNC(digital_value)(const up_digital *d,uint8_t iface,const uint8_t *raw,unsigned n,bool *pressed) {
     int32_t value;
     if(d->mode==UP_DISABLED || !read_source(d->interface_number,d->report_id,d->bit_offset,d->bits,d->flags,iface,raw,n,&value))return false;
@@ -191,10 +251,11 @@ static void UC_RAM_FUNC(report_buttons)(const up_mapper *m,uint32_t buttons,sw_r
 void UC_RAM_FUNC(up_mapper_report)(const up_mapper *m,sw_report *r) { report_buttons(m,physical_buttons(m),r); }
 bool UC_RAM_FUNC(up_mapper_tick)(up_mapper *m,uint32_t now,bool ready,sw_report *out) {
     uint32_t physical=physical_buttons(m);
-    m->physical=physical;
+    m->physical=0;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->base_digital[i])m->physical|=1u<<i;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
         uint32_t bit=1u<<i;if(!(m->rapid_configured&bit))continue;
-        unsigned hz=m->profile->digital[i].rapid_hz;
+        unsigned hz=(m->shift_active && (m->profile->shift.overrides&(1u<<i)))?m->profile->shift.digital[i].rapid_hz:m->profile->digital[i].rapid_hz;
         if(!ready || !(physical&bit)) {
             m->rapid_held&=~bit;m->rapid_on&=~bit;
         } else if(!(m->rapid_held&bit)) {
@@ -218,23 +279,81 @@ bool UC_RAM_FUNC(up_mapper_tick)(up_mapper *m,uint32_t now,bool ready,sw_report 
     bool changed=!m->have_output || memcmp(&m->last_output,out,sizeof(*out));
     m->last_output=*out;m->have_output=true;return changed;
 }
+static void UC_RAM_FUNC(resolve_shift)(up_mapper *m) {
+    const up_profile *p=m->profile;
+    bool active=p->shift.count && m->shift_held==((1u<<p->shift.count)-1u);
+    if(active)m->shift_consumed=true;
+    else if(!m->shift_held)m->shift_consumed=false;
+    if(active!=m->shift_active) { m->rapid_held=m->rapid_on=0;m->shift_active=active; }
+    uint8_t blocked=m->shift_consumed?m->shift_held:0;
+    uint32_t overrides_held=0;
+    if(active)for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->shift_digital[i] && (p->shift.overrides&(1u<<i)))overrides_held|=1u<<i;
+    m->rapid_configured=0;m->physical=0;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+        bool replace=active && (p->shift.overrides&(1u<<i));
+        m->digital[i]=replace?m->shift_digital[i]:m->base_digital[i];
+        if((replace?m->back_modifiers[i]:m->base_modifiers[i])&blocked)m->digital[i]=false;
+        if(!replace && active && (m->inherited_conflicts[i]&overrides_held))m->digital[i]=false;
+        if((replace?p->shift.digital[i].rapid_hz:p->digital[i].rapid_hz))m->rapid_configured|=1u<<i;
+        if(m->base_digital[i])m->physical|=1u<<i;
+    }
+    for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
+        unsigned mode=(p->axis_modes>>(2*i))&3;
+        m->axes[i]=m->raw_axes[i];
+        if(mode==UP_AXIS_BUTTON_PAIR) {
+            bool neg=m->pairs[i][0] && !(m->pair_modifiers[i][0]&blocked);
+            bool pos=m->pairs[i][1] && !(m->pair_modifiers[i][1]&blocked);
+            m->axes[i]=neg==pos?128:neg?0:255;
+        } else if(mode==UP_AXIS_ANALOG && (m->analog_modifiers[i]&blocked))m->axes[i]=128;
+    }
+}
+void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value) {
+    const up_profile *p=m->profile;if(!p || !(p->flags&UP_ENABLED))return;
+    up_digital field={.interface_number=iface,.report_id=id,.bit_offset=offset,.bits=bits,.flags=flags};
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+        if(same_source(&p->digital[i],&field))m->base_digital[i]=digital_pressed(&p->digital[i],value);
+        if(same_source(&p->shift.digital[i],&field))m->shift_digital[i]=digital_pressed(&p->shift.digital[i],value);
+    }
+    for(unsigned k=0;k<p->shift.count;++k)if(same_source(&p->shift.keys[k],&field)) {
+        if(digital_pressed(&p->shift.keys[k],value))m->shift_held|=(uint8_t)(1u<<k);else m->shift_held&=(uint8_t)~(1u<<k);
+    }
+    for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
+        unsigned mode=(p->axis_modes>>(2*i))&3;
+        if(mode==UP_AXIS_BUTTON_PAIR)for(unsigned j=0;j<2;++j) {
+            if(same_source(&p->axes[i].pair[j],&field))m->pairs[i][j]=digital_pressed(&p->axes[i].pair[j],value);
+        } else if(mode==UP_AXIS_ANALOG) {
+            const up_analog *a=&p->axes[i].analog;
+            if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && (a->flags&3)==flags)m->raw_axes[i]=analog_value(a,value);
+        }
+    }
+    resolve_shift(m);
+}
 bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,sw_report *out) {
     if(!m->profile || !(m->profile->flags&UP_ENABLED))return false;
     const up_profile *p=m->profile;bool touched=false;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)
-        if(digital_value(&p->digital[i],iface,raw,n,&m->digital[i]))touched=true;
+        if(digital_value(&p->digital[i],iface,raw,n,&m->base_digital[i]))touched=true;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(p->shift.overrides&(1u<<i))
+        if(digital_value(&p->shift.digital[i],iface,raw,n,&m->shift_digital[i]))touched=true;
+    for(unsigned k=0;k<p->shift.count;++k) {
+        bool held;
+        if(digital_value(&p->shift.keys[k],iface,raw,n,&held)) {
+            if(held)m->shift_held|=(uint8_t)(1u<<k);else m->shift_held&=(uint8_t)~(1u<<k);
+            touched=true;
+        }
+    }
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         if(mode==UP_AXIS_BUTTON_PAIR) {
             for(unsigned j=0;j<2;++j)
                 if(digital_value(&p->axes[i].pair[j],iface,raw,n,&m->pairs[i][j]))touched=true;
-            m->axes[i]=m->pairs[i][0]==m->pairs[i][1]?128:m->pairs[i][0]?0:255;
+            m->raw_axes[i]=m->pairs[i][0]==m->pairs[i][1]?128:m->pairs[i][0]?0:255;
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;int32_t value;
             if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
-                m->axes[i]=analog_value(a,value);touched=true;
+                m->raw_axes[i]=analog_value(a,value);touched=true;
             }
         }
     }
-    up_mapper_report(m,out);return touched;
+    resolve_shift(m);up_mapper_report(m,out);return touched;
 }

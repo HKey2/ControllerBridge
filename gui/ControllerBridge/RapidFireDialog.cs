@@ -8,8 +8,9 @@ internal sealed class RapidFireDialog : Form
 
     public RapidFireDialog(DeviceProfile profile)
     {
-        Ui.Form(this, L.T("ボタン別の連射設定", "Per-button rapid fire settings"), new(820, 620)); MaximizeBox = false;
+        using IDisposable formLayout = Ui.Form(this, L.T("ボタン別の連射設定", "Per-button rapid fire settings"), new(820, 620)); MaximizeBox = false;
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 5 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.Controls.Add(Ui.Label(L.T("ボタン別の連射", "Per-button rapid fire"), 19, true), 0, 0);

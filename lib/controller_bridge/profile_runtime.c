@@ -69,6 +69,8 @@ static bool digital_exists(const up_digital *d) {
 }
 static bool profile_exists(const up_profile *p) {
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(!digital_exists(&p->digital[i]))return false;
+    for(unsigned i=0;i<p->shift.count;++i)if(!digital_exists(&p->shift.keys[i]))return false;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if((p->shift.overrides&(1u<<i)) && !digital_exists(&p->shift.digital[i]))return false;
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         if(mode==UP_AXIS_ANALOG) {
@@ -87,17 +89,9 @@ static void refresh_group(void) {
 }
 static void seed_buttons(void) {
     if(active<0)return;
-    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
-        const up_digital *d=&bank.profiles[active].digital[i];if(!d->mode)continue;
-        for(unsigned j=0;j<field_count;++j) {
-            const observed_field *f=&fields[j];
-            if(f->valid && f->iface==d->interface_number && f->field.report_id==d->report_id &&
-               f->field.bit_offset==d->bit_offset && f->field.bits==d->bits && f->flags==(d->flags&3)) {
-                mapper.digital[i]=up_digital_pressed_value(d,f->value);
-                if(mapper.digital[i])mapper.physical|=1u<<i;
-                break;
-            }
-        }
+    for(unsigned j=0;j<field_count;++j) {
+        const observed_field *f=&fields[j];
+        if(f->valid)up_mapper_seed(&mapper,f->iface,f->field.report_id,f->field.bit_offset,f->field.bits,f->flags,f->value);
     }
 }
 static void select_profile(void) {
@@ -167,6 +161,7 @@ bool upr_controls_idle(void) {
 }
 uint32_t upr_switch_inputs(void) {
     uint32_t physical=mapper.physical;
+    if(mapper.shift_consumed)physical|=1u<<31; // Never cycle profiles while a shift chord is consumed.
     for(unsigned i=0;i<UP_AXIS_COUNT;++i)
         if(mapper.pairs[i][0] || mapper.pairs[i][1] || mapper.axes[i]<112 || mapper.axes[i]>144)physical|=1u<<31;
     return physical;
@@ -181,7 +176,7 @@ static void activate(unsigned slot) {
     uc_request_poll_interval(bank.profiles[slot].input_interval_ms);
 }
 bool upr_cycle_profile(void) {
-    if(!upr_ready() || stage_slot>=0)return false;
+    if(!upr_ready() || stage_slot>=0 || mapper.shift_consumed)return false;
     unsigned mask=up_group_mask(&bank,(unsigned)active);
     for(unsigned step=1;step<UP_PROFILE_COUNT;++step) {
         unsigned next=((unsigned)active+step)%UP_PROFILE_COUNT;
@@ -306,7 +301,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

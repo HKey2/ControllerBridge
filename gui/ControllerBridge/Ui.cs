@@ -45,12 +45,46 @@ internal static class Ui
     public static Label Label(string text, float size = 10, bool bold = false) => new() { Text = text, AutoSize = true,
         ForeColor = Ink, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false,
         Font = new Font(L.FontFamily, size, bold ? FontStyle.Bold : FontStyle.Regular), Margin = new(4, 3, 4, 3) };
-    public static void Form(Form f, string title, Size size)
+    public static IDisposable Form(Form f, string title, Size size, Size? minimum = null)
     {
+        // Keep the 96-DPI design baseline until the complete control tree exists.
+        // Otherwise an early layout consumes it before later controls are added.
+        f.SuspendLayout();
         f.AutoScaleDimensions = new(96, 96); f.AutoScaleMode = AutoScaleMode.Dpi;
         f.Text = title; f.Icon = AppIcon; f.Font = new Font(L.FontFamily, 10); f.ClientSize = size; f.BackColor = Background;
         f.ForeColor = Ink; f.StartPosition = FormStartPosition.CenterParent;
-        f.MinimumSize = new(size.Width + 16, size.Height + 39);
+        Size contentMinimum = minimum ?? size;
+        f.MinimumSize = new(contentMinimum.Width + 16, contentMinimum.Height + 39);
+        f.AutoScroll = true;
+        f.Shown += (_, _) => FitToWorkingArea(f, contentMinimum);
+        f.DpiChanged += (_, _) => f.BeginInvoke(() => { if (!f.IsDisposed) FitToWorkingArea(f, contentMinimum); });
+        return new FormLayout(f);
+    }
+    private sealed class FormLayout(Form form) : IDisposable
+    {
+        public void Dispose() => form.ResumeLayout(true);
+    }
+    internal static void FitToWorkingArea(Form form, Size logicalMinimum, Rectangle? workingArea = null)
+    {
+        Rectangle work = workingArea ?? Screen.FromControl(form).WorkingArea;
+        Size minimum = form.LogicalToDeviceUnits(logicalMinimum);
+        Size frame = form.Size - form.ClientSize;
+        form.SuspendLayout();
+        try
+        {
+            // Docked content keeps a scrollable minimum when the monitor is
+            // smaller than the dialog. The window itself always fits on screen.
+            form.MinimumSize = Size.Empty;
+            form.AutoScrollMinSize = minimum;
+            form.MinimumSize = new(Math.Min(minimum.Width + frame.Width, work.Width), Math.Min(minimum.Height + frame.Height, work.Height));
+            if (form.WindowState == FormWindowState.Normal)
+            {
+                form.Size = new(Math.Min(form.Width, work.Width), Math.Min(form.Height, work.Height));
+                form.Location = new(Math.Clamp(form.Left, work.Left, Math.Max(work.Left, work.Right - form.Width)),
+                    Math.Clamp(form.Top, work.Top, Math.Max(work.Top, work.Bottom - form.Height)));
+            }
+        }
+        finally { form.ResumeLayout(true); }
     }
     public static void ThemeInputs(Control root)
     {

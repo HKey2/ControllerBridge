@@ -133,7 +133,7 @@ internal sealed partial class MainForm
                 if (missing)
                 {
                     Check(StartupError is null && bridge is null && caps is null && connection.Text == scenario.Summary,
-                        "missing device is a disconnected waiting state, not an unsupported firmware error");
+                        $"missing device is a disconnected waiting state, not an unsupported firmware error; startup={StartupError ?? "none"}; bridge={bridge is not null}; caps={caps is not null}; text={connection.Text}; enabled={Enabled}; attempts={attempts}");
                     Check(connect.Enabled && firmwareUpdate.Enabled && !saveButton.Enabled && name.Enabled,
                         "offline discovery keeps reconnect, manual firmware update and drafts available without enabling device writes");
                     await Connect(); timer.Stop();

@@ -76,5 +76,6 @@ bool ub_queue_push(ub_queue *queue, const ub_frame *frame);
 bool ub_queue_pop(ub_queue *queue, ub_frame *frame);
 unsigned ub_queue_depth(const ub_queue *queue);
 bool ub_store_load(unsigned slot, void *data, uint32_t bytes);
+bool ub_store_load_legacy_bank(unsigned copy, void *data, uint32_t bytes);
 bool ub_store_save(unsigned slot, const void *data, uint32_t bytes, bool host_running);
 #endif

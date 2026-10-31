@@ -51,10 +51,10 @@ internal sealed record FirmwarePackage(string Version, byte[] Image)
             int offset = checked((int)index * 512);
             uint At(int field) => BitConverter.ToUInt32(image, offset + field);
             // Only the bundled ARM secure Flash image is accepted. Its addresses must
-            // be consecutive and remain below the last 32 KiB reserved for settings.
+            // be consecutive and remain below the last 48 KiB reserved for settings.
             if (At(0) != 0x0a324655 || At(4) != 0x9e5d5157 || At(508) != 0x0ab16f30 || At(8) != 0x2000 ||
                 At(12) != 0x10000000u + index * 256 || At(16) != 256 || At(20) != index || At(24) != count ||
-                At(28) != 0xe48bff59 || (ulong)At(12) + 256 > 0x101f8000) throw Invalid();
+                At(28) != 0xe48bff59 || (ulong)At(12) + 256 > 0x101f4000) throw Invalid();
         }
     }
     private static InvalidDataException Invalid() => new(L.T("同梱ファームウェアの検証に失敗しました。配布ファイルを入手し直してください。", "The bundled firmware failed validation. Obtain a fresh copy of the release."));

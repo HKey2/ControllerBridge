@@ -112,7 +112,7 @@ class Bridge:
     def profile_caps(self):
         b = self.command(20)
         size = struct.unpack_from('<H', b, 6)[0]
-        if b[:4] != b'UPG1' or (size, b[8]) != (488, 16) or struct.unpack_from('<I', b, 44)[0] & 4672 != 4672:
+        if b[:4] != b'UPG1' or (size, b[8]) != (848, 16) or struct.unpack_from('<I', b, 44)[0] & 4672 != 4672:
             raise RuntimeError('Unsupported profile ABI')
         return dict(size=size, count=b[8], active=b[9], generation=struct.unpack_from('<I', b, 28)[0],
                     features=struct.unpack_from('<I', b, 44)[0])
@@ -121,7 +121,7 @@ class Bridge:
         caps = caps or self.profile_caps()
         if not 0 <= slot < caps['count']: raise ValueError('Profile slot out of range')
         raw = b''.join(self.command(23, struct.pack('<BH', slot, off)) for off in range(0, caps['size'], 56))[:caps['size']]
-        if struct.unpack_from('<H', raw)[0] != 5: raise RuntimeError('Unsupported profile version')
+        if struct.unpack_from('<H', raw)[0] != 6: raise RuntimeError('Unsupported profile version')
         identity = self.command(32, bytes((slot,)))
         if struct.unpack_from('<II', identity, 16) != (caps['generation'], zlib.crc32(raw)):
             raise RuntimeError('Profile changed while reading; retry')
@@ -131,7 +131,7 @@ class Bridge:
         caps = self.profile_caps()
         if len(raw) != caps['size'] or not 0 <= slot < caps['count']: raise ValueError('Invalid profile size or slot')
         version = struct.unpack_from('<H', raw)[0]
-        if version != 5: raise ValueError('Only the current profile version is supported')
+        if version != 6: raise ValueError('Only the current profile version is supported')
         begin = struct.pack('<BII', slot, zlib.crc32(raw), generation)
         if identity is not None:
             if len(identity) != 16: raise ValueError('Profile identity must be 16 bytes')

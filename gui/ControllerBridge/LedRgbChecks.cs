@@ -42,7 +42,7 @@ internal sealed partial class MainForm
         }
         Check(profiles[slot].LedRgb == 0xff8011 && dirty[slot] && persistedProfiles[slot].LedRgb == 1, "OK stages exact RGB without saving the device");
         byte[] raw = profiles[slot].Encode();
-        Check(raw.Length == 488 && (raw[2] & 8) != 0 && raw[485] == 255 && raw[486] == 128 && raw[487] == 17, "RGB888 uses reserved bytes and flag with unchanged wire length");
+        Check(raw.Length == DeviceProfile.ByteCount && (raw[2] & 8) != 0 && raw[485] == 255 && raw[486] == 128 && raw[487] == 17, "RGB888 uses reserved bytes and flag with unchanged wire length");
         Check(DeviceProfile.Decode(raw).LedRgb == 0xff8011, "binary roundtrip preserves all channel bits");
         await SaveSelected();
         Check(!dirty[slot] && persistedProfiles[slot].LedRgb == 0xff8011, "slot save retains RGB");
