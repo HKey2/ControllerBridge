@@ -12,10 +12,16 @@ internal static class FirmwareChecks
         internal Exception? Failure;
         internal string FailureAt = "";
         internal byte[]? Written;
+        internal Func<CancellationToken, Task>? OnPrepare;
         internal Func<Task>? OnWrite;
         private void Call(string value) { Calls.Add(value); if (FailureAt == value) throw Failure ?? new IOException(value); }
         public Task<FirmwareInfo?> ProbeAsync() { Call("probe"); return Task.FromResult(initial is null ? null : new FirmwareInfo(initial)); }
-        public Task PrepareAsync(FirmwareInfo? original) { Call(original is null ? "manual" : "boot"); return Task.CompletedTask; }
+        public async Task PrepareAsync(FirmwareInfo? original, CancellationToken cancellationToken = default)
+        {
+            Call(original is null ? "manual" : "boot");
+            cancellationToken.ThrowIfCancellationRequested();
+            if (OnPrepare is not null) await OnPrepare(cancellationToken);
+        }
         public async Task WriteAsync(byte[] image, Action<int> progress) { Call("write"); Written = image; progress(50); if (OnWrite is not null) await OnWrite(); progress(100); }
         public Task<FirmwareInfo> VerifyAsync() { Call("verify"); return Task.FromResult(new FirmwareInfo(installed)); }
         public void Dispose() { }
@@ -57,6 +63,34 @@ internal static class FirmwareChecks
         UsbDeviceLocation usb = new(@"USB\VID_2E8A&PID_000F\TEST", "USBROOT(0)#USB(1)");
         BootDrive drive = new(@"E:\", info, usb);
         Check(usb.IsRp2350Boot && !(usb with { InstanceId = @"USB\VID_2E8A&PID_0003\TEST" }).IsRp2350Boot, "only RP2350 BOOT USB identity accepted");
+        UsbDeviceLocation factory = new(@"USB\VID_2E8A&PID_0009\FACTORY", usb.Location);
+        UsbDeviceLocation unrelated = new(@"USB\VID_046D&PID_C539\MOUSE", usb.Location);
+        Check(factory.IsPicoSdkUsb && !factory.IsRp2350Boot, "factory Pico SDK serial USB is recognized without treating it as a programming disk");
+        Check(UsbDeviceLocation.SelectUnconfigured([factory, usb, factory, unrelated]).Count == 2,
+            "factory and RP2350 BOOT candidates are deduplicated and unrelated USB devices are ignored");
+        foreach (string id in new[] { @"USB\VID_2E8A&PID_0003\RP2040", @"USB\VID_2E8A&PID_0009&MI_00\CDC", @"USB\VID_2E8A&PID_00090\OTHER", @"USB\VID_CAFE&PID_4004\OTHER" })
+            Check(UsbDeviceLocation.SelectUnconfigured([factory with { InstanceId = id }]).Count == 0,
+                "candidate matching rejects unsupported identities and composite child interfaces: " + id);
+        Check(ConnectionRead.WithoutBridge([]).Kind == ConnectionKind.NotDetected && ConnectionRead.WithoutBridge([unrelated]).Kind == ConnectionKind.NotDetected,
+            "no board or unrelated USB hardware stays disconnected without firmware guidance");
+        Check(ConnectionRead.WithoutBridge([factory]).Kind == ConnectionKind.UnknownFirmware && ConnectionRead.WithoutBridge([usb]).Kind == ConnectionKind.UnknownFirmware,
+            "factory and BOOT devices without bridge HID are unsupported, not disconnected");
+        Check(ConnectionRead.WithoutBridge([factory, usb]).NoticeKey == ConnectionRead.WithoutBridge([usb, factory, factory]).NoticeKey,
+            "candidate ordering and repeated interfaces do not retrigger guidance");
+        Check(ConnectionRead.WithoutBridge([factory]).NoticeKey == ConnectionRead.WithoutBridge([factory with { InstanceId = factory.InstanceId.ToLowerInvariant(), Location = factory.Location.ToLowerInvariant() }]).NoticeKey,
+            "Windows USB identifier casing does not retrigger guidance");
+        Check(FirmwareDevice.SingleUnconfigured([]) is null && FirmwareDevice.SingleUnconfigured([factory]) == factory,
+            "the updater remembers one factory board's USB location");
+        bool multipleFactory = false;
+        try { FirmwareDevice.SingleUnconfigured([factory, usb]); } catch (IOException) { multipleFactory = true; }
+        Check(multipleFactory, "multiple unconfigured boards cannot silently select a programming target");
+        FirmwareDevice.CheckBootLocation(factory, drive);
+        FirmwareDevice.CheckBootLocation(factory with { Location = factory.Location.ToLowerInvariant() }, drive);
+        FirmwareDevice.CheckBootLocation(null, drive);
+        Check(true, "factory-to-BOOT keeps the USB port; manual discovery without a prior target remains available");
+        bool changedPort = false;
+        try { FirmwareDevice.CheckBootLocation(factory, drive with { Usb = usb with { Location = "USBROOT(0)#USB(2)" } }); } catch (IOException) { changedPort = true; }
+        Check(changedPort, "factory installation rejects a BOOT disk on another USB port");
         Check(FirmwareDevice.SingleDrive([]) is null && FirmwareDevice.SingleDrive([drive]) == drive, "zero or one BOOT drive handled");
         bool ambiguous = false; try { FirmwareDevice.SingleDrive([drive, drive with { Root = @"F:\" }]); } catch (IOException) { ambiguous = true; }
         Check(ambiguous, "multiple BOOT drives rejected");
@@ -64,7 +98,14 @@ internal static class FirmwareChecks
         FirmwareResult Run(FakeDevice fake, bool[] answers, out List<FirmwarePrompt> prompts, out List<FirmwareStage> stages)
         {
             List<FirmwarePrompt> p = []; List<FirmwareStage> s = []; int next = 0;
-            FirmwareResult result = FirmwareWorkflow.RunAsync(package, fake, prompt => { p.Add(prompt); return Task.FromResult(answers[next++]); }, (stage, _) => s.Add(stage)).GetAwaiter().GetResult();
+            FirmwareResult result = FirmwareWorkflow.RunAsync(package, fake, prompt =>
+            {
+                p.Add(prompt);
+                if (prompt == FirmwarePrompt.ConfirmOverwrite)
+                    Check(fake.Calls.SequenceEqual(["probe", "manual"]) && s.Last() == FirmwareStage.WaitingForBootsel,
+                        "final overwrite confirmation opens only after BOOT preparation completes");
+                return Task.FromResult(answers[next++]);
+            }, (stage, _) => s.Add(stage)).GetAwaiter().GetResult();
             prompts = p; stages = s; return result;
         }
         using FakeDevice same = new(package.Version, package.Version);
@@ -78,11 +119,29 @@ internal static class FirmwareChecks
         using FakeDevice decline = new("0.1.0", package.Version);
         Check(Run(decline, [false], out prompts, out stages) == FirmwareResult.Cancelled && decline.Calls.SequenceEqual(["probe"]), "3-b No ends with no device mutation");
         using FakeDevice manual = new(null, package.Version);
-        Check(Run(manual, [true, true], out prompts, out stages) == FirmwareResult.Updated && prompts.SequenceEqual([FirmwarePrompt.ConnectBootsel, FirmwarePrompt.ConfirmOverwrite]) && manual.Calls.SequenceEqual(["probe", "manual", "write", "verify"]), "3-c and 4-b require both confirmations and never issue software reboot");
-        foreach (bool[] answers in new[] { new[] { false }, new[] { true, false } })
+        Check(Run(manual, [true], out prompts, out stages) == FirmwareResult.Updated && prompts.SequenceEqual([FirmwarePrompt.ConfirmOverwrite]) && manual.Calls.SequenceEqual(["probe", "manual", "write", "verify"]),
+            "manual route waits for physical BOOT, then asks one final confirmation without issuing a software reboot");
+        using FakeDevice finalDecline = new(null, package.Version);
+        Check(Run(finalDecline, [false], out prompts, out stages) == FirmwareResult.Cancelled && finalDecline.Calls.SequenceEqual(["probe", "manual"]) && finalDecline.Written is null,
+            "No at the final confirmation leaves the detected BOOT device unwritten");
+        foreach (bool detectedAtCancel in new[] { false, true })
         {
+            using CancellationTokenSource cancellation = new();
             using FakeDevice fake = new(null, package.Version);
-            Check(Run(fake, answers, out prompts, out stages) == FirmwareResult.Cancelled && fake.Calls.SequenceEqual(["probe"]), "No at either manual confirmation prevents any write");
+            fake.OnPrepare = token => { cancellation.Cancel(); return detectedAtCancel ? Task.CompletedTask : Task.Delay(Timeout.Infinite, token); };
+            int confirmations = 0; List<FirmwareStage> progress = [];
+            FirmwareResult result = FirmwareWorkflow.RunAsync(package, fake,
+                _ => { confirmations++; return Task.FromResult(true); }, (stage, _) => progress.Add(stage), cancellation.Token).GetAwaiter().GetResult();
+            Check(result == FirmwareResult.Cancelled && confirmations == 0 && fake.Calls.SequenceEqual(["probe", "manual"]) && fake.Written is null && !progress.Contains(FirmwareStage.Writing),
+                detectedAtCancel ? "cancellation at BOOT detection cannot advance to confirmation or writing" : "cancellation during physical reconnection wait exits without confirmation or writing");
+        }
+        using (FakeDevice failedWait = new(null, package.Version) { FailureAt = "manual", Failure = new IOException("simulated BOOT identity failure") })
+        {
+            bool rejectedWait = false; int confirmations = 0;
+            try { FirmwareWorkflow.RunAsync(package, failedWait, _ => { confirmations++; return Task.FromResult(true); }, (_, _) => { }).GetAwaiter().GetResult(); }
+            catch (IOException) { rejectedWait = true; }
+            Check(rejectedWait && confirmations == 0 && failedWait.Written is null && failedWait.Calls.SequenceEqual(["probe", "manual"]),
+                "failed BOOT validation never opens the final confirmation or writes");
         }
         foreach (string stage in new[] { "probe", "boot", "write", "verify" })
         {

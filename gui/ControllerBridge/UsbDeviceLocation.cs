@@ -8,6 +8,19 @@ namespace ControllerBridge;
 internal sealed record UsbDeviceLocation(string InstanceId, string Location)
 {
     internal bool IsRp2350Boot => InstanceId.StartsWith(@"USB\VID_2E8A&PID_000F\", StringComparison.OrdinalIgnoreCase);
+    internal bool IsPicoSdkUsb => InstanceId.StartsWith(@"USB\VID_2E8A&PID_0009\", StringComparison.OrdinalIgnoreCase);
+
+    // The supplied factory board exposes Pico SDK CDC/reset USB, not our HID
+    // transport. These IDs identify installation candidates, not board wiring;
+    // programming still requires confirmation and a verified RP2350 BOOT disk.
+    internal static List<UsbDeviceLocation> SelectUnconfigured(IEnumerable<UsbDeviceLocation> devices) => devices
+        .Where(device => device.IsPicoSdkUsb || device.IsRp2350Boot)
+        .DistinctBy(device => device.InstanceId, StringComparer.OrdinalIgnoreCase)
+        .OrderBy(device => device.InstanceId, StringComparer.OrdinalIgnoreCase).ToList();
+
+    internal static List<UsbDeviceLocation> FindUnconfigured() => SelectUnconfigured(
+        Interfaces(new("a5dcbf10-6530-11d2-901f-00c04fb951ed"))
+            .Select(item => ParentUsb(item.Node)).OfType<UsbDeviceLocation>());
 
     [StructLayout(LayoutKind.Sequential)] private struct InterfaceData { public int Size; public Guid Guid; public uint Flags; public IntPtr Reserved; }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceData { public int Size; public Guid Guid; public uint DevInst; public IntPtr Reserved; }

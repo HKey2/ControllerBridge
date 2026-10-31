@@ -5,12 +5,13 @@ internal sealed class FirmwareUpdateDialog : Form
     private readonly Label status = Ui.Label(FirmwareWorkflow.StageText(FirmwareStage.Checking, 0), 11);
     private readonly Label detail = Ui.Label("", 10);
     private readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Style = ProgressBarStyle.Marquee, Height = 20 };
-    private readonly Button yes, no, close;
+    private readonly Button yes, no, cancelWait, close;
     private readonly FirmwarePackage package;
     private readonly IFirmwareDevice device;
     private readonly string? introduction;
     private TaskCompletionSource<bool>? answer;
-    private bool finished, prompted;
+    private readonly CancellationTokenSource bootWaitCancellation = new();
+    private bool finished, prompted, waitingForBootsel;
     internal FirmwareResult? Result { get; private set; }
     internal bool ProgrammingStarted { get; private set; }
 
@@ -28,18 +29,33 @@ internal sealed class FirmwareUpdateDialog : Form
         FlowLayoutPanel buttons = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
         no = Ui.Button(L.T("いいえ", "No"), (_, _) => Answer(false));
         yes = Ui.Button(L.T("はい", "Yes"), (_, _) => Answer(true), true);
+        cancelWait = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => CancelBootWait());
         close = Ui.Button(L.T("閉じる", "Close"), (_, _) => Close());
-        yes.Visible = no.Visible = close.Visible = false;
-        buttons.Controls.Add(close); buttons.Controls.Add(no); buttons.Controls.Add(yes); layout.Controls.Add(buttons, 0, 3);
+        yes.Visible = no.Visible = cancelWait.Visible = close.Visible = false;
+        buttons.Controls.Add(close); buttons.Controls.Add(cancelWait); buttons.Controls.Add(no); buttons.Controls.Add(yes); layout.Controls.Add(buttons, 0, 3);
         Controls.Add(layout);
         FormClosing += (_, e) =>
         {
             if (finished) return;
             e.Cancel = true;
-            // X/Escape is equivalent to No only while a confirmation is pending.
-            if (prompted) Answer(false);
+            if (waitingForBootsel) CancelBootWait();
+            else if (prompted) Answer(false);
         };
         Shown += async (_, _) => await Run();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !IsDisposed) { bootWaitCancellation.Cancel(); bootWaitCancellation.Dispose(); }
+        base.Dispose(disposing);
+    }
+
+    private void CancelBootWait()
+    {
+        if (!waitingForBootsel || bootWaitCancellation.IsCancellationRequested) return;
+        cancelWait.Enabled = false; ControlBox = false; AcceptButton = CancelButton = null;
+        status.Text = L.T("キャンセル中…", "Cancelling…");
+        bootWaitCancellation.Cancel();
     }
 
     private void Answer(bool value)
@@ -52,7 +68,9 @@ internal sealed class FirmwareUpdateDialog : Form
 
     private Task<bool> Confirm(FirmwarePrompt prompt)
     {
-        status.Text = L.T("ファームウェア更新", "Firmware update");
+        waitingForBootsel = false; cancelWait.Visible = false;
+        status.Text = prompt == FirmwarePrompt.ConfirmOverwrite
+            ? L.T("書き込みの最終確認", "Confirm firmware write") : L.T("ファームウェア更新", "Firmware update");
         detail.Text = (introduction is null || prompt == FirmwarePrompt.ConfirmOverwrite ? "" : introduction + "\r\n\r\n") + FirmwareWorkflow.PromptText(prompt, package.Version);
         progress.Visible = false; yes.Visible = no.Visible = true; prompted = true; ControlBox = true;
         answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -62,6 +80,7 @@ internal sealed class FirmwareUpdateDialog : Form
 
     private void Report(FirmwareStage stage, int percent)
     {
+        if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(() => Report(stage, percent)); return; }
         if (finished) return;
         string text = FirmwareWorkflow.StageText(stage, percent);
@@ -71,9 +90,18 @@ internal sealed class FirmwareUpdateDialog : Form
         if (progress.Style != style) progress.Style = style;
         int value = Math.Clamp(percent, 0, 100);
         if (progress.Value != value) progress.Value = value;
-        if (stage != FirmwareStage.Checking)
+        waitingForBootsel = stage == FirmwareStage.WaitingForBootsel;
+        cancelWait.Visible = waitingForBootsel;
+        if (waitingForBootsel)
         {
-            ProgrammingStarted = true; ControlBox = false;
+            ClientSize = new(ClientSize.Width, Math.Max(ClientSize.Height, 360));
+            detail.Text = (introduction is null ? "" : introduction + "\r\n\r\n") + FirmwareWorkflow.BootWaitInstructions;
+            yes.Visible = no.Visible = close.Visible = false;
+            cancelWait.Enabled = true; ControlBox = true; AcceptButton = null; CancelButton = cancelWait; cancelWait.Focus();
+        }
+        else if (stage != FirmwareStage.Checking)
+        {
+            ProgrammingStarted = true; ControlBox = false; AcceptButton = CancelButton = null;
             detail.Text = L.T("完了するまでUSBケーブルを抜かないでください。", "Keep the USB cable connected until the update finishes.");
         }
     }
@@ -82,8 +110,14 @@ internal sealed class FirmwareUpdateDialog : Form
     {
         try
         {
-            Result = await FirmwareWorkflow.RunAsync(package, device, Confirm, Report);
-            if (Result == FirmwareResult.Cancelled) { finished = true; Close(); return; }
+            Result = await FirmwareWorkflow.RunAsync(package, device, Confirm, Report, bootWaitCancellation.Token);
+            if (IsDisposed) return;
+            if (Result == FirmwareResult.Cancelled)
+            {
+                // Cancellation can complete inside FormClosing itself. Queue
+                // closure after that event so its e.Cancel cannot undo Close.
+                finished = true; BeginInvoke(() => Close()); return;
+            }
             detail.Text = Result == FirmwareResult.AlreadyCurrent
                 ? L.F("既にツール同梱の v{0} です", "The device already has the bundled v{0}.", package.Version)
                 : L.F("v{0} の起動を確認しました。", "Confirmed that v{0} is running.", package.Version);
@@ -91,13 +125,20 @@ internal sealed class FirmwareUpdateDialog : Form
         }
         catch (Exception ex)
         {
-            status.Text = L.T("ファームウェア更新を完了できませんでした。", "Firmware update could not be completed.");
-            detail.Text = ex.Message;
+            if (!IsDisposed)
+            {
+                status.Text = L.T("ファームウェア更新を完了できませんでした。", "Firmware update could not be completed.");
+                detail.Text = ex.Message;
+            }
         }
         finally
         {
-            finished = true; ControlBox = true; progress.Visible = false;
-            yes.Visible = no.Visible = false; close.Visible = true; AcceptButton = CancelButton = close;
+            finished = true; waitingForBootsel = false;
+            if (!IsDisposed)
+            {
+                ControlBox = true; progress.Visible = false;
+                yes.Visible = no.Visible = cancelWait.Visible = false; close.Visible = true; AcceptButton = CancelButton = close;
+            }
         }
     }
 
@@ -110,28 +151,42 @@ internal sealed class FirmwareUpdateDialog : Form
         {
             try
             {
-                for (int i = 0; i < 100 && !dialog.prompted && !dialog.finished; i++) await Task.Delay(20);
-                check(dialog.prompted && !dialog.ProgrammingStarted, "automatic guide waits for confirmation before programming");
+                for (int i = 0; i < 100 && !dialog.prompted && !dialog.waitingForBootsel && !dialog.finished; i++) await Task.Delay(20);
+                check((dialog.prompted || dialog.waitingForBootsel) && !dialog.ProgrammingStarted,
+                    "automatic guide waits for physical BOOT or confirmation before programming");
                 dialog.PerformLayout();
                 using Bitmap bitmap = new(dialog.Width, dialog.Height);
                 dialog.DrawToBitmap(bitmap, new(0, 0, dialog.Width, dialog.Height)); bitmap.Save(path);
                 int needed = TextRenderer.MeasureText(dialog.detail.Text, dialog.detail.Font, new(dialog.detail.ClientSize.Width, int.MaxValue), TextFormatFlags.WordBreak).Height;
                 check(needed <= dialog.detail.ClientSize.Height && dialog.detail.Text.Contains(introduction), "automatic guide explanation and prompt fit");
-                check(dialog.AcceptButton == dialog.no && dialog.CancelButton == dialog.no, "automatic guide defaults to No");
-                dialog.no.PerformClick();
+                if (dialog.waitingForBootsel)
+                {
+                    check(dialog.cancelWait.Visible && !dialog.yes.Visible && !dialog.no.Visible && !dialog.close.Visible && dialog.CancelButton == dialog.cancelWait,
+                        "physical BOOT waiting displays only Cancel and supports Escape");
+                    dialog.cancelWait.PerformClick();
+                }
+                else
+                {
+                    check(dialog.AcceptButton == dialog.no && dialog.CancelButton == dialog.no, "automatic confirmation defaults to No");
+                    dialog.no.PerformClick();
+                }
             }
-            catch (Exception ex) { failure = ex; dialog.finished = true; dialog.Close(); }
+            catch (Exception ex) { failure = ex; dialog.bootWaitCancellation.Cancel(); dialog.finished = true; dialog.Close(); }
         };
         dialog.ShowDialog(owner);
         if (failure is not null) throw failure;
-        check(dialog.Result == FirmwareResult.Cancelled && !dialog.ProgrammingStarted, "declining automatic guidance exits without programming");
+        check(dialog.Result == FirmwareResult.Cancelled && !dialog.ProgrammingStarted, "cancelling automatic guidance exits without programming");
     }
 
     internal static void RunChecks(string directory, FirmwarePackage package, Action<bool, string> check)
     {
-        foreach (string scenario in new[] { "same", "different", "manual", "cancel-first", "cancel-second", "failure" })
+        foreach (string scenario in new[] { "same", "different", "manual", "boot-present", "cancel-wait", "close-wait", "cancel-final", "failure" })
         {
             using FirmwareChecks.FakeDevice device = new(scenario == "same" ? package.Version : scenario == "different" || scenario == "failure" ? "0.1.0" : null, package.Version);
+            bool manual = scenario is "manual" or "boot-present" or "cancel-wait" or "close-wait" or "cancel-final";
+            bool cancelled = scenario is "cancel-wait" or "close-wait" or "cancel-final";
+            TaskCompletionSource bootReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (manual && scenario != "boot-present") device.OnPrepare = token => bootReady.Task.WaitAsync(token);
             if (scenario == "failure") { device.FailureAt = "verify"; device.Failure = new TimeoutException(L.T("書き込み後の起動を確認できませんでした。USBケーブルを確認してください。再接続しても認識されない場合は、BOOTボタンを押しながら接続し、ファームウェア更新をやり直してください。", "The device did not restart with identifiable firmware. Check the USB cable. If reconnecting does not help, connect while holding BOOT and run Firmware update again.")); }
             using FirmwareUpdateDialog dialog = new(package, device) { Opacity = 0 };
             Exception? failure = null;
@@ -146,7 +201,8 @@ internal sealed class FirmwareUpdateDialog : Form
             device.OnWrite = async () =>
             {
                 await Task.Delay(30);
-                check(!dialog.ControlBox && !dialog.yes.Visible && !dialog.no.Visible, scenario + " writing locks confirmation and close controls");
+                check(dialog.ProgrammingStarted && !dialog.ControlBox && !dialog.yes.Visible && !dialog.no.Visible && !dialog.cancelWait.Visible,
+                    scenario + " writing locks confirmation, cancellation and close controls");
                 Capture(scenario + "-writing");
                 dialog.Close(); check(!dialog.IsDisposed, scenario + " window close cannot interrupt writing");
             };
@@ -155,23 +211,35 @@ internal sealed class FirmwareUpdateDialog : Form
                 try
                 {
                     await Task.Delay(30);
-                    if (dialog.prompted)
+                    if (manual && scenario != "boot-present")
                     {
-                        Capture(scenario + "-confirmation");
-                        check(dialog.AcceptButton == dialog.no && dialog.CancelButton == dialog.no, scenario + " Enter and Escape default to No");
-                        if (scenario == "cancel-first") { dialog.Close(); return; }
-                        dialog.yes.PerformClick();
+                        check(dialog.waitingForBootsel && !dialog.prompted && !dialog.ProgrammingStarted && device.Calls.SequenceEqual(["probe", "manual"]),
+                            scenario + " starts monitoring BOOT without an initial Yes/No question");
+                        check(dialog.cancelWait.Visible && !dialog.yes.Visible && !dialog.no.Visible && !dialog.close.Visible && dialog.CancelButton == dialog.cancelWait && dialog.ControlBox,
+                            scenario + " waiting offers Cancel, Escape and window close");
+                        Capture(scenario + "-waiting");
+                        if (scenario == "cancel-wait") { dialog.cancelWait.PerformClick(); return; }
+                        if (scenario == "close-wait") { dialog.Close(); return; }
+                        bootReady.SetResult();
+                        for (int i = 0; i < 100 && !dialog.prompted && !dialog.finished; i++) await Task.Delay(20);
                     }
-                    await Task.Delay(30);
+                    if (manual)
+                    {
+                        check(dialog.prompted && !dialog.waitingForBootsel && !dialog.cancelWait.Visible && !dialog.ProgrammingStarted && device.Written is null,
+                            scenario + " detected BOOT changes to final Yes/No confirmation without writing");
+                        check(dialog.status.Text == L.T("書き込みの最終確認", "Confirm firmware write") && dialog.detail.Text.Contains(package.Version),
+                            scenario + " final confirmation names the firmware version");
+                    }
                     if (dialog.prompted)
                     {
-                        Capture(scenario + "-overwrite");
-                        if (scenario == "cancel-second") { dialog.no.PerformClick(); return; }
+                        Capture(scenario + (manual ? "-overwrite" : "-confirmation"));
+                        check(dialog.AcceptButton == dialog.no && dialog.CancelButton == dialog.no, scenario + " Enter and Escape default to No");
+                        if (scenario == "cancel-final") { dialog.no.PerformClick(); return; }
                         dialog.yes.PerformClick();
                     }
                     for (int i = 0; i < 100 && !dialog.finished; i++) await Task.Delay(20);
                     check(dialog.finished, scenario + " dialog finishes");
-                    if (!dialog.IsDisposed && !scenario.StartsWith("cancel"))
+                    if (!dialog.IsDisposed && !cancelled)
                     {
                         Capture(scenario + "-result");
                         check(dialog.close.Visible && dialog.ControlBox, scenario + " result can be closed");
@@ -181,13 +249,14 @@ internal sealed class FirmwareUpdateDialog : Form
                 catch (Exception ex) { failure = ex; }
                 finally
                 {
-                    if (failure is not null || !scenario.StartsWith("cancel"))
-                    { dialog.finished = true; if (!dialog.IsDisposed) dialog.Close(); }
+                    if (failure is not null || !cancelled)
+                    { dialog.bootWaitCancellation.Cancel(); dialog.finished = true; if (!dialog.IsDisposed) dialog.Close(); }
                 }
             };
             dialog.ShowDialog();
             if (failure is not null) throw failure;
-            if (scenario.StartsWith("cancel")) check(device.Written is null && dialog.Result == FirmwareResult.Cancelled, scenario + " dialog cancellation did not write");
+            if (cancelled) check(device.Written is null && dialog.Result == FirmwareResult.Cancelled && device.Calls.SequenceEqual(["probe", "manual"]),
+                scenario + " dialog cancellation stops waiting or declines the final confirmation without writing");
         }
     }
 }

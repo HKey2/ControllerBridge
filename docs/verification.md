@@ -2,6 +2,26 @@
 
 Applies to ControllerBridge Windows configurator and normal firmware 0.19.0. This release adds first-empty-slot selection for an input without a profile and guards registration against connection changes and occupied destinations. It retains the RGB wire order introduced in 0.18.1. Custom, status, and diagnostic colors share the same board-order conversion. Default dim blue and the low-brightness notification levels are preserved. Custom colors use the three previously reserved profile bytes and flag bit 3 without increasing the stored sizes. It preserves the Flash storage identity introduced in 0.16.0, binary profile/bank layout version 5, and JSON backup/export version 2.
 
+## 2026-10-31 cancellable BOOT connection wait
+
+First installation now starts monitoring for a valid BOOT connection as soon as the guide appears. The waiting dialog shows numbered reconnection steps and only **Cancel**, with no preliminary Yes/No question and no manual-wait timeout. Valid BOOT detection advances to the final overwrite confirmation; only Yes starts writing. A readable version mismatch keeps the existing automatic-update flow.
+
+The published executable passed 124 firmware workflow/dialog checks, 46 connection checks, and 134 GUI self-tests in each of Japanese and English. The added deterministic cases cover BOOT detection before final confirmation, an already connected BOOT device, waiting cancellation, cancellation at the detection boundary, closing the wait with the window close button, declining the final confirmation, and BOOT failure preventing confirmation and writing. Cancelling via the close button is completed after the closing event, preventing the dialog from remaining open. Both languages' waiting and final-confirmation captures were visually inspected at 96 DPI.
+
+The attached factory-state board also passed 16 read-only checks per language. Startup and background discovery after a simulated prior absence each opened the real wait with only Cancel. Cancelling both waits left its factory firmware intact, with no additional guides or editor changes through three retries after each cancellation. These results total 320 checks per language, 640 across both languages. The real board was not physically reconnected in BOOT mode or programmed; the detection-to-confirmation transition was exercised with a simulated device. The firmware UF2, supplied icons, and board memory allocations below are unchanged.
+
+## 2026-10-31 factory-state board discovery
+
+The supplied factory-state Waveshare RP2350-USB-A was connected to USB-C during verification. Windows reported product `Pico`, USB parent `2E8A:0009`, a CDC serial interface, and a reset interface. It did not expose the ControllerBridge HID transport or a firmware version. The corrected discovery classifies it as `UnknownFirmware` and shows **Device unsupported**, rather than `NotDetected` / **Device not connected**. Metadata enumeration does not open the serial port or issue reset commands.
+
+Before the BOOT-wait revision above, the executable passed 96 firmware workflow/discovery checks, 46 connection UI checks, and 134 GUI self-tests in each of Japanese and English. The added deterministic cases cover factory/BOOT candidates, unrelated peripherals, composite child rejection, RP2040 BOOT exclusion, stable keys, multiple-candidate rejection, same-port BOOT matching, distinct unsupported status, repeated-prompt suppression, and rearming after an observed disconnect.
+
+Read-only checks against the attached factory board passed 16 checks in each language. The real startup discovery opened the real installation guide, which the check declined. A second scenario simulated only the prior disconnected state, then used the normal background timer and actual USB discovery to find the same attached board and open guidance again. This verifies the connection-time code path; it is not a physical unplug/replug test. After each decline, three discovery retries over 6.8 seconds produced zero extra guides, enabled/text changes, invalidations, layouts, or editor rebindings. Both language captures of the guide and unsupported main-window status were visually inspected.
+
+The factory board remained connected with its original USB identity. No reboot, serial reset, firmware programming, or profile write was performed. Actual first programming and the BOOT-to-application transition remain unverified by this check. The updater now binds a detected factory target to its USB port and still requires RP2350 USB/INFO_UF2 validation and the overwrite confirmation. Shared Pico SDK IDs identify candidates, not a carrier-board model.
+
+Only the PC configurator and documentation changed. The supplied PNG/ICO and the embedded/distributed firmware are unchanged; the UF2 SHA-256 remains `E2004081E0562335C3F91A4B25345690967FD213D2BB65835FE34C109414DEF7`. Board memory allocations and remaining capacity in the table below remain current.
+
 ## 2026-10-30 input-log repainting
 
 The flicker came from unconditional whole-list invalidation on every 100 ms refresh, a native ListView without double buffering, and a two-step status-label assignment when a notice was retained. The latter temporarily removed the second line and resized the grid twice per update. Updating `VirtualListSize` also requested a whole native count refresh; append notifications now preserve the viewport and limit invalidation to affected rows.
@@ -45,10 +65,10 @@ Forty deterministic checks run the real C runtime against simulated storage and 
 
 The supplied PNG/ICO are preserved. The published EXE icon was compared against the supplied ICO. The embedded and distributed 0.19.0 UF2 has SHA-256 `E2004081E0562335C3F91A4B25345690967FD213D2BB65835FE34C109414DEF7`. Existing profile/bank version 5, JSON version 2, and current Flash records remain compatible. The new GUI requires its bundled 0.19.0 firmware for guarded registration.
 
-## Disconnected startup
+## 2026-10-30 disconnected startup (before factory-state detection)
 
 
-No detected bridge is now a normal disconnected waiting state on the first discovery as well as later attempts. It does not set a startup error or open a firmware update confirmation. A detected bridge with unknown or different firmware still opens its guide once; manual firmware update remains available for first installation and BOOT mode.
+With no recognized board, disconnected startup remains a normal waiting state without a startup error or firmware confirmation. The results in this subsection predate the factory-state detection added above: factory/BOOT USB identities now count as detected unsupported boards and open guidance automatically.
 
 The published EXE passed 44 connection UI checks and 82 firmware workflow/dialog checks in each language. Real USB discovery returned `NotDetected` in Japanese and English, with zero guides at startup and through three retries over 6.8 seconds. Those retries caused no enabled/text changes, invalidations, layouts, or editor rebindings. The supplied PNG and ICO were preserved byte for byte without regeneration; the icon extracted from the published EXE matches the supplied ICO pixel for pixel. No hardware was written; current 0.19.0 memory figures are listed below.
 
@@ -71,9 +91,10 @@ The current 0.19.0 executable and firmware were rebuilt using the installed tool
 | LED setting UI and persistence | 162 checks passed in Japanese and English; fixed preview curve, native hex paste with an optional # prefix, bidirectional synchronization, invalid-code rejection, exact RGB, default/off, draft/save/cancel, duplicate, reorder, JSON, and layout |
 | LED output driver | 45 checks passed using the real driver with simulated PIO/time |
 | GUI self-test | 134 checks passed in Japanese and English |
-| Firmware workflow and dialogs | 82 checks passed in Japanese and English, using simulated devices |
-| Connection UI and automatic guidance | 44 checks passed in Japanese and English, including silent disconnected startup, manual reconnect, and guidance after a later detection |
-| Disconnected startup with real USB discovery | 3 read-only checks passed in each language; `NotDetected`, zero guides, and three background retries over 6.8 seconds |
+| Firmware workflow, discovery and dialogs | 124 checks passed in Japanese and English, using simulated identities/devices, including cancellable BOOT waiting and final confirmation after detection |
+| Connection UI and automatic guidance | 46 checks passed in Japanese and English, including silent disconnected startup, unsupported status and guidance after an observed disconnect |
+| Factory-state board with real USB discovery | 16 read-only checks passed in each language; `UnknownFirmware`, startup BOOT wait and background arrival after simulated absence, with only Cancel and stable retries after each cancellation |
+| Previous disconnected startup with real USB discovery | 3 read-only checks passed in each language; `NotDetected`, zero guides, and three background retries over 6.8 seconds |
 | Previous 0.17.1 attached older bridge startup | 7 read-only checks passed; `UnknownFirmware` detected, one guide, three retries over 6.8 seconds after declining |
 | Previous 0.17.1 output tabs and profile menu | 16 and 23 checks respectively passed in each language |
 | Previous 0.17.1 read-only device inspection | Connected HID bridge and its USB location identified; old firmware did not support command 47 |
@@ -91,7 +112,7 @@ The input-arrival, connection UI, firmware workflow, LED/settings and general GU
 
 The earlier icon generation check decoded all nine generated ICO sizes and compared its 64-pixel frame to the PNG. For this release, the separately supplied PNG and ICO are preserved byte for byte, and the icon extracted from the EXE matches the supplied ICO pixel for pixel. The main window and LED dialog captures show the icon in their title bars. Taskbar and Explorer cache refresh were not separately exercised.
 
-The updater checks exercise exact same-version exit, lower/higher/prerelease mismatches, both manual confirmations, cancellation at each prompt, failure at probe/BOOT/write/verification, and post-write version mismatch. They validate the actual embedded package checksum, UF2 family/address/block limits, identity decoding, RP2350 disk markers, and ambiguity rejection. Dialog checks cover text fit, default No, closing confirmations, blocking closure while writing, and final results. Japanese and English screenshots were visually inspected.
+The updater checks exercise exact same-version exit, lower/higher/prerelease mismatches, immediate manual BOOT waiting, final confirmation only after detection, cancellation during waiting or at the detection boundary, declining confirmation, failure at probe/BOOT/write/verification, and post-write version mismatch. They validate the actual embedded package checksum, UF2 family/address/block limits, identity decoding, RP2350 disk markers, and ambiguity rejection. Dialog checks cover text fit, Cancel-only waiting, closing the wait, default No at final confirmation, closing confirmations, blocking closure while writing, and final results. Japanese and English screenshots were visually inspected.
 
 Connection checks cover no supported interface, missing version support, lower/higher versions, and transport errors. Across three repeated attempts in each settled state, enabled changes, text changes, invalidations, layout events, and editor rebindings were all zero, with no repeated guide. They also exercise preserving edits made during discovery, overlapping attempt suppression, foreground-operation priority, modal-editor deferral, stable empty-input host retries, and one final live-label update per input batch. Known-version mismatch and factory/other-software states are simulated; they have not been physically flashed for this verification.
 

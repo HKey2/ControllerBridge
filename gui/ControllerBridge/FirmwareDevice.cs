@@ -15,6 +15,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
 
     public async Task<FirmwareInfo?> ProbeAsync()
     {
+        probePath = null; probeUsb = null; target = null; TransferWarning = null;
         try
         {
             using HidBridge device = await HidBridge.ConnectAsync();
@@ -22,7 +23,24 @@ internal sealed class FirmwareDevice : IFirmwareDevice
             probeUsb = UsbDeviceLocation.ForHid(device.DevicePath);
             return await device.ReadFirmwareAsync();
         }
-        catch (BridgeDiscoveryException ex) when (ex.Matches == 0) { return null; }
+        catch (BridgeDiscoveryException ex) when (ex.Matches == 0)
+        {
+            probeUsb = SingleUnconfigured(await Task.Run(UsbDeviceLocation.FindUnconfigured));
+            return null;
+        }
+    }
+
+    internal static UsbDeviceLocation? SingleUnconfigured(IReadOnlyList<UsbDeviceLocation> devices)
+    {
+        if (devices.Count > 1)
+            throw new IOException(L.T("未対応の基板が複数あります。書き込むRP2350-USB-Aを1台だけ接続してください。", "Multiple unsupported boards were found. Connect only the RP2350-USB-A you want to program."));
+        return devices.Count == 1 ? devices[0] : null;
+    }
+
+    internal static void CheckBootLocation(UsbDeviceLocation? original, BootDrive boot)
+    {
+        if (original is not null && !boot.Usb.Location.Equals(original.Location, StringComparison.OrdinalIgnoreCase))
+            throw new IOException(L.T("別のUSBポートでBOOT接続を検出しました。確認した基板を同じUSBポートに接続して実行してください。", "BOOT mode appeared on a different USB port. Reconnect the confirmed board to the same USB port and try again."));
     }
 
     internal static bool IsRp2350Info(string text) => text.Length <= 4096 &&
@@ -35,11 +53,12 @@ internal sealed class FirmwareDevice : IFirmwareDevice
         return drives.Count == 1 ? drives[0] : null;
     }
 
-    private static Task<List<BootDrive>> DrivesAsync() => Task.Run(() =>
+    private static Task<List<BootDrive>> DrivesAsync(CancellationToken cancellationToken = default) => Task.Run(() =>
     {
         List<BootDrive> drives = [];
         foreach (DriveInfo drive in DriveInfo.GetDrives())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 if (drive.DriveType is not (DriveType.Removable or DriveType.Fixed) || !drive.IsReady) continue;
@@ -54,10 +73,11 @@ internal sealed class FirmwareDevice : IFirmwareDevice
             catch (UnauthorizedAccessException) { }
         }
         return drives;
-    });
+    }, cancellationToken);
 
-    public async Task PrepareAsync(FirmwareInfo? original)
+    public async Task PrepareAsync(FirmwareInfo? original, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (original is not null)
         {
             if ((await DrivesAsync()).Count != 0)
@@ -69,16 +89,19 @@ internal sealed class FirmwareDevice : IFirmwareDevice
             await device.RawAsync(9);
         }
         Stopwatch watch = Stopwatch.StartNew();
-        while (watch.Elapsed < TimeSpan.FromSeconds(30))
+        // Manual reconnection can take as long as the user needs. Only the
+        // software-triggered BOOT transition retains its 30-second timeout.
+        while (original is null || watch.Elapsed < TimeSpan.FromSeconds(30))
         {
-            target = SingleDrive(await DrivesAsync());
+            List<BootDrive> drives = await DrivesAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            target = SingleDrive(drives);
             if (target is not null)
             {
-                if (original is not null && target.Usb.Location != probeUsb?.Location)
-                    throw new IOException(L.T("別のUSBポートでBOOT接続を検出しました。同じポートに接続したまま実行してください。", "BOOT mode appeared on a different USB port. Keep the board connected to the same port."));
+                CheckBootLocation(probeUsb, target);
                 return;
             }
-            await Task.Delay(250);
+            await Task.Delay(250, cancellationToken);
         }
         throw new TimeoutException(L.T("BOOT接続のRP2350が見つかりません。BOOTボタンを押しながらTYPE-C側を接続し直し、もう一度実行してください。", "No RP2350 was found in BOOT mode. Reconnect its TYPE-C port while holding BOOT, then try again."));
     }
@@ -153,6 +176,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
         {
             bundledVersion = FirmwarePackage.Load().Version, firmware = info,
             connectedBridge = device.probePath is not null, usb = device.probeUsb,
+            unsupportedDevice = info is null && device.probeUsb is not null,
             bootDrives = drives, physicalDeviceWritten = false
         }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     }

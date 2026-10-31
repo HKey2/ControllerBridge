@@ -24,6 +24,7 @@ internal sealed partial class MainForm
         List<string> checks = []; List<object> observations = [];
         void Check(bool ok, string description) { if (!ok) throw new InvalidDataException(description); checks.Add(description); }
         int guides = 0, attempts = 0;
+        bool arrivalAfterSimulatedAbsence = false;
         ConnectionStatus? detected = null;
         firmwareGuide = introduction =>
         {
@@ -32,7 +33,7 @@ internal sealed partial class MainForm
             {
                 using FirmwareDevice device = new();
                 FirmwareUpdateDialog.CheckDeclinedGuide(this, bundledFirmware.Value, device, introduction!,
-                    Path.Combine(directory, "automatic-guide.png"), Check);
+                    Path.Combine(directory, guides == 1 ? "automatic-guide.png" : "arrival-guide.png"), Check);
             }
             return Task.CompletedTask;
         };
@@ -71,7 +72,8 @@ internal sealed partial class MainForm
         }
         if (hardware)
         {
-            readConnection = async version => { attempts++; ConnectionRead result = await ConnectionRead.OpenAsync(version); detected = result.Status; return result; };
+            Func<string, Task<ConnectionRead>> readPhysical = async version => { attempts++; ConnectionRead result = await ConnectionRead.OpenAsync(version); detected = result.Status; return result; };
+            readConnection = readPhysical;
             await Connect(false);
             if (detected?.Kind == ConnectionKind.NotDetected)
                 Check(bridge is null && caps is null && StartupError is null && guides == 0 && connection.Text == detected.Summary,
@@ -81,6 +83,26 @@ internal sealed partial class MainForm
                     "physical mismatched/unknown firmware opens one automatic guide (requires an absent or mismatched/older bridge)");
             await ObserveStable("physical-device", 6800);
             CapturePreview(Path.Combine(directory, "connection.png"));
+            if (detected?.Kind is ConnectionKind.UnknownFirmware or ConnectionKind.DifferentFirmware)
+            {
+                ConnectionStatus physical = detected;
+                Check(connection.Text == physical.Summary && !saveButton.Enabled,
+                    "unsupported physical board retains its distinct status after the automatic guide is declined");
+                int beforeArrival = guides;
+                // The board stays physically attached and unmodified. Simulate
+                // only its prior absence, then let the normal background timer
+                // discover the real USB device and open the real updater again.
+                readConnection = _ => Task.FromResult(new ConnectionRead(new(ConnectionKind.NotDetected)));
+                await Connect(false); timer.Stop();
+                Check(StartupError is null && guides == beforeArrival, "pre-attachment absence is quiet");
+                readConnection = readPhysical; timer.Start();
+                for (int i = 0; i < 80 && (guides == beforeArrival || ModalEditorOpen); i++) await Task.Delay(100);
+                Check(!ModalEditorOpen && guides == beforeArrival + 1 && detected == physical && connection.Text == physical.Summary,
+                    "background discovery of the real board after simulated absence opens one automatic guide");
+                arrivalAfterSimulatedAbsence = true;
+                await ObserveStable("physical-board-after-simulated-arrival", 6800);
+                CapturePreview(Path.Combine(directory, "arrival-connection.png"));
+            }
         }
         else
         {
@@ -117,6 +139,9 @@ internal sealed partial class MainForm
                     await Connect(); timer.Stop();
                     Check(guides == before && StartupError is null, "manual reconnect while unplugged also stays disconnected without an update prompt");
                 }
+                else if (scenario.Kind == ConnectionKind.UnknownFirmware)
+                    Check(connection.Text == scenario.Summary && connection.Text.Contains(L.T("未対応", "unsupported")) && !saveButton.Enabled,
+                        "unknown firmware displays unsupported status and cannot save profiles");
                 await ObserveStable(scenario.Kind + ":" + scenario.Version, 0);
                 CapturePreview(Path.Combine(directory, scenario.Kind + (scenario.Version ?? "") + ".png"));
             }
@@ -125,7 +150,8 @@ internal sealed partial class MainForm
             await Connect(false); timer.Stop();
             status = new(ConnectionKind.UnknownFirmware, "board-a");
             await Connect(false); timer.Stop();
-            Check(guides == currentGuides, "disconnect/reattach does not repeat a dismissed notice");
+            Check(guides == currentGuides + 1, "observed disconnect rearms a dismissed notice for the next attachment");
+            currentGuides = guides;
             ioError = true; await Connect(false); timer.Stop();
             await ObserveStable("transport-error", 0); ioError = false;
             int beforeAttempt = attempts;
@@ -191,18 +217,22 @@ internal sealed partial class MainForm
             foreach (ConnectionStatus guide in new ConnectionStatus[] { new(ConnectionKind.UnknownFirmware, "board"), new(ConnectionKind.DifferentFirmware, "board", "0.1.0") })
             {
                 using FirmwareChecks.FakeDevice device = new(guide.Version, bundledFirmware.Value.Version);
+                if (guide.Kind == ConnectionKind.UnknownFirmware) device.OnPrepare = token => Task.Delay(Timeout.Infinite, token);
                 FirmwareUpdateDialog.CheckDeclinedGuide(this, bundledFirmware.Value, device, guide.Guidance(bundledFirmware.Value.Version),
                     Path.Combine(directory, guide.Kind + "-guide.png"), Check);
-                Check(device.Calls.SequenceEqual(["probe"]) && device.Written is null, guide.Kind + ": automatic guidance never writes without confirmation");
+                Check(device.Calls.SequenceEqual(guide.Kind == ConnectionKind.UnknownFirmware ? ["probe", "manual"] : ["probe"]) && device.Written is null,
+                    guide.Kind + ": automatic guidance never writes without final confirmation");
             }
             FirmwareNoticeTracker tracker = new();
             Check(!tracker.Observe(new(ConnectionKind.NotDetected), true) && !tracker.Observe(new(ConnectionKind.NotDetected), true), "initial and repeated absence never offer firmware guidance");
             Check(tracker.Observe(new(ConnectionKind.UnknownFirmware, "newly-attached"), true) && !tracker.Observe(new(ConnectionKind.UnknownFirmware, "newly-attached"), true), "a device attached after offline startup still gets one required firmware guide");
+            Check(!tracker.Observe(new(ConnectionKind.NotDetected), true) && tracker.Observe(new(ConnectionKind.UnknownFirmware, "newly-attached"), true),
+                "the same board receives guidance again only after a disconnected state was observed");
             Check(!tracker.Observe(new(ConnectionKind.Ready), true) && !tracker.Observe(new(ConnectionKind.NotDetected), true), "ordinary unplug after a ready connection does not open installation guidance");
             Check(!tracker.Observe(new(ConnectionKind.UnknownFirmware, "manual"), false) && !tracker.Observe(new(ConnectionKind.UnknownFirmware, "manual"), true), "manual cancellation suppresses the same automatic notice");
         }
         File.WriteAllText(Path.Combine(directory, "connection-checks.json"), JsonSerializer.Serialize(new
         { passed = true, count = checks.Count, hardware, detected = detected?.Kind.ToString(), version = detected?.Version,
-            physicalDeviceWritten = false, guides, attempts, observations, checks }, new JsonSerializerOptions { WriteIndented = true }));
+            physicalDeviceWritten = false, arrivalAfterSimulatedAbsence, guides, attempts, observations, checks }, new JsonSerializerOptions { WriteIndented = true }));
     }
 }

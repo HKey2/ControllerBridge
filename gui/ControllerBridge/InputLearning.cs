@@ -149,7 +149,7 @@ internal sealed class MappingEditor : UserControl
     {
         detail.Visible = true;
         AbortLearning(); profile = value; fields = source; canLearn = allowLearn; supportsRapid = allowRapid; selected = -1;
-        instruction.Text = allowLearn ? L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller") : L.T("学習には、このプロファイルの入力機器をUSB-Aへ接続", "Connect this profile’s controller to USB-A to learn inputs");
+        instruction.Text = allowLearn ? L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller") : L.T("2. 対象機器をUSB-Aへ接続して割り当てたい操作を行う", "Connect this profile’s controller to USB-A to learn inputs");
         detail.Text = allowLearn ? L.T("入力を離した状態で出力ボタンを選んでください。", "Release all inputs, then select an output button.") : L.T("保存済みの割り当ては確認・解除できます。", "You can review and clear the saved mappings.");
         UpdateButtons();
     }
