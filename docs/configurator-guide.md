@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.20.10 and RP2350-USB-A firmware 0.20.10. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.20.11 and RP2350-USB-A firmware 0.20.11. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -79,7 +79,7 @@ The square **eyedropper icon** on the right opens the Windows color chooser with
 
 The `#` field below the R/G/B sliders accepts six hexadecimal digits with or without a leading `#`; the prefix is removed automatically. For example, paste `000004` or `#000004` to set R=0, G=0, B=4. Uppercase and lowercase letters are accepted. Editing either the code or a slider updates the other controls and the preview. Incomplete, invalid or overlong codes cannot be confirmed; they are not silently shortened into another color. **Cancel** remains available while editing an incomplete code.
 
-The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The preview itself does not require a firmware change. This release bundles 0.20.10, including independent Mouse UDLR hold and wait settings; install the matching firmware.
+The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The preview itself does not require a firmware change. This release bundles 0.20.11, including independent Mouse UDLR hold and wait settings; install the matching firmware.
 
 New profiles and existing 0.16.x/0.17.x profiles default to dim blue. Duplicating a profile copies its color; reordering, individual export/import, and whole-bank backup/restore retain it. Selecting **Default dim blue** removes the custom setting. The color is not assigned automatically or required to be unique; use a different color for each profile if desired.
 
@@ -122,7 +122,7 @@ The screenshot shows the saved **Cyber analog** profile's **Left stick X** setti
 
 The meter uses the descriptor range before calibration, inversion, or dead zone. A range crossing zero uses zero as its reference; other ranges use their midpoint. Missing input shows a waiting state; out-of-range values appear gray. Select the source, measure its travel, record the released center, and apply the result.
 
-The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.20.10 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
+The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.20.11 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
 
 ![Rapid fire settings with new default 20 and preserved saved values](gui-rapid-fire-en.png)
 
@@ -161,7 +161,7 @@ Pointer movement and direction conversion have separate gains. **Pointer gain (�
 
 The paddle follows **Output axis** in both mouse and direction modes: X produces left/right (←→), Y produces up/down (↑↓). The axis selector remains enabled during conversion, and the checkbox label changes with it. **Reverse rotation** reverses either pair. With normal firmware **0.20.6 or later**, conversion is an additional output: in **Mouse + Gamepad**, both enabled sources continue mouse movement using their saved pointer gain (ball 1.0–256.0, paddle 1.0–10.0), while hidden cursor gains drive independent D-pad clicks. No physical D-pad or direction assignment is needed. The **Gamepad** tab still selects a gamepad-only USB layout; choose **Mouse + Gamepad** for both outputs. Firmware 0.20.3–0.20.5 suppressed mouse movement for converted sources. Existing conversion preferences are retained.
 
-The movement threshold, minimum pressed duration and minimum released interval are separate persistent device-wide settings, shared by all profiles and normal/test firmware. Their defaults are **64 pt**, **16 ms hold** and **16 ms wait**. Each click holds its press for at least the hold duration after the press is acknowledged, then remains released for at least the wait duration after release is acknowledged before starting another click. Changing one duration does not change the other. Normal buttons/axes and pointer movement continue independently. The ideal upper bound is 1000 / (hold ms + wait ms) clicks per second before host polling overhead: **31.25 clicks per second** with both defaults. The separate direction queue holds four waiting clicks in addition to the current click; extra clicks are counted and discarded. With the defaults, four queued clicks represent about 128 ms of additional work plus polling. Held physical D-pad input has priority and cancels conflicting generated work. USB loss, profile changes and output resets clear pending movement. The user confirmed operation with 16 ms press/release durations; these are application defaults, not documented Nintendo minimums.
+The movement threshold, minimum pressed duration and minimum released interval are separate persistent device-wide settings, shared by all profiles and normal/test firmware. Their defaults are **64 pt**, **30 ms hold** and **20 ms wait**. Each click holds its press for at least the hold duration after the press is acknowledged, then remains released for at least the wait duration after release is acknowledged before starting another click. Changing one duration does not change the other. Normal buttons/axes and pointer movement continue independently. The ideal upper bound is 1000 / (hold ms + wait ms) clicks per second before host polling overhead: **20 clicks per second** with both defaults. The separate direction queue holds four waiting clicks in addition to the current click; extra clicks are counted and discarded. With the defaults, four queued clicks represent about 200 ms of additional work plus polling. Held physical D-pad input has priority and cancels conflicting generated work. USB loss, profile changes and output resets clear pending movement. The defaults are application choices, not documented Nintendo minimums. Existing saved timings are retained; the default change does not overwrite a saved 16/16 ms pair.
 
 Separately stored hidden cursor gains and the always-editable pointer fields require **0.20.5 or later**. Firmware 0.20.4 uses the same initial conversion gains as constants; 0.20.3 uses profile gain and paddle left/right only. The profile format remains compatible with those versions. Before returning to a version older than 0.20.3, turn both conversion options off in every profile and reduce trackball gain to at most 64, then save with the current firmware. Individual JSON exports, slot backups, duplication and reorder retain pointer values without changing profile or bank size.
 
@@ -173,23 +173,23 @@ python tools/controllerctl.py profile-mouse --trackball-gain 256 --trackball-to-
 
 ## Mouse UDLR settings
 
-Choose **Mouse UDLR settings**, immediately to the right of **Profile switching...** at the top of the main window. This opens the settings shared by **all profiles**. It requires a connected board with matching firmware 0.20.10 supporting the three-setting protocol; the button is disabled when disconnected or unsupported.
+Choose **Mouse UDLR settings**, immediately to the right of **Profile switching...** at the top of the main window. This opens the settings shared by **all profiles**. It requires a connected board with matching firmware 0.20.11 supporting the three-setting protocol; the button is disabled when disconnected or unsupported.
 
 | Parameter | Default | Allowed integer range | Effect |
 |---|---:|---:|---|
 | Movement threshold | 64 pt | 1–256 pt | Signed accumulated movement required for one direction click |
-| Hold time | 16 ms | 1–512 ms | Minimum pressed duration after the press is acknowledged |
-| Wait time | 16 ms | 1–512 ms | Minimum released interval after release is acknowledged, before the next click |
+| Hold time | 30 ms | 1–512 ms | Minimum pressed duration after the press is acknowledged |
+| Wait time | 20 ms | 1–512 ms | Minimum released interval after release is acknowledged, before the next click |
 
 The fields load the current device values. Choose **Save to device** to apply and persist all three settings, then verify them by reading back. The values survive restart and profile switching. **Cancel** discards dialog edits. A save failure leaves the dialog and entered values available for retry. Unsaved profile edits remain intact; this operation does not save those drafts. Cursor gains and per-profile pointer sensitivity retain their values.
 
-The dialog explains that pointer movement is sent as direction-key operations and that the settings are common to all profiles. Units sit directly beside the spinners; the ranges above remain enforced but are not printed in the dialog. On upgrade from a shared-duration version, an absent wait setting inherits the saved hold duration to preserve the earlier behavior. A valid saved wait value is retained.
+The dialog explains that pointer movement is sent as direction-key operations and that the settings are common to all profiles. Units sit directly beside the spinners; the ranges above remain enforced but are not printed in the dialog. On upgrade from a shared-duration version, an absent wait setting inherits a valid saved hold duration to preserve the earlier behavior. If no valid hold value has been saved, initialization uses 30 ms hold and 20 ms wait. A valid saved wait value is retained.
 
 If an older stored value is outside the new editing range, the dialog shows a notice and a value inside the range. The device is changed only when **Save to device** is chosen. Opening the dialog or cancelling does not rewrite old settings.
 
 ![Mouse UDLR settings button immediately right of Profile switching](gui-mouse-udlr-button-en.png)
 
-![Mouse UDLR settings with movement threshold 64 pt, hold time 16 ms and wait time 16 ms](gui-mouse-udlr-settings-en.png)
+![Mouse UDLR settings with movement threshold 64 pt, hold time 30 ms and wait time 20 ms](gui-mouse-udlr-settings-en.png)
 
 ## Paddle output axis
 

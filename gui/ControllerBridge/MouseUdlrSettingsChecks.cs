@@ -68,13 +68,13 @@ internal sealed partial class MouseUdlrSettingsDialog
         {
             if (cmd == 52) { reads++; return Task.FromResult(Reply(failReadback ? device with { Persisted = false } : device)); }
             check(cmd == 53 && data is { Length: 32 } && data.AsSpan(0, 4).SequenceEqual("UDS2"u8) && Wire.U32(data, 4) == 2, "save uses the versioned settings command");
-            check(Wire.U32(data!, 8) == 64 && Wire.U32(data!, 12) == 16 && Wire.U32(data!, 16) == 16, "save guards the original values");
+            check(Wire.U32(data!, 8) == 64 && Wire.U32(data!, 12) == 30 && Wire.U32(data!, 16) == 20, "save guards the original values");
             writes++; if (failWrite) throw new IOException("Simulated disconnect / save failed");
             device = new(Wire.U32(data!, 20), Wire.U32(data!, 24), Wire.U32(data!, 28), true); return Task.FromResult(Reply(device));
         }
         MouseUdlrSettingsClient client = new(Command);
         MouseUdlrSettings initial = await client.ReadAsync();
-        check(initial == new MouseUdlrSettings(64, 16, 16, true) && writes == 0, "opening reads the saved defaults without a write");
+        check(initial == new MouseUdlrSettings(64, 30, 20, true) && writes == 0, "opening reads the saved defaults without a write");
         foreach (var invalid in new[] { (0u, 16u, 16u), (257u, 16u, 16u), (64u, 0u, 16u), (64u, 513u, 16u), (uint.MaxValue, 16u, 16u), (64u, 16u, 0u), (64u, 16u, 513u), (64u, 16u, uint.MaxValue) })
         {
             bool rejected = false; try { await client.SaveAsync(initial, new(invalid.Item1, invalid.Item2, invalid.Item3, true)); } catch (InvalidDataException) { rejected = true; }
@@ -86,7 +86,7 @@ internal sealed partial class MouseUdlrSettingsDialog
         using (MouseUdlrSettingsDialog form = new(initial, client.SaveAsync) { Opacity = 0, ShowInTaskbar = false })
         {
             form.Show(); Application.DoEvents();
-            check(form.threshold.Value == 64 && form.hold.Value == 16 && form.wait.Value == 16, "dialog loads saved values");
+            check(form.threshold.Value == 64 && form.hold.Value == 30 && form.wait.Value == 20, "dialog loads saved values");
             check(form.threshold.Minimum == 1 && form.threshold.Maximum == 256 && form.hold.Minimum == 1 && form.hold.Maximum == 512 && form.wait.Minimum == 1 && form.wait.Maximum == 512, "all numeric editor ranges match the request");
             check(form.threshold.DecimalPlaces == 0 && form.hold.DecimalPlaces == 0 && form.wait.DecimalPlaces == 0, "settings use whole pt and ms");
             foreach (int dpi in new[] { 96, 144, 192, 96 })
@@ -124,6 +124,10 @@ internal sealed partial class MouseUdlrSettingsDialog
             check(!form.save.Enabled && !form.cancel.Enabled && !form.threshold.Enabled && !form.hold.Enabled && !form.wait.Enabled, "controls are disabled while save is pending");
             form.Close(); check(form.Visible, "closing waits for the in-progress save result");
             pending.SetResult(initial); await savingTask; check(form.Saved, "pending save finishes cleanly");
+        }
+        using (MouseUdlrSettingsDialog retained = new(new(64, 16, 16, true), client.SaveAsync))
+        {
+            check(retained.hold.Value == 16 && retained.wait.Value == 16, "saved 16/16 values are not replaced by new defaults");
         }
         using (MouseUdlrSettingsDialog form = new(new(65535, 1000, 1000, true), client.SaveAsync) { Opacity = 0, ShowInTaskbar = false })
         {

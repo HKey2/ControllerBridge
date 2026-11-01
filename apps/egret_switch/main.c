@@ -717,7 +717,7 @@ static void start_usb_output(uint8_t options) {
     ud_options output={.device=udlr_device,.device_length=sizeof(udlr_device),
         .configuration=output_configuration,.configuration_length=sizeof(udlr_configuration),
         .report=udlr_report,.report_length=sizeof(udlr_report),
-        .manufacturer="ControllerBridge",.product="ControllerBridge UDLR test",.serial="UDLR-0210",
+        .manufacturer="ControllerBridge",.product="ControllerBridge UDLR test",.serial="UDLR-0211",
         .input_length=8,.initial_input=neutral,
         .configuration_report=um_feature_descriptor,.configuration_report_length=sizeof(um_feature_descriptor),
         .get_feature=get_feature,.set_feature=set_feature,.complete=input_complete};

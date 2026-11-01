@@ -41,7 +41,7 @@ The single preview uses a fixed internal gamma of **4.0**, selected after the us
 | 128 | 215 |
 | 255 | 255 |
 
-This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current 0.20.10 allocation figures, including button shift, are in [verification](verification.md#current-normal-build-memory).
+This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current 0.20.11 allocation figures, including button shift, are in [verification](verification.md#current-normal-build-memory).
 
 ## Wire order and physical observation
 

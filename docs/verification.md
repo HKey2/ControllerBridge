@@ -1,6 +1,17 @@
 # Current verification
 
-Applies to ControllerBridge Windows configurator and normal firmware 0.20.10. Mouse UDLR settings edits the shared movement threshold (default 64 pt, range 1–256), pressed hold time and independent released wait time (each default 16 ms, range 1–512), with device save/readback. The dialog has adjacent units, no range labels and no extra hold/wait explanation below its fields; LED RGB uses a square eyedropper button with a localized tooltip. The user previously confirmed direction operation with 16 ms press/release intervals. Cursor gains, pointer output and existing profiles remain unchanged. Common settings add a 16-byte wait record. Dated entries below describe their own builds. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+Applies to ControllerBridge Windows configurator and normal firmware 0.20.11. Mouse UDLR settings defaults to movement threshold 64 pt, pressed hold time 30 ms and released wait time 20 ms. The editing ranges remain 1–256 pt and 1–512 ms for each duration. These defaults initialize missing settings; valid saved values are retained. The dialog keeps adjacent units and omits redundant range/hold-wait labels. LED RGB uses a square eyedropper icon. Storage formats and allocations remain unchanged. Dated entries below describe their own builds. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+
+## 2026-11-01 — 30 ms hold / 20 ms wait defaults (0.20.11)
+
+Changed the firmware defaults and GUI preview/initial values from 16/16 ms to **30 ms hold / 20 ms wait**. Existing valid settings are not overwritten, including previously saved 16/16 ms values. A missing/invalid wait record still inherits a valid saved legacy hold value; when the hold record is also missing/invalid, wait retains its independent 20 ms default instead of inheriting the new 30 ms hold default. Threshold 64 pt, hidden gains, editing ranges, profile/bank/JSON formats and the 128-byte common-settings footprint remain unchanged.
+
+- **46,727 deterministic C checks pass**, including 536 direction checks and 145 storage checks. Existing timing tests now include the exact 30/20 ms deadlines, delayed completion and clock wrap. Storage coverage checks an uninitialized configuration, a valid legacy configuration with no timing records, independently missing/damaged records, saved 16/16 ms retention, older shared-hold migration and subsequent save/reload.
+- **1,244 GUI checks pass**: 614 normal and 630 UDLR checks in Japanese and English. The current defaults appear as 64 pt / 30 ms / 20 ms, saved values remain unchanged, and the existing save/cancel/readback/retry and embedded-firmware checks pass. Native DPI transitions 96→144→192→96 verify the settings dialog at 100–200%. Representative default-value captures were visually inspected.
+- Normal and optional UDLR firmware/GUI builds pass with the existing .NET 9.0.319 and pinned Pico tools. ELF measurements confirm unchanged normal and test allocation totals. All profile and storage layouts are unchanged.
+- No physical board was opened, reset or programmed for this default-only change. Existing stored settings therefore remain as they were. Prior 0.20.10 persistence and gameplay observations are historical evidence, not a new 30/20 ms physical timing measurement.
+
+Reports and built-file hashes are in `build/mouse-udlr-defaults/`. The earlier 0.20.10 release ZIP is retained unchanged.
 
 ## 2026-11-01 — simpler UDLR dialog and eyedropper icon (GUI 0.20.10)
 
@@ -385,6 +396,6 @@ No SDK/runtime is installed or updated by these scripts. The target framework re
 
 Static SRAM consists of vector table 272, initialized data 35,456, and BSS 117,412 bytes. The linker minimum heap of 2,048 bytes is part of the remaining SRAM, not an additional subtraction. These are allocation figures, not measured peak stack or free-heap values.
 
-These figures were read from the final 0.20.10 ELF section tables. Compared with 0.20.9, normal Flash grows by 448 bytes and static SRAM by 48 bytes. Reserved Flash remains 49,152 bytes. Common settings use 128 bytes, leaving 3,968; profile/bank/measurement sizes remain 848/13,908/3,784 bytes. Normal UF2 is 202,752 bytes. The optional UDLR build uses Flash 100,888 + reserved 49,152 (remaining 1,947,112), and SRAM 153,240 + stacks 8,192 (remaining 371,048); its UF2 is 202,240 bytes.
+These figures were read from the final 0.20.11 ELF section tables and are unchanged from 0.20.10. Reserved Flash remains 49,152 bytes. Common settings use 128 bytes, leaving 3,968; profile/bank/measurement sizes remain 848/13,908/3,784 bytes. Normal UF2 is 202,752 bytes. The optional UDLR build uses Flash 100,888 + reserved 49,152 (remaining 1,947,112), and SRAM 153,240 + stacks 8,192 (remaining 371,048); its UF2 is 202,240 bytes.
 
 Button-page transitions use runtime state only; they do not write Flash. Both pages share all four axis settings. The GUI editor and test image buffers allocate PC memory, outside the board figures above.

@@ -11,9 +11,9 @@ typedef struct {
     uint32_t hold_ms; // Minimum pressed duration, stored outside profiles.
     uint32_t wait_ms; // Minimum released interval before the next generated click.
 } udk_settings;
-#define UDK_DEFAULT_HOLD_MS 16u
+#define UDK_DEFAULT_HOLD_MS 30u
 #define UDK_MAX_HOLD_MS 1000u
-#define UDK_DEFAULT_WAIT_MS 16u
+#define UDK_DEFAULT_WAIT_MS 20u
 #define UDK_MAX_WAIT_MS 1000u
 #define UDK_DEFAULT_SETTINGS {64u,60u,15u,UDK_DEFAULT_HOLD_MS,UDK_DEFAULT_WAIT_MS}
 _Static_assert(sizeof(udk_settings)==16,"cursor settings layout");

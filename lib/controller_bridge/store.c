@@ -104,8 +104,9 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
         h->crc==crc32((const uint8_t *)h,12) && udk_settings_valid(&candidate);
     if(hold_valid)*settings=candidate;
     // Before DWT1 existed, the saved hold time controlled both phases.
-    // Inherit it only for a missing/invalid wait record, preserving upgrade behavior.
-    settings->wait_ms=settings->hold_ms;
+    // Inherit only a valid saved hold time when wait is missing/invalid.
+    // Without a saved hold record, retain the independent factory wait default.
+    if(hold_valid)settings->wait_ms=settings->hold_ms;
     const direction_wait_setting *w=(const direction_wait_setting *)(h+1);
     candidate=*settings;candidate.wait_ms=w->wait_ms;
     bool wait_valid=w->magic==DIRECTION_WAIT_MAGIC && w->version==1 &&

@@ -2,7 +2,7 @@ namespace ControllerBridge;
 
 internal sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs, bool Persisted)
 {
-    internal static MouseUdlrSettings Defaults => new(64, 16, 16, true);
+    internal static MouseUdlrSettings Defaults => new(64, 30, 20, true);
     internal static void ValidateEdit(uint threshold, uint holdMs, uint waitMs)
     {
         if (threshold is < 1 or > 256 || holdMs is < 1 or > 512 || waitMs is < 1 or > 512)
@@ -48,9 +48,9 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
 {
     private readonly NumericUpDown threshold = new() { Minimum = 1, Maximum = 256, Value = 64, Width = 90, Anchor = AnchorStyles.Left,
         AccessibleName = L.T("移動しきい値", "Movement threshold") };
-    private readonly NumericUpDown hold = new() { Minimum = 1, Maximum = 512, Value = 16, Width = 90, Anchor = AnchorStyles.Left,
+    private readonly NumericUpDown hold = new() { Minimum = 1, Maximum = 512, Value = MouseUdlrSettings.Defaults.HoldMs, Width = 90, Anchor = AnchorStyles.Left,
         AccessibleName = L.T("ホールド時間", "Hold time") };
-    private readonly NumericUpDown wait = new() { Minimum = 1, Maximum = 512, Value = 16, Width = 90, Anchor = AnchorStyles.Left,
+    private readonly NumericUpDown wait = new() { Minimum = 1, Maximum = 512, Value = MouseUdlrSettings.Defaults.WaitMs, Width = 90, Anchor = AnchorStyles.Left,
         AccessibleName = L.T("ウェイト時間", "Wait time") };
     private readonly Label status = Ui.Label("", 9);
     private readonly Button save, cancel;
