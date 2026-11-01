@@ -6,30 +6,42 @@ internal sealed partial class LedRgbDialog : Form
 {
     private readonly RadioButton standard = new() { Text = L.T("標準の暗い青（R: 0 / G: 0 / B: 1）", "Default dim blue (R: 0 / G: 0 / B: 1)"), AutoSize = true, Margin = new(4, 8, 4, 8) };
     private readonly RadioButton custom = new() { Text = L.T("RGB値を指定", "Custom RGB values"), AutoSize = true, Margin = new(4, 8, 4, 8) };
-    private readonly NumericUpDown[] values = Enumerable.Range(0, 3).Select(_ => new NumericUpDown { Minimum = 0, Maximum = 255, Width = 110, Anchor = AnchorStyles.Left, Margin = new(4, 6, 16, 6) }).ToArray();
+    private readonly TrackBar[] values = Enumerable.Range(0, 3).Select(_ => new TrackBar {
+        Minimum = 0, Maximum = 255, SmallChange = 1, LargeChange = 16, TickStyle = TickStyle.None,
+        AutoSize = false, Height = 36, Dock = DockStyle.Fill, BackColor = Ui.Background, Margin = new(4, 4, 8, 4)
+    }).ToArray();
+    private readonly Label[] valueLabels = Enumerable.Range(0, 3).Select(_ => Ui.Label("0")).ToArray();
     private readonly TextBox hex = new() { Width = 110, CharacterCasing = CharacterCasing.Upper, MaxLength = 0, Margin = new(0, 6, 12, 6), AccessibleName = L.T("RGBカラーコード（6桁）", "RGB color code (6 digits)") };
     private readonly Label hexError = Ui.Label("", 9);
     private readonly Panel swatch = new() { Width = 230, Height = 48, BorderStyle = BorderStyle.FixedSingle, Margin = new(4, 4, 16, 8) };
-    private readonly Button accept, cancel;
+    private readonly Button accept, cancel, colorPicker;
     private bool updating;
 
     public LedRgbDialog(DeviceProfile profile)
     {
-        using IDisposable formLayout = Ui.Form(this, L.T("LED RGB設定", "LED RGB settings"), new(610, 425));
+        using IDisposable formLayout = Ui.Form(this, L.T("LED RGB設定", "LED RGB settings"), new(740, 480));
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = MinimizeBox = false; DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 7 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 6; i++) root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100));
         root.Controls.Add(standard, 0, 0); root.Controls.Add(custom, 0, 1);
-        BufferedTableLayoutPanel channels = new() { AutoSize = true, ColumnCount = 3, RowCount = 2, Margin = new(22, 0, 0, 0) };
+        BufferedTableLayoutPanel colorControls = new() { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        colorControls.ColumnStyles.Add(new(SizeType.Percent, 100)); colorControls.ColumnStyles.Add(new(SizeType.AutoSize));
+        BufferedTableLayoutPanel channels = new() { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3, Margin = new(22, 0, 12, 0) };
+        channels.ColumnStyles.Add(new(SizeType.AutoSize)); channels.ColumnStyles.Add(new(SizeType.Percent, 100)); channels.ColumnStyles.Add(new(SizeType.Absolute, 48));
         string[] names = [L.T("R（赤）", "R (red)"), L.T("G（緑）", "G (green)"), L.T("B（青）", "B (blue)")];
         for (int i = 0; i < 3; i++)
         {
-            channels.ColumnStyles.Add(new(SizeType.AutoSize)); channels.Controls.Add(Ui.Label(names[i], 10), i, 0);
-            values[i].AccessibleName = names[i]; channels.Controls.Add(values[i], i, 1); values[i].ValueChanged += (_, _) => UpdatePreview();
+            channels.RowStyles.Add(new(SizeType.AutoSize));
+            Label name = Ui.Label(names[i]); name.Anchor = AnchorStyles.Left; channels.Controls.Add(name, 0, i);
+            values[i].AccessibleName = names[i]; channels.Controls.Add(values[i], 1, i); values[i].ValueChanged += (_, _) => UpdatePreview();
+            valueLabels[i].AutoSize = false; valueLabels[i].Size = new(40, 26); valueLabels[i].Anchor = AnchorStyles.Right;
+            valueLabels[i].TextAlign = ContentAlignment.MiddleRight;
+            channels.Controls.Add(valueLabels[i], 2, i);
         }
-        root.Controls.Add(channels, 0, 2);
+        colorPicker = Ui.Button(L.T("カラーピッカー…", "Color picker…"), (_, _) => ChooseColor()); colorPicker.Anchor = AnchorStyles.Right;
+        colorControls.Controls.Add(channels, 0, 0); colorControls.Controls.Add(colorPicker, 1, 0); root.Controls.Add(colorControls, 0, 2);
         FlowLayoutPanel code = new() { AutoSize = true, WrapContents = false, Margin = new(22, 0, 0, 0) };
         Label prefix = Ui.Label("#", 10); prefix.Anchor = AnchorStyles.Left;
         hex.Anchor = AnchorStyles.Left; hexError.Anchor = AnchorStyles.Left; hexError.ForeColor = Color.FromArgb(255, 180, 180);
@@ -57,6 +69,15 @@ internal sealed partial class LedRgbDialog : Form
     {
         if (custom.Checked && !TryReadHex(out _)) throw new InvalidDataException(L.T("RGBコードは6桁の16進数で入力してください。", "Enter the RGB code as 6 hexadecimal digits."));
         profile.SetLedColor(custom.Checked, (byte)values[0].Value, (byte)values[1].Value, (byte)values[2].Value);
+    }
+    private void ChooseColor()
+    {
+        using ColorDialog picker = new() { FullOpen = true, AnyColor = true, Color = Color.FromArgb(values[0].Value, values[1].Value, values[2].Value) };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        updating = true;
+        try { values[0].Value = picker.Color.R; values[1].Value = picker.Color.G; values[2].Value = picker.Color.B; }
+        finally { updating = false; }
+        UpdatePreview();
     }
     private bool TryReadHex(out int rgb)
     {
@@ -90,8 +111,14 @@ internal sealed partial class LedRgbDialog : Form
         updating = true;
         try
         {
-            foreach (NumericUpDown value in values) value.Enabled = custom.Checked;
-            hex.Enabled = custom.Checked;
+            for (int i = 0; i < values.Length; i++)
+            {
+                values[i].Enabled = custom.Checked;
+                valueLabels[i].ForeColor = custom.Checked ? Ui.Ink : Ui.Muted;
+                valueLabels[i].Text = values[i].Value.ToString(CultureInfo.InvariantCulture);
+                valueLabels[i].AccessibleName = values[i].AccessibleName + L.T(" の値: ", " value: ") + valueLabels[i].Text;
+            }
+            hex.Enabled = colorPicker.Enabled = custom.Checked;
             int red = custom.Checked ? (int)values[0].Value : 0, green = custom.Checked ? (int)values[1].Value : 0, blue = custom.Checked ? (int)values[2].Value : 1;
             if (syncHex) hex.Text = $"{red:X2}{green:X2}{blue:X2}";
             swatch.BackColor = LedPreview.Color((byte)red, (byte)green, (byte)blue);

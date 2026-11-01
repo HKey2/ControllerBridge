@@ -2,6 +2,18 @@
 
 Applies to ControllerBridge Windows configurator and normal firmware 0.20.1. This update expands rapid fire to 1–60 cycles per second with a new starting rate of 20, while retaining saved rates. The button-only shifted page, AND modifiers, inherited mappings and version-6 profile/bank format remain supported. JSON exports use version 3 and retain version-2 import support. Dated entries below describe their own builds and checks; older hashes and measurements are historical. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
 
+## 2026-11-01: LED RGB slider rows and color picker
+
+The LED dialog now uses one horizontal row per RGB channel, with a 0–255 slider and numeric readout. A **Color picker…** button on the right opens the Windows color chooser initialized from the current raw channel values. Accepting a color updates the three sliders, readouts, hexadecimal code and existing preview; cancellation preserves the draft. Standard-color mode disables custom entry but keeps the numeric readouts legible. The shared profile-save reminder and draft-only OK behavior remain in place.
+
+The final self-contained EXE passed **158 existing LED checks per language, 316 total**. These cover exact RGB bytes, default/custom/off behavior, hexadecimal input and paste, invalid input, preview conversion, cancellation, profile serialization, duplicate and backup/restore behavior, and control bounds. Japanese and English captures were visually inspected. Reports are in `build/led-sliders/checks-final/summary.json`.
+
+The existing DPI runner passed **13,185 checks per language, 26,370 total**, including simulated transitions 96 → 120 → 144 → 192 → 96 → 192 → 96 and bounded-window checks. The slider rows, picker button, readouts, reminder and actions were also inspected in the generated captures. Reports are in `build/led-sliders/dpi/summary.json`; Windows display settings were not changed.
+
+The native Windows picker was also exercised through the preview UI: it opened with RGB 0/0/1; accepting red produced 255/0/0 and `FF0000`; selecting blue and cancelling retained red. Dragging the red slider from 255 to 127 updated the readout and code to `7F0000`. The containing LED dialog was then cancelled, leaving the preview profile unchanged. This UI run used synthetic preview data, without opening a physical USB device.
+
+The GUI remains 0.20.1 and uses the installed .NET 9 SDK. Firmware and its UF2 are unchanged (`3E7BCE463636A2F4EA0F622420D6F98917669CB6440D8BB13F3077434FD1985C`). Board allocation remains Flash code/initial values 96,100 bytes plus 49,152 reserved, leaving 1,951,900; static SRAM 151,588 plus 8,192 for stacks, leaving 372,700. Profile and bank payload sizes remain 848 and 13,908 bytes.
+
 ## 2026-11-01: profile save wording and shared settings reminder
 
 The profile action is now **Save profile to device** (Japanese: **プロファイルをデバイスに保存**). Unsaved-edit, duplicate, import and mouse-mapping guidance uses the same action name. The rapid-fire dialog title and heading are now **Rapid fire settings**. Its Japanese range and unavailable-button guidance follows the requested wording, and the former held-button explanatory line has been removed from that dialog.

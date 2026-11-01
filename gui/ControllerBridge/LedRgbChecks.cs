@@ -91,15 +91,15 @@ internal sealed partial class LedRgbDialog
         }
         check(dialog.standard.Checked && dialog.values.All(v => !v.Enabled) && !dialog.hex.Enabled && dialog.hex.Text == "000001", "default controls retain dim blue and disable custom entry");
         check(dialog.swatch.BackColor.ToArgb() == Color.FromArgb(0, 0, 64).ToArgb(), "fixed gamma 4 lifts default blue 1 to display 64");
-        check(dialog.hex.PointToScreen(Point.Empty).Y >= dialog.values[0].PointToScreen(new Point(0, dialog.values[0].Height)).Y, "hex entry is directly below the RGB spinners");
+        check(dialog.hex.PointToScreen(Point.Empty).Y >= dialog.values[2].PointToScreen(new Point(0, dialog.values[2].Height)).Y, "hex entry is directly below all three RGB slider rows");
         Capture("led-default.png");
         dialog.CheckSetColor(255, 128, 17);
         check(dialog.values.All(v => v.Enabled && v.Minimum == 0 && v.Maximum == 255), "all channels accept 0 through 255");
-        check(dialog.hex.Text == "FF8011" && dialog.hex.Enabled, "spinner edits synchronize the six-digit uppercase code");
+        check(dialog.hex.Text == "FF8011" && dialog.hex.Enabled, "slider edits synchronize the six-digit uppercase code");
         check(dialog.swatch.BackColor.ToArgb() == Color.FromArgb(255, 215, 130).ToArgb(), "fixed approximation converts unequal RGB channels independently");
         Capture("led-custom.png");
         dialog.hex.SelectAll(); dialog.hex.Paste("000004");
-        check(dialog.values[0].Value == 0 && dialog.values[1].Value == 0 && dialog.values[2].Value == 4 && dialog.accept.Enabled, "pasting 000004 updates all three spinners");
+        check(dialog.values[0].Value == 0 && dialog.values[1].Value == 0 && dialog.values[2].Value == 4 && dialog.accept.Enabled, "pasting 000004 updates all three sliders");
         check(dialog.swatch.BackColor.ToArgb() == Color.FromArgb(0, 0, 90).ToArgb(), "pasted low blue uses fixed gamma 4");
         Capture("led-hex.png");
         DeviceProfile unchanged = original.Clone(); dialog.ApplyTo(unchanged);
@@ -120,7 +120,7 @@ internal sealed partial class LedRgbDialog
         }
         Capture("led-invalid.png");
         dialog.values[0].Value = 1;
-        check(dialog.hex.Text == "01CDEF" && dialog.accept.Enabled && dialog.hexError.Text == "", "editing a spinner replaces an invalid draft with a valid synchronized code");
+        check(dialog.hex.Text == "01CDEF" && dialog.accept.Enabled && dialog.hexError.Text == "", "editing a slider replaces an invalid draft with a valid synchronized code");
         dialog.standard.Checked = true;
         DeviceProfile applied = original.Clone(); dialog.ApplyTo(applied);
         check(applied.SameContent(original), "default selection clears custom data and preserves the profile");
