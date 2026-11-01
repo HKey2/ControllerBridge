@@ -32,8 +32,15 @@ typedef struct {
 typedef struct { uint32_t magic,version,hold_ms,crc; } direction_hold_setting;
 #define DIRECTION_WAIT_MAGIC 0x31545744u // DWT1, appended at sector offset 112.
 typedef struct { uint32_t magic,version,wait_ms,crc; } direction_wait_setting;
-typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait; } direction_records;
-_Static_assert(sizeof(direction_records)==64,"cursor Flash records layout");
+#define DIRECTION_MAP_MAGIC 0x31504d44u // DMP1, appended at sector offset 128.
+typedef struct { uint32_t magic,version;uint8_t targets[4];uint32_t crc; } direction_map_setting;
+#define DIRECTION_PADDLE_MAP_MAGIC 0x314d5044u // DPM1, appended at sector offset 144.
+#define VIRTUAL_ROLLING_MAGIC 0x31535256u // VRS1, appended at sector offset 160.
+#define TRACKBALL_HOLD_MAGIC 0x31484254u // TBH1, appended at sector offset 176.
+#define ROLLING_STEP_MAGIC 0x31445352u // RSD1, appended at sector offset 192.
+typedef struct { uint32_t magic,version,value,crc; } rolling_setting;
+typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait;direction_map_setting map,paddle_map;rolling_setting rolling,trackball_hold,rolling_step; } direction_records;
+_Static_assert(sizeof(direction_records)==144,"cursor Flash records layout");
 _Static_assert(DIRECTION_OFFSET+sizeof(direction_records)<=FLASH_SECTOR_SIZE,"cursor records fit configuration sector");
 _Static_assert(sizeof(store_header)+sizeof(ub_configuration)<=DIRECTION_OFFSET,"configuration extension overlap");
 extern char __flash_binary_end;
@@ -112,7 +119,31 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
     bool wait_valid=w->magic==DIRECTION_WAIT_MAGIC && w->version==1 &&
         w->crc==crc32((const uint8_t *)w,12) && udk_settings_valid(&candidate);
     if(wait_valid)*settings=candidate;
-    return threshold_valid && gains_valid && hold_valid && wait_valid;
+    const direction_map_setting *m=(const direction_map_setting *)(w+1);
+    bool map_valid=m->magic==DIRECTION_MAP_MAGIC && m->version==1 &&
+        m->crc==crc32((const uint8_t *)m,12) && udk_targets_valid(m->targets);
+    if(map_valid)memcpy(settings->targets,m->targets,4);
+    // Older firmware used the trackball map for both sources. Preserve that
+    // behavior until the new paddle record is explicitly saved; never write on read.
+    memcpy(settings->paddle_targets,settings->targets,4);
+    const direction_map_setting *p=(const direction_map_setting *)(m+1);
+    bool paddle_valid=p->magic==DIRECTION_PADDLE_MAP_MAGIC && p->version==1 &&
+        p->crc==crc32((const uint8_t *)p,12) && udk_targets_valid(p->targets);
+    if(paddle_valid)memcpy(settings->paddle_targets,p->targets,4);
+    const rolling_setting *v=(const rolling_setting *)(p+1);candidate=*settings;udk_rolling_unpack(&candidate,v->value);
+    bool rolling_valid=v->magic==VIRTUAL_ROLLING_MAGIC && v->version==1 &&
+        v->crc==crc32((const uint8_t *)v,12) && udk_settings_valid(&candidate);
+    if(rolling_valid)*settings=candidate;
+    const rolling_setting *t=v+1;candidate=*settings;
+    bool trackball_valid=t->magic==TRACKBALL_HOLD_MAGIC && t->version==1 &&
+        t->crc==crc32((const uint8_t *)t,12) && udk_hold_unpack(&candidate,t->value) && udk_settings_valid(&candidate);
+    if(trackball_valid)*settings=candidate;
+    const rolling_setting *r=t+1;candidate=*settings;
+    candidate.rolling_step_deg=(uint8_t)r->value;
+    bool step_valid=r->magic==ROLLING_STEP_MAGIC && r->version==1 && r->value>=5 && r->value<=90 &&
+        r->crc==crc32((const uint8_t *)r,12) && udk_settings_valid(&candidate);
+    if(step_valid)*settings=candidate;
+    return threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;
 }
 bool ub_store_save_configuration(const ub_configuration *config,const udk_settings *settings,bool host_running) {
     if(!udk_settings_valid(settings))return false;
@@ -120,10 +151,21 @@ bool ub_store_save_configuration(const ub_configuration *config,const udk_settin
         .threshold={DIRECTION_MAGIC,1,settings->threshold,0},
         .gains={DIRECTION_GAIN_MAGIC,1,settings->trackball_gain10,settings->paddle_gain10,0},
         .hold={DIRECTION_HOLD_MAGIC,1,settings->hold_ms,0},
-        .wait={DIRECTION_WAIT_MAGIC,1,settings->wait_ms,0}};
+        .wait={DIRECTION_WAIT_MAGIC,1,settings->wait_ms,0},
+        .map={DIRECTION_MAP_MAGIC,1,{0,0,0,0},0},
+        .paddle_map={DIRECTION_PADDLE_MAP_MAGIC,1,{0,0,0,0},0},
+        .rolling={VIRTUAL_ROLLING_MAGIC,1,udk_rolling_pack(settings),0},
+        .trackball_hold={TRACKBALL_HOLD_MAGIC,1,udk_hold_pack(settings),0},
+        .rolling_step={ROLLING_STEP_MAGIC,1,settings->rolling_step_deg,0}};
+    memcpy(records.map.targets,settings->targets,4);memcpy(records.paddle_map.targets,settings->paddle_targets,4);
     records.threshold.crc=crc32((const uint8_t *)&records.threshold,12);
     records.gains.crc=crc32((const uint8_t *)&records.gains,12);
     records.hold.crc=crc32((const uint8_t *)&records.hold,12);
     records.wait.crc=crc32((const uint8_t *)&records.wait,12);
+    records.map.crc=crc32((const uint8_t *)&records.map,12);
+    records.paddle_map.crc=crc32((const uint8_t *)&records.paddle_map,12);
+    records.rolling.crc=crc32((const uint8_t *)&records.rolling,12);
+    records.trackball_hold.crc=crc32((const uint8_t *)&records.trackball_hold,12);
+    records.rolling_step.crc=crc32((const uint8_t *)&records.rolling_step,12);
     return save(0,config,sizeof(*config),host_running,&records);
 }

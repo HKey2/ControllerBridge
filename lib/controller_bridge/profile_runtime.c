@@ -28,6 +28,10 @@ static int active=-1;
 static int mouse_x=-1,mouse_y=-1,mouse_wheel=-1;
 static um_fraction mouse_fraction;
 static um_key_state direction_state;
+static um_rolling_state rolling_state;
+static uint32_t rolling_idle_us=20000u;
+static um_hold_state hold_state;
+static uint32_t hold_idle_us=20000u;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool connected,partial,persisted,binding_error;
 static uint8_t host_status,input_protocol;
@@ -112,7 +116,7 @@ bool upr_mouse_ready(void) {
     unsigned enabled=bank.profiles[active].mouse.flags&3;
     return !enabled || (enabled&mouse_sources())!=0;
 }
-void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0};direction_state=(um_key_state){0}; }
+void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0};direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0}; }
 bool upr_direction_enabled(void) {
     if(!upr_ready())return false;
     unsigned flags=bank.profiles[active].mouse.flags;
@@ -125,7 +129,36 @@ void upr_direction_accumulators(int32_t tenths[3]) {
 unsigned upr_direction_threshold(void) { return direction_settings.threshold; }
 bool upr_set_direction_settings(const udk_settings *settings) {
     if(!udk_settings_valid(settings))return false;
-    direction_settings=*settings;direction_state=(um_key_state){0};return true;
+    direction_settings=*settings;direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};return true;
+}
+static bool rolling_enabled(void) {
+    return upr_ready() && mouse_wheel>=0 && direction_settings.paddle_mode==UDK_ROLLING_MODE &&
+        (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS);
+}
+bool upr_rolling_overlay(uint32_t now_us,sw_report *report) {
+    if(!rolling_enabled())return false;
+    um_rolling_overlay(&rolling_state,now_us,rolling_idle_us,&direction_settings,report);return true;
+}
+uint8_t upr_hold_directions(uint32_t now_us) {
+    if(!upr_ready() || mouse_x<0 || mouse_y<0 || direction_settings.trackball_mode!=UDK_HOLD_MODE ||
+       (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return 0;
+    return um_hold_directions(&hold_state,now_us,hold_idle_us);
+}
+static uint32_t pointing_timeout(const uc_event *e) {
+    unsigned interval=bank.profiles[active].input_interval_ms;
+    if(!interval) {
+        unsigned iface=255;
+        for(unsigned pos=0;pos+2<=configuration_descriptor_size;) {
+            const uint8_t *d=configuration_descriptor+pos;unsigned length=d[0];
+            if(length<2 || pos+length>configuration_descriptor_size)break;
+            if(d[1]==4 && length>=9)iface=d[2];
+            if(d[1]==5 && length>=7 && iface==e->interface_number && d[2]==e->endpoint && (d[3]&3)==3) { interval=d[6];break; }
+            pos+=length;
+        }
+    }
+    // Zero reports stop immediately. A change-only device gets a bounded fallback
+    // of at least 20 ms or two configured input polls, whichever is longer.
+    return interval>10?interval*2000u:20000u;
 }
 static bool mouse_field(int index,const uc_event *e,int32_t *value) {
     if(index<0)return false;
@@ -134,14 +167,21 @@ static bool mouse_field(int index,const uc_event *e,int32_t *value) {
 }
 bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys) {
     *x=*y=0;*keys=(um_key_events){0};
-    if(!keys_ready)direction_state=(um_key_state){0};
+    if(!keys_ready) { direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0}; }
     if(e->type!=UC_INPUT || !upr_ready())return false;
     const up_mouse_options *options=&bank.profiles[active].mouse;
     int32_t dx=0,dy=0,wheel=0;bool touched=false;
-    if((options->flags&UP_MOUSE_TRACKBALL) && mouse_field(mouse_x,e,&dx) && mouse_field(mouse_y,e,&dy))touched=true;
+    bool ball_present=(options->flags&UP_MOUSE_TRACKBALL) && mouse_field(mouse_x,e,&dx) && mouse_field(mouse_y,e,&dy);
+    if(ball_present)touched=true;
     else dx=dy=0;
-    if((options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel))touched=true;
-    else wheel=0;
+    bool paddle_present=(options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel);
+    if(paddle_present)touched=true;else wheel=0;
+    if(keys_ready && ball_present && direction_settings.trackball_mode==UDK_HOLD_MODE) {
+        hold_idle_us=pointing_timeout(e);um_hold_input(&hold_state,options,dx,dy,e->time_us,&direction_settings);
+    }
+    if(keys_ready && rolling_enabled() && paddle_present) {
+        rolling_idle_us=pointing_timeout(e);um_rolling_input(&rolling_state,wheel,e->time_us,&direction_settings);
+    }
     if(!touched)return false;
     if(keys_ready)um_direction_keys(&direction_state,options,dx,dy,wheel,&direction_settings,keys);
 #ifdef BRIDGE_MOUSE_FIXED_PROBE
@@ -155,6 +195,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     um_key_events ignored;return upr_pointing_input(e,false,x,y,&ignored);
 }
 void upr_init(void) {
+    rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};hold_idle_us=20000u;
     direction_settings=(udk_settings)UDK_DEFAULT_SETTINGS;
     bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
     mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
@@ -323,7 +364,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

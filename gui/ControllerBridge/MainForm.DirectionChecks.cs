@@ -21,7 +21,7 @@ internal sealed partial class MainForm
     private async Task CheckDirections(string directory)
     {
         List<string> checks = [];
-        void Check(bool ok, string message) { if (!ok) throw new InvalidDataException(message); checks.Add(message); }
+        void Check(bool ok, string message) { if (!ok) throw new InvalidDataException(message); checks.Add(message); File.WriteAllText(Path.Combine(directory, "direction-progress.txt"), message); }
         void Reject(Action action, string message)
         {
             bool rejected = false; try { action(); } catch (InvalidDataException) { rejected = true; }
@@ -39,11 +39,11 @@ internal sealed partial class MainForm
         paddleKeys.Checked = true;
         Check(profiles[slot].Encode()[480] == (original[480] | 192) && paddleAxis.Enabled, "paddle conversion uses bit 7 and retains the shared axis selector");
         Check(mouseGain.Enabled && paddleGain.Enabled && invertX.Enabled && invertPaddle.Enabled, "cursor conversion leaves separate pointer sensitivity editable");
-        Check(trackballKeys.Text.Contains("↑↓←→") && paddleKeys.Text.Contains("←→"), "profile conversion labels use arrows");
+        Check(trackballKeys.Text.Contains("↑↓←→") && paddleKeys.Text == L.T("変換を有効", "Enable conversion"), "trackball arrows and mode-neutral paddle conversion label");
         paddleAxis.SelectedIndex = 1;
-        Check(paddleKeys.Text.Contains("↑↓") && profiles[slot].Mouse.PaddleAxis == PaddleOutputAxis.Y, "Y changes the conversion label and saved axis together");
+        Check(paddleKeys.Text == L.T("変換を有効", "Enable conversion") && profiles[slot].Mouse.PaddleAxis == PaddleOutputAxis.Y, "Y retains the mode-neutral label and updates the pointer/click axis");
         paddleAxis.SelectedIndex = 0;
-        Check(paddleKeys.Text.Contains("←→") && profiles[slot].Mouse.PaddleAxis == PaddleOutputAxis.X, "X restores horizontal conversion");
+        Check(paddleKeys.Text == L.T("変換を有効", "Enable conversion") && profiles[slot].Mouse.PaddleAxis == PaddleOutputAxis.X, "X restores the horizontal pointer/click axis");
         bool testType = typeof(MainForm).Assembly.GetType("ControllerBridge.UdlrTestDialog") is not null;
         static IEnumerable<Control> AllControls(Control parent) => parent.Controls.Cast<Control>().SelectMany(c => new[] { c }.Concat(AllControls(c)));
         bool testButton = AllControls(this).OfType<Button>().Any(b => b.Text == L.T("UDLRテスト…", "UDLR test…"));

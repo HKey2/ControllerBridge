@@ -255,14 +255,23 @@ static void schedule_output(void) {
     else {
         if(outgoing.have_latest)next=outgoing.latest;
         else { memset(&next,0,sizeof(next));sw_neutral(&next.report); }
-        next.transition=false;
+        next.transition=false;next.hold_directions=upr_hold_directions(time_us_32());
     }
-    // Overlay only the generated hat. Ordinary button/axis transitions retain
-    // their own queue and mouse scheduling has already run above.
-    if(next.report.hat!=15 && ub_direction_pending_frames(&direction_pulse))direction_blocked++;
-    ub_direction_prepare(&direction_pulse,time_us_32(),direction_settings.hold_ms*1000u,direction_settings.wait_ms*1000u,&next);
+    // Hold state belongs to the queued input edge; preserve quick reversals/releases.
+    um_hold_overlay(next.hold_directions,direction_settings.targets,&next.report);
+    // Overlay the chosen generated target. Other buttons, axes and the mouse
+    // endpoint retain their independent scheduling.
+    uint8_t active_direction=direction_pulse.phase!=UB_DIRECTION_IDLE && direction_pulse.level?
+        (uint8_t)(direction_pulse.level-1):direction_pulse.pending[direction_pulse.read].direction;
+    if(ub_direction_pending_frames(&direction_pulse) && ub_direction_blocked(&next.report,active_direction,udk_source_targets(&direction_settings,
+        direction_pulse.phase!=UB_DIRECTION_IDLE?direction_pulse.source:direction_pulse.pending[direction_pulse.read].source)))direction_blocked++;
+    ub_direction_prepare(&direction_pulse,time_us_32(),direction_settings.hold_ms*1000u,direction_settings.wait_ms*1000u,direction_settings.targets,direction_settings.paddle_targets,&next);
+    // Use current virtual axes even when the ordinary state queue is empty.
+    // Overlays never enter that queue, so stopping/switching restores its base axes.
+    upr_rolling_overlay(time_us_32(),&next.report);
     if(flight_valid) {
-        if(!flight.transition && (from_queue || next.direction_key || flight.direction_level!=next.direction_level)) {
+        if(!flight.transition && (from_queue || next.direction_key || flight.direction_level!=next.direction_level ||
+            flight.hold_directions!=next.hold_directions || memcmp(&flight.report,&next.report,sizeof(next.report)))) {
             if(!ud_cancel_repeat())return;
             if(measuring())measurement.counts.repeats_replaced++;
             flight_valid=false;
@@ -272,7 +281,9 @@ static void schedule_output(void) {
     if(flight.direction_key)flight.sequence=++input_sequence;
     uint32_t armed;
 #ifdef BRIDGE_UDLR_TEST
-    uint8_t keyboard[8];udlr_encode(udlr_enabled?flight.direction_level:0,keyboard);
+    uint8_t keyboard[8];uint8_t directions=flight.hold_directions;
+    if(flight.direction_level>=1 && flight.direction_level<=4)directions|=(uint8_t)(1u<<(flight.direction_level-1));
+    udlr_encode_directions(udlr_enabled?directions:0,keyboard);
     bool sent=ud_send(keyboard,sizeof(keyboard),flight.sequence,&armed);
 #else
     bool sent=ud_send((const uint8_t *)&flight.report,sizeof(flight.report),flight.sequence,&armed);
@@ -433,6 +444,7 @@ static void handle_host_event(const uc_event *e) {
         keys_ready=keys_ready && udlr_enabled;
 #endif
         bool relative=upr_pointing_input(e,keys_ready,&x,&y,&keys);
+        frame.hold_directions=upr_hold_directions(e->time_us);
         if(relative && !mapped)upr_tick(time_us_32(),ud_ready(),&frame.report);
         if(mouse_mode()) {
             if(!input_ready || (!mapped && !relative))return;
@@ -463,14 +475,14 @@ static void handle_host_event(const uc_event *e) {
 #ifdef BRIDGE_UDLR_TEST
         sw_neutral(&frame.report); // Only movement-generated letters are emitted.
 #endif
-        bool changed=!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8);
+        bool changed=!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8) || outgoing.latest.hold_directions!=frame.hold_directions;
         if(combined_mode()&&measuring())measurement.dual.pad_seen|=frame.report.buttons0|((uint32_t)frame.report.buttons1<<8);
         if(changed && measuring())measurement.counts.input_changes++;
         ub_queue_push(&outgoing,&frame);
         for(unsigned i=0;i<keys.count;++i) {
             direction_generated++;
-            if(frame.report.hat!=15)direction_blocked++;
-            else if(ub_direction_offer(&direction_pulse,keys.direction[i],e->time_us))direction_enqueued++;
+            if(ub_direction_blocked(&frame.report,keys.direction[i],udk_source_targets(&direction_settings,keys.source[i])))direction_blocked++;
+            else if(ub_direction_offer(&direction_pulse,keys.direction[i],keys.source[i],e->time_us))direction_enqueued++;
             else direction_dropped++;
         }
     } else if(e->type==UC_STATUS) {
@@ -626,15 +638,9 @@ static void handle_command(void) {
         if(local[5]==CMD_SAVE_DIRECTION_SETTINGS) {
             if(phase!=MEASURE_IDLE || output_change_requested) { reply[7]=2;break; }
             udk_settings next=direction_settings;
-            if(memcmp(arg,"UDS2",4) || get32(arg+4)!=2 ||
-               !udk_settings_edit(&next,get32(arg+20),get32(arg+24),get32(arg+28))) { reply[7]=1;break; }
-            bool unchanged=next.threshold==direction_settings.threshold && next.hold_ms==direction_settings.hold_ms &&
-                next.wait_ms==direction_settings.wait_ms;
-            // Repeating an already-applied request is safe after a lost reply.
-            if(!unchanged && (get32(arg+8)!=direction_settings.threshold || get32(arg+12)!=direction_settings.hold_ms ||
-                get32(arg+16)!=direction_settings.wait_ms)) {
-                reply[7]=4;break;
-            }
+            uint8_t error=udk_settings_request(&direction_settings,arg,56,&next);
+            if(error) { reply[7]=error;break; }
+            bool unchanged=udk_settings_equal(&next,&direction_settings);
             if(!unchanged || !direction_setting_saved) {
                 direction_setting_saved=ub_store_save_configuration(&config,&next,true);
                 status_led_saved(direction_setting_saved);
@@ -642,12 +648,13 @@ static void handle_command(void) {
                 direction_settings=next;upr_set_direction_settings(&direction_settings);
                 // Cancel only generated directions; ordinary buttons and the
                 // pointer queue remain independent of this common-setting edit.
-                ub_direction_reset(&direction_pulse);
+                ub_direction_reset(&direction_pulse);ub_queue_clear_hold(&outgoing);
             }
         }
-        memcpy(payload,"UDS2",4);put32(payload+4,2);
+        memcpy(payload,"UDS7",4);put32(payload+4,7);
         put32(payload+8,direction_settings.threshold);put32(payload+12,direction_settings.hold_ms);
-        put32(payload+16,direction_settings.wait_ms);put32(payload+20,direction_setting_saved?1:0);break;
+        put32(payload+16,direction_settings.wait_ms);put32(payload+20,direction_setting_saved?1:0);
+        memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));break;
     }
     case CMD_DIRECTION_TIMING:
         memcpy(payload,"DPT1",4);payload[4]=1;payload[5]=direction_pulse.phase;
@@ -717,7 +724,7 @@ static void start_usb_output(uint8_t options) {
     ud_options output={.device=udlr_device,.device_length=sizeof(udlr_device),
         .configuration=output_configuration,.configuration_length=sizeof(udlr_configuration),
         .report=udlr_report,.report_length=sizeof(udlr_report),
-        .manufacturer="ControllerBridge",.product="ControllerBridge UDLR test",.serial="UDLR-0211",
+        .manufacturer="ControllerBridge",.product="ControllerBridge UDLR test",.serial="UDLR-0216",
         .input_length=8,.initial_input=neutral,
         .configuration_report=um_feature_descriptor,.configuration_report_length=sizeof(um_feature_descriptor),
         .get_feature=get_feature,.set_feature=set_feature,.complete=input_complete};
@@ -736,7 +743,7 @@ static void start_usb_output(uint8_t options) {
     if(combined_mode() && !(active_output_options&UM_GAMEPAD_BUTTONS))sw_navigation(&initial,&initial);
     memcpy(last_mouse_output,initial_mouse,sizeof(initial_mouse));
     um_flush(&mouse_queue,initial_mouse[0]);
-    ub_frame current={.report=initial,.received_us=time_us_32(),.sequence=++input_sequence};
+    ub_frame current={.report=initial,.received_us=time_us_32(),.sequence=++input_sequence,.hold_directions=upr_hold_directions(time_us_32())};
     ub_queue_push(&outgoing,&current);
     memcpy(output_configuration,combined_mode()?um_combined_configuration_descriptor:mouse_mode()?um_configuration_descriptor:sw_configuration_descriptor,
         mouse_mode()?sizeof(um_configuration_descriptor):sizeof(sw_configuration_descriptor));
@@ -829,7 +836,7 @@ int __not_in_flash_func(main)(void) {
         // physical changes. They use the same ordered transition queue as input.
         uint32_t rapid_now=time_us_32();sw_report rapid_report;
         if(upr_tick(rapid_now,ud_ready(),&rapid_report)) {
-            ub_frame frame={.report=rapid_report,.received_us=rapid_now,.sequence=++input_sequence};
+            ub_frame frame={.report=rapid_report,.received_us=rapid_now,.sequence=++input_sequence,.hold_directions=upr_hold_directions(rapid_now)};
 #ifdef BRIDGE_UDLR_TEST
             sw_neutral(&frame.report);
 #endif

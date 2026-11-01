@@ -51,30 +51,96 @@ void um_mix(um_fraction *fraction,const up_mouse_options *o,int32_t raw_x,int32_
     }
     *x=tenths(sx,&fraction->x10);*y=tenths(sy,&fraction->y10);
 }
-static void key_axis(int32_t *accumulator,int64_t delta,int64_t threshold,uint8_t negative,uint8_t positive,um_key_events *keys) {
+static void key_axis(int32_t *accumulator,int64_t delta,int64_t threshold,uint8_t negative,uint8_t positive,uint8_t source,um_key_events *keys) {
     int64_t sum=(int64_t)*accumulator+delta;
     if(sum>=threshold || sum<=-threshold) {
-        keys->direction[keys->count++]=sum>0?positive:negative;*accumulator=0;
+        keys->source[keys->count]=source;keys->direction[keys->count++]=sum>0?positive:negative;*accumulator=0;
     } else *accumulator=(int32_t)sum;
 }
 void um_direction_keys(um_key_state *s,const up_mouse_options *o,int32_t raw_x,int32_t raw_y,int32_t wheel,const udk_settings *settings,um_key_events *keys) {
     *keys=(um_key_events){0};
     if(!udk_settings_valid(settings)) { *s=(um_key_state){0};return; }
     int64_t limit=(int64_t)settings->threshold*10;
-    if((o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
+    if(settings->trackball_mode!=UDK_HOLD_MODE && (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
         int64_t x=(int64_t)raw_x*settings->trackball_gain10,y=(int64_t)raw_y*settings->trackball_gain10;
         if(o->flags&UP_MOUSE_INVERT_X)x=-x;
         if(o->flags&UP_MOUSE_INVERT_Y)y=-y;
-        key_axis(&s->ball_x10,x,limit,UM_KEY_LEFT,UM_KEY_RIGHT,keys);
-        key_axis(&s->ball_y10,y,limit,UM_KEY_UP,UM_KEY_DOWN,keys);
+        key_axis(&s->ball_x10,x,limit,UM_KEY_LEFT,UM_KEY_RIGHT,UDK_SOURCE_TRACKBALL,keys);
+        key_axis(&s->ball_y10,y,limit,UM_KEY_UP,UM_KEY_DOWN,UDK_SOURCE_TRACKBALL,keys);
     } else s->ball_x10=s->ball_y10=0;
-    if((o->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
+    if(settings->paddle_mode!=UDK_ROLLING_MODE && (o->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
         int64_t rotation=-(int64_t)wheel*settings->paddle_gain10;
         if(o->flags&UP_MOUSE_INVERT_PADDLE)rotation=-rotation;
         bool vertical=(o->flags&UP_MOUSE_PADDLE_Y)!=0;
-        key_axis(&s->paddle10,rotation,limit,vertical?UM_KEY_UP:UM_KEY_LEFT,vertical?UM_KEY_DOWN:UM_KEY_RIGHT,keys);
+        key_axis(&s->paddle10,rotation,limit,vertical?UM_KEY_UP:UM_KEY_LEFT,vertical?UM_KEY_DOWN:UM_KEY_RIGHT,UDK_SOURCE_PADDLE,keys);
     } else s->paddle10=0;
 }
+void um_hold_input(um_hold_state *s,const up_mouse_options *o,int32_t raw_x,int32_t raw_y,uint32_t time_us,const udk_settings *settings) {
+    s->directions=0;
+    if(!udk_settings_valid(settings) || settings->trackball_mode!=UDK_HOLD_MODE ||
+       (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return;
+    int64_t x=raw_x,y=raw_y,limit=settings->trackball_hold_threshold;
+    if(o->flags&UP_MOUSE_INVERT_X)x=-x;
+    if(o->flags&UP_MOUSE_INVERT_Y)y=-y;
+    if(x>=limit)s->directions|=1u<<UM_KEY_RIGHT;else if(x<=-limit)s->directions|=1u<<UM_KEY_LEFT;
+    if(y>=limit)s->directions|=1u<<UM_KEY_DOWN;else if(y<=-limit)s->directions|=1u<<UM_KEY_UP;
+    s->last_report_us=time_us;
+}
+uint8_t um_hold_directions(um_hold_state *s,uint32_t now_us,uint32_t idle_us) {
+    if((uint32_t)(now_us-s->last_report_us)>=idle_us)s->directions=0;
+    return s->directions;
+}
+void um_hold_overlay(uint8_t directions,const uint8_t targets[4],sw_report *report) {
+    uint8_t hat=0;
+    for(unsigned direction=0;direction<4;++direction)if(directions&(1u<<direction)) {
+        uint8_t target=udk_target((uint8_t)direction,targets);
+        if(target>=15 && target<=18)hat|=(uint8_t)(1u<<(target-15));
+        else if(target>=1 && target<=8)report->buttons0|=(uint8_t)(1u<<(target-1));
+        else if(target>=9 && target<=14)report->buttons1|=(uint8_t)(1u<<(target-9));
+    }
+    // Physical D-pad input owns the whole hat. Generated opposing targets cancel.
+    int x=((hat&2)!=0)-((hat&8)!=0),y=((hat&4)!=0)-((hat&1)!=0);
+    if(report->hat==15 && (x || y))report->hat=(uint8_t)(y<0?(x<0?7:x>0?1:0):y>0?(x<0?5:x>0?3:4):(x<0?6:2));
+}
+// Quarter-circle Q15 lookup covers every five-degree position without per-report
+// floating point. Scale each sign to the asymmetric 0..128..255 wire range.
+static const uint16_t rolling_sin_q15[19]={
+    0,2856,5690,8481,11207,13848,16384,18795,21063,23170,25102,26842,28378,29698,30792,31651,32270,32643,32768
+};
+static uint8_t rolling_axis(unsigned angle) {
+    bool negative=angle>=180u;unsigned phase=angle%180u;
+    if(phase>90u)phase=180u-phase;
+    unsigned magnitude=((uint32_t)rolling_sin_q15[phase/5u]*(negative?128u:127u)+16384u)>>15;
+    return (uint8_t)(negative?128u-magnitude:128u+magnitude);
+}
+void um_rolling_input(um_rolling_state *s,int32_t wheel,uint32_t time_us,const udk_settings *settings) {
+    if(!udk_settings_valid(settings) || settings->paddle_mode!=UDK_ROLLING_MODE || !wheel) { s->moving=false;return; }
+    unsigned step=settings->rolling_step_deg;
+    if(s->step_deg!=step) {
+        // A changed step aligns to its nearest up-based position and discards
+        // the old partial step. Other edits and ordinary stops preserve phase.
+        unsigned angle=s->angle10/10u;
+        s->angle10=(uint16_t)((((angle+step/2u)/step)*step)%360u*10u);
+        s->fraction10=0;s->step_deg=(uint8_t)step;
+    }
+    int64_t delta=-(int64_t)wheel*settings->rolling_gain10;
+    if(settings->rolling_flags&UDK_ROLLING_INVERT)delta=-delta;
+    int64_t limit=(int64_t)step*10,sum=s->fraction10+delta,steps=sum/limit;
+    s->fraction10=(int16_t)(sum%limit);
+    // Every selectable step divides one turn; modulo preserves complete wraps.
+    int32_t angle=(int32_t)(s->angle10/10u)+(int32_t)(steps%360)*(int32_t)step;
+    angle%=360;if(angle<0)angle+=360;
+    s->angle10=(uint16_t)(angle*10);s->last_motion_us=time_us;s->moving=true;
+    s->x=rolling_axis((unsigned)angle);s->y=rolling_axis(((unsigned)angle+270u)%360u);
+}
+void um_rolling_overlay(um_rolling_state *s,uint32_t now_us,uint32_t idle_us,const udk_settings *settings,sw_report *report) {
+    if(!udk_settings_valid(settings) || settings->paddle_mode!=UDK_ROLLING_MODE)return;
+    if(s->moving && (uint32_t)(now_us-s->last_motion_us)>=idle_us)s->moving=false;
+    uint8_t x=s->moving?s->x:128,y=s->moving?s->y:128;
+    if(settings->rolling_flags&UDK_ROLLING_LEFT) { report->lx=x;report->ly=y; }
+    else { report->rx=x;report->ry=y; }
+}
+
 void um_fixed_delta(const up_mouse_options *o,int32_t raw_x,int32_t raw_y,unsigned threshold,unsigned amplitude,int32_t *x,int32_t *y) {
     *x=*y=0;
     if(!(o->flags&UP_MOUSE_TRACKBALL) || !threshold || !amplitude || amplitude>32767)return;

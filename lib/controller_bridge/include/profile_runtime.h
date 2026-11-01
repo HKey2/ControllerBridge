@@ -23,6 +23,11 @@
 #define UPR_FEATURE_GAIN256 65536u
 #define UPR_FEATURE_DIRECTION_KEYS 131072u
 #define UPR_FEATURE_DIRECTION_SETTINGS 262144u
+#define UPR_FEATURE_DIRECTION_TARGETS 524288u
+#define UPR_FEATURE_DIRECTION_SOURCES 1048576u
+#define UPR_FEATURE_VIRTUAL_ROLLING 2097152u
+#define UPR_FEATURE_TRACKBALL_HOLD 4194304u
+#define UPR_FEATURE_ROLLING_STEP 8388608u
 void upr_init(void);
 // True means the outgoing state must be reset to neutral (new device/profile).
 bool upr_event(const uc_event *event);
@@ -31,6 +36,9 @@ bool upr_tick(uint32_t now_us,bool output_ready,sw_report *report);
 bool upr_ready(void);
 bool upr_mouse_ready(void);
 void upr_mouse_reset(void);
+// Apply after ordinary mouse/gamepad routing, including repeats and stop timeout.
+bool upr_rolling_overlay(uint32_t now_us,sw_report *report);
+uint8_t upr_hold_directions(uint32_t now_us);
 // Decode this packet, including repeated identical deltas; never use GUI events.
 bool upr_mouse_delta(const uc_event *event,int32_t *x,int32_t *y);
 bool upr_pointing_input(const uc_event *event,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys);

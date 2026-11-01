@@ -23,7 +23,7 @@ void ub_hist_add(ub_histogram *h,uint32_t value) {
 void ub_queue_reset(ub_queue *q) { memset(q,0,sizeof(*q)); }
 unsigned ub_queue_depth(const ub_queue *q) { return (q->write+UB_TRANSITIONS-q->read)%UB_TRANSITIONS; }
 bool ub_queue_push(ub_queue *q,const ub_frame *f) {
-    bool changed=!q->have_latest || memcmp(&q->latest.report,&f->report,sizeof(f->report));
+    bool changed=!q->have_latest || memcmp(&q->latest.report,&f->report,sizeof(f->report)) || q->latest.hold_directions!=f->hold_directions;
     q->latest=*f; q->latest.transition=changed; q->have_latest=true;
     if(!changed)return true;
     unsigned next=(q->write+1)%UB_TRANSITIONS;
@@ -35,6 +35,10 @@ bool ub_queue_push(ub_queue *q,const ub_frame *f) {
     q->pending[q->write]=*f; q->pending[q->write].transition=true; q->write=next;
     unsigned depth=ub_queue_depth(q); if(depth>q->max_depth)q->max_depth=depth;
     return true;
+}
+void ub_queue_clear_hold(ub_queue *q) {
+    q->latest.hold_directions=0;
+    for(unsigned i=0;i<UB_TRANSITIONS;++i)q->pending[i].hold_directions=0;
 }
 bool ub_queue_direction_click(ub_queue *q,const ub_frame *base,uint8_t direction,uint32_t *sequence) {
     if(direction>=4 || base->report.hat!=15 || ub_queue_depth(q)>UB_TRANSITIONS-3)return false;
@@ -52,13 +56,13 @@ bool ub_queue_pop(ub_queue *q,ub_frame *f) {
 
 void ub_direction_reset(ub_direction_pulse *p) {
     // Preserve lifetime timing statistics while abandoning stale movement.
-    p->read=p->count=p->phase=p->level=0;
+    p->read=p->count=p->phase=p->level=p->source=0;
     p->awaiting=p->have_release=false;p->phase_at=p->source_us=p->cookie=0;
 }
-bool ub_direction_offer(ub_direction_pulse *p,uint8_t direction,uint32_t received_us) {
-    if(direction>=4 || p->count==UB_DIRECTION_PENDING)return false;
+bool ub_direction_offer(ub_direction_pulse *p,uint8_t direction,uint8_t source,uint32_t received_us) {
+    if(direction>=4 || source>UDK_SOURCE_PADDLE || p->count==UB_DIRECTION_PENDING)return false;
     unsigned i=(p->read+p->count)%UB_DIRECTION_PENDING;
-    p->pending[i].direction=direction;p->pending[i].received_us=received_us;p->count++;
+    p->pending[i].direction=direction;p->pending[i].source=source;p->pending[i].received_us=received_us;p->count++;
     return true;
 }
 unsigned ub_direction_pending_frames(const ub_direction_pulse *p) {
@@ -70,10 +74,23 @@ static uint8_t direction_edge(const ub_direction_pulse *p) {
     if(p->phase==UB_DIRECTION_RELEASE_WAIT)return (uint8_t)(p->level+0x80);
     return 0;
 }
-void ub_direction_prepare(ub_direction_pulse *p,uint32_t now,uint32_t hold_us,uint32_t wait_us,ub_frame *frame) {
+bool ub_direction_blocked(const sw_report *report,uint8_t direction,const uint8_t targets[4]) {
+    uint8_t target=udk_target(direction,targets);
+    if(!target || target>UDK_TARGET_COUNT)return true;
+    if(target>=15)return report->hat!=15;
+    uint16_t buttons=(uint16_t)(report->buttons0|((uint16_t)report->buttons1<<8));
+    return (buttons&(1u<<(target-1)))!=0;
+}
+void ub_direction_prepare(ub_direction_pulse *p,uint32_t now,uint32_t hold_us,uint32_t wait_us,
+                          const uint8_t targets[4],const uint8_t paddle_targets[4],ub_frame *frame) {
     frame->direction_key=frame->direction_level=0;
-    if(frame->report.hat!=15 || hold_us<1000u || hold_us>UDK_MAX_HOLD_MS*1000u ||
+    if(hold_us<1000u || hold_us>UDK_MAX_HOLD_MS*1000u ||
        wait_us<1000u || wait_us>UDK_MAX_WAIT_MS*1000u) { ub_direction_reset(p);return; }
+    // Ordinary input owns a held target. Abandon a conflicting synthetic
+    // click, never manufacture a release of the user's physical button.
+    if(p->phase!=UB_DIRECTION_IDLE && p->level && ub_direction_blocked(&frame->report,(uint8_t)(p->level-1),p->source==UDK_SOURCE_PADDLE?paddle_targets:targets)) {
+        ub_direction_reset(p);return;
+    }
     if(p->phase==UB_DIRECTION_HELD && (uint32_t)(now-p->phase_at)>=hold_us)
         p->phase=UB_DIRECTION_RELEASE_WAIT;
     if(p->phase==UB_DIRECTION_GAP && (uint32_t)(now-p->phase_at)>=wait_us) {
@@ -83,13 +100,19 @@ void ub_direction_prepare(ub_direction_pulse *p,uint32_t now,uint32_t hold_us,ui
         if(!p->count)p->have_release=false;
     }
     if(p->phase==UB_DIRECTION_IDLE && p->count) {
-        p->level=(uint8_t)(p->pending[p->read].direction+1);p->source_us=p->pending[p->read].received_us;
+        if(ub_direction_blocked(&frame->report,p->pending[p->read].direction,p->pending[p->read].source==UDK_SOURCE_PADDLE?paddle_targets:targets)) {
+            ub_direction_reset(p);return;
+        }
+        p->source=p->pending[p->read].source;p->level=(uint8_t)(p->pending[p->read].direction+1);p->source_us=p->pending[p->read].received_us;
         p->read=(uint8_t)((p->read+1)%UB_DIRECTION_PENDING);p->count--;
         p->phase=UB_DIRECTION_PRESS_WAIT;
     }
     if(p->phase==UB_DIRECTION_PRESS_WAIT || p->phase==UB_DIRECTION_HELD) {
-        static const uint8_t hats[4]={0,4,6,2};
-        frame->direction_level=p->level;frame->report.hat=hats[p->level-1];
+        uint8_t target=udk_target((uint8_t)(p->level-1),p->source==UDK_SOURCE_PADDLE?paddle_targets:targets);
+        frame->direction_level=p->level;
+        if(target>=15)frame->report.hat=(uint8_t)(2*(target-15));
+        else if(target<=8)frame->report.buttons0|=(uint8_t)(1u<<(target-1));
+        else frame->report.buttons1|=(uint8_t)(1u<<(target-9));
     }
     frame->direction_key=direction_edge(p);
     if(frame->direction_key) { frame->transition=true;frame->received_us=p->source_us; }

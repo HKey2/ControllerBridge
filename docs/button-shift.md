@@ -46,7 +46,7 @@ In USB mouse or combined mouse-button behavior, B/A remain the shared left/right
 
 ## Upgrade and backup
 
-Install the 0.20.11 firmware bundled with the 0.20.11 configurator. Settings from 0.20.0 retain their mappings and rates without conversion. Settings from 0.16.0–0.19.0 migrate automatically with shift disabled. Main mappings, axes, IDs, slot order, preferred selections, permanent shortcuts, RGB and output settings are preserved. Pre-0.16.0 storage remains unsupported.
+Install the 0.20.16 firmware bundled with the 0.20.16 configurator. Settings from 0.20.0 retain their mappings and rates without conversion. Settings from 0.16.0–0.19.0 migrate automatically with shift disabled. Main mappings, axes, IDs, slot order, preferred selections, permanent shortcuts, RGB and output settings are preserved. Pre-0.16.0 storage remains unsupported.
 
 New backups/exports use JSON version 3. Old version-2 files are accepted and converted; they have no shifted assignments. Keep a pre-upgrade version-2 backup if returning to old firmware may be necessary: 0.19.0 cannot read the expanded bank or new backup format, and downgrade conversion is not implemented. The existing [firmware update](firmware-update.md) confirmation still controls board programming.
 

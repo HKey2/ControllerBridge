@@ -64,6 +64,7 @@ typedef struct {
     bool transition;
     uint8_t direction_key; // ACK-counted edge: 1..4 press U/D/L/R, 0x81..0x84 release.
     uint8_t direction_level; // Held U/D/L/R for repeated keyboard reports; zero means released.
+    uint8_t hold_directions; // U/D/L/R bitmask; uses the last byte of existing padding.
 } ub_frame;
 typedef struct {
     ub_frame pending[UB_TRANSITIONS], latest;
@@ -78,6 +79,7 @@ void ub_queue_reset(ub_queue *queue);
 bool ub_queue_push(ub_queue *queue, const ub_frame *frame);
 bool ub_queue_pop(ub_queue *queue, ub_frame *frame);
 unsigned ub_queue_depth(const ub_queue *queue);
+void ub_queue_clear_hold(ub_queue *queue);
 // Atomically reserve an ordered press/release pair; leave queued frames intact
 // if full. Physical D-pad state takes priority over generated clicks.
 bool ub_queue_direction_click(ub_queue *queue,const ub_frame *base,uint8_t direction,uint32_t *sequence);
@@ -86,16 +88,19 @@ bool ub_queue_direction_click(ub_queue *queue,const ub_frame *base,uint8_t direc
 #define UB_DIRECTION_PENDING 4u
 enum { UB_DIRECTION_IDLE,UB_DIRECTION_PRESS_WAIT,UB_DIRECTION_HELD,UB_DIRECTION_RELEASE_WAIT,UB_DIRECTION_GAP };
 typedef struct {
-    struct { uint32_t received_us; uint8_t direction; } pending[UB_DIRECTION_PENDING];
+    struct { uint32_t received_us; uint8_t direction,source; } pending[UB_DIRECTION_PENDING];
     uint32_t phase_at,source_us,cookie;
     uint32_t press_samples,press_min,press_max,gap_samples,gap_min,gap_max;
-    uint8_t read,count,phase,level;
+    uint8_t read,count,phase,level,source;
     bool awaiting,have_release;
 } ub_direction_pulse;
 void ub_direction_reset(ub_direction_pulse *pulse);
-bool ub_direction_offer(ub_direction_pulse *pulse,uint8_t direction,uint32_t received_us);
+bool ub_direction_offer(ub_direction_pulse *pulse,uint8_t direction,uint8_t source,uint32_t received_us);
 unsigned ub_direction_pending_frames(const ub_direction_pulse *pulse);
-void ub_direction_prepare(ub_direction_pulse *pulse,uint32_t now,uint32_t hold_us,uint32_t wait_us,ub_frame *frame);
+// Ordinary input has priority only when it occupies this generated target.
+bool ub_direction_blocked(const sw_report *report,uint8_t direction,const uint8_t targets[4]);
+void ub_direction_prepare(ub_direction_pulse *pulse,uint32_t now,uint32_t hold_us,uint32_t wait_us,
+                          const uint8_t targets[4],const uint8_t paddle_targets[4],ub_frame *frame);
 void ub_direction_sent(ub_direction_pulse *pulse,uint8_t edge,uint32_t cookie);
 // Return an edge only on its first successful completion. Failed transfers can
 // be retried; stale completions after reset never start a hold timer.

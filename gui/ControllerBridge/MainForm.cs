@@ -40,7 +40,7 @@ internal sealed partial class MainForm : Form
     private readonly BufferedTableLayoutPanel pointingTuning;
     private readonly ComboBox paddleAxis = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 88, Anchor = AnchorStyles.Left, AccessibleName = L.T("パドルの出力軸", "Paddle output axis") };
     private readonly CheckBox trackballKeys = new() { Text = L.T("↑↓←→に変換", "Convert to ↑↓←→"), AutoSize = true, Anchor = AnchorStyles.Left };
-    private readonly CheckBox paddleKeys = new() { Text = L.T("←→に変換", "Convert to ←→"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox paddleKeys = new() { Text = L.T("変換を有効", "Enable conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertPaddle = new() { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton mouseButtons = new() { Text = L.T("マウス扱い", "Mouse"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton gamepadButtons = new() { Text = L.T("コントローラー扱い", "Controller"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -167,7 +167,8 @@ internal sealed partial class MainForm : Form
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
         SetTip(trackballKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後のX/Yを個別に蓄積し、本体共通の64で↑↓←→を1回押して離します。超過分は捨てます。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted X/Y independently; at the device-wide threshold of 64, press/release ↑↓←→ once and discard excess."));
-        SetTip(paddleKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後の回転を蓄積し、本体共通の64でX軸は←→、Y軸は↑↓を1回押して離します。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted rotation; at the device-wide threshold of 64, press/release ←→ on X or ↑↓ on Y once."));
+        SetTip(paddleKeys, L.T("マウス UDLR設定のパドルモードを有効にします。ボタンクリックは選択軸の方向入力、Virtual Rollingは選択スティックへ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Mouse UDLR settings: button clicks along the selected axis, or Virtual Rolling on the selected stick. Pointer movement continues."));
+        SetTip(invertPaddle, L.T("ポインタ移動とボタンクリックを反転します。Virtual Rollingの反転はマウス UDLR設定で指定します。", "Reverse pointer movement and button clicks. Virtual Rolling has its own reversal in Mouse UDLR settings."));
         // Keep both editors in the control tree while hidden so they receive
         // the same font and monitor-DPI changes as the visible editor.
         Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -308,10 +309,10 @@ internal sealed partial class MainForm : Form
             L.T("ファームウェア0.14.0以降が必要です。", "Requires firmware 0.14.0 or later.");
         SetTip(backup, backupTip); SetTip(restore, backupTip);
         switchMethod.Enabled = online && !working && !preview && clean && enabled && caps?.SupportsSwitchKeys == true;
-        mouseUdlrSettings.Enabled = online && !working && (preview || caps?.SupportsDirectionSettings == true);
-        SetTip(mouseUdlrSettings, preview || caps?.SupportsDirectionSettings == true
-            ? L.T("全プロファイル共通の移動しきい値とホールド時間を本体に保存します。", "Save the movement threshold and hold time shared by all profiles.")
-            : L.T("ファームウェア0.20.10以降が必要です。", "Requires firmware 0.20.10 or later."));
+        mouseUdlrSettings.Enabled = online && !working && (preview || caps?.SupportsRollingStep == true);
+        SetTip(mouseUdlrSettings, preview || caps?.SupportsRollingStep == true
+            ? L.T("全プロファイル共通のマウス UDLR設定を本体に保存します。", "Save Mouse UDLR settings shared by all profiles.")
+            : L.T("ファームウェア0.20.16以降が必要です。", "Requires firmware 0.20.16 or later."));
         trackballOn.Enabled = paddleOn.Enabled = enabled && !working;
         invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
         mouseGain.Enabled = invertX.Enabled;
@@ -319,7 +320,7 @@ internal sealed partial class MainForm : Form
         paddleGain.Enabled = invertPaddle.Enabled;
         trackballKeys.Enabled = enabled && !working && trackballOn.Checked;
         paddleAxis.Enabled = enabled && !working && paddleOn.Checked;
-        paddleKeys.Text = paddleAxis.SelectedIndex == 1 ? L.T("↑↓に変換", "Convert to ↑↓") : L.T("←→に変換", "Convert to ←→");
+        paddleKeys.Text = L.T("変換を有効", "Enable conversion");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (preview || caps?.SupportsProfileOutput == true);
         useProfile.Enabled = online && !working && !preview && !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } && caps.ActiveSlot != selected && profiles[selected].Matches(caps);
     }
@@ -474,7 +475,7 @@ internal sealed partial class MainForm : Form
         if (p.OutputMode != 0 || p.Mouse.DirectionKeysEnabled)
             text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",
                 $"  •  Pointer gain: ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}");
-        if (p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動を↑↓←→に変換（64／回）", "  •  Movement → ↑↓←→ (64/click)");
+        if (p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON（マウス UDLR設定）", "  •  Movement conversion ON (Mouse UDLR settings)");
         SetText(outputStatus, p.Enabled ? text : "");
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)

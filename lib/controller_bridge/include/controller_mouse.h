@@ -49,12 +49,26 @@ int32_t um_scale(int32_t value,uint8_t options,bool y_axis);
 typedef struct { int32_t x10,y10; } um_fraction;
 enum { UM_KEY_UP,UM_KEY_DOWN,UM_KEY_LEFT,UM_KEY_RIGHT };
 typedef struct { int32_t ball_x10,ball_y10,paddle10; } um_key_state;
-typedef struct { uint8_t count,direction[3]; } um_key_events;
+typedef struct { uint8_t count,direction[3],source[3]; } um_key_events;
 // Signed gain-adjusted sums, three independent accumulators. Crossing a
 // threshold emits exactly one click for that source axis and discards excess.
 void um_direction_keys(um_key_state *state,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,const udk_settings *settings,um_key_events *keys);
 // Mix independently enabled sources at tenths precision; retain signed fractions.
 void um_mix(um_fraction *fraction,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,int32_t *x,int32_t *y);
+// Hold uses the magnitude of each received raw X/Y delta, not accumulated gain.
+// A real zero/subthreshold report releases; unrelated reports do not update it.
+typedef struct { uint32_t last_report_us;uint8_t directions; } um_hold_state;
+_Static_assert(sizeof(um_hold_state)==8,"hold runtime allocation");
+void um_hold_input(um_hold_state *state,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,uint32_t time_us,const udk_settings *settings);
+uint8_t um_hold_directions(um_hold_state *state,uint32_t now_us,uint32_t idle_us);
+void um_hold_overlay(uint8_t directions,const uint8_t targets[4],sw_report *report);
+// Virtual Rolling keeps angle across stop/reset; only initialization clears it.
+// 0 degrees is up; selectable 5..90-degree steps turn clockwise. Fractional input
+// is retained across stops and reversals. No extrapolation or inertia.
+typedef struct { uint32_t last_motion_us;uint16_t angle10;int16_t fraction10;uint8_t x,y;bool moving;uint8_t step_deg; } um_rolling_state;
+_Static_assert(sizeof(um_rolling_state)==12,"rolling runtime allocation");
+void um_rolling_input(um_rolling_state *state,int32_t wheel,uint32_t time_us,const udk_settings *settings);
+void um_rolling_overlay(um_rolling_state *state,uint32_t now_us,uint32_t idle_us,const udk_settings *settings,sw_report *report);
 // Diagnostic constant-speed vector; ignores gain and paddle, keeps direction.
 void um_fixed_delta(const up_mouse_options *options,int32_t raw_x,int32_t raw_y,unsigned threshold,unsigned amplitude,int32_t *x,int32_t *y);
 void um_push(um_queue *queue,int32_t x,int32_t y,uint8_t buttons,uint32_t time,uint32_t sequence,bool source_input);

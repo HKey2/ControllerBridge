@@ -31,6 +31,11 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsGain256 => (Features & 65536) != 0;
     public bool SupportsDirectionKeys => (Features & 131072) != 0;
     public bool SupportsDirectionSettings => (Features & 262144) != 0;
+    public bool SupportsDirectionTargets => SupportsDirectionSettings && (Features & 524288) != 0;
+    public bool SupportsDirectionSources => SupportsDirectionTargets && (Features & 1048576) != 0;
+    public bool SupportsVirtualRolling => SupportsDirectionSources && (Features & 2097152) != 0;
+    public bool SupportsTrackballHold => SupportsVirtualRolling && (Features & 4194304) != 0;
+    public bool SupportsRollingStep => SupportsTrackballHold && (Features & 8388608) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
         if (profile.Mouse.TrackballGain > 64 && !SupportsGain256)
