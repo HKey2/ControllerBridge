@@ -2,7 +2,9 @@
 
 ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
 
-**Current development release: firmware 0.20.0 and Windows configurator 0.20.0.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
+**Current development release: firmware 0.20.1 and Windows configurator 0.20.1.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
+
+Rapid fire now supports **1–60 press/release cycles per second**, with **20** as the starting value when enabling an output that was Off. Existing saved rates remain unchanged, and Off remains Off until enabled. Install the matching 0.20.1 firmware to use the expanded range. Profile and backup formats are unchanged.
 
 ![ControllerBridge profile list, English interface](docs/gui-main-en.png)
 
@@ -34,7 +36,7 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Button shift…**, in the mapping editor, learns one to four physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
-Selecting an output tab edits the profile. Choose **Save slot to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
+Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
 
 | Output tab | Behavior |
 |---|---|
@@ -86,7 +88,7 @@ Use the existing pinned Pico SDK 2.1.1, Arm GCC 14.2.1, and .NET 9 SDK. The GUI 
 
 The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation. Developer previews accept `--preview --language en` or `--preview --language ja`.
 
-The 0.20.0 build passes 13,051 deterministic C checks and 17 CLI checks. Japanese and English GUI suites cover 676 checks each (1,352 total), including 30 shift checks per language, asynchronous learning cancellation, actual modal input delivery, old-format migration, and existing connection/update/axis/LED behavior. These use simulated inputs and Flash; no board was programmed for this change. Real controller/gameplay response and physical power interruption during migration remain unverified. See [verification and its limits](docs/verification.md).
+The 0.20.1 build passes 45,930 deterministic C checks and 17 CLI checks. Japanese and English GUI suites cover 744 checks each (1,488 total), including 23 rapid-fire and 55 shift checks per language. They cover the 1–60 range, default 20, retention of saved rates, simultaneous modifier registration, asynchronous learning cancellation, actual modal input delivery, old-format migration, and existing connection/update/axis/LED behavior. These use simulated inputs and Flash; no board was programmed for this change. Real controller/gameplay response and physical power interruption during migration remain unverified. See [verification and its limits](docs/verification.md).
 
 ## Memory budget
 
@@ -94,7 +96,7 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 96,148; persistent storage 49,152 | 1,951,852 |
+| Flash, 2,097,152 bytes | Code/initial values 96,100; persistent storage 49,152 | 1,951,900 |
 | SRAM, 532,480 bytes | Static data 151,588; two stacks 8,192 | 372,700 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |

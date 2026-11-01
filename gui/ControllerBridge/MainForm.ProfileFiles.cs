@@ -79,6 +79,6 @@ internal sealed partial class MainForm
         // Validate everything before modifying any draft. Saving remains an explicit slot operation.
         _ = imported.Encode();
         profiles[slot] = imported; selected = slot; MarkDirty(); RefreshSlots(); BindSelected();
-        SetText(saved, L.F("スロット {0} にインポートしました。「スロットを本体に保存」で反映します。", "Imported into slot {0}. Choose “Save slot to device” to apply it.", slot + 1));
+        SetText(saved, L.F("スロット {0} にインポートしました。「プロファイルをデバイスに保存」で反映されます。", "Imported into slot {0}. Choose “Save profile to device” to apply it.", slot + 1));
     }
 }

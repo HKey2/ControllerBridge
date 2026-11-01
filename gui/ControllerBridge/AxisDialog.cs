@@ -19,6 +19,7 @@ internal sealed partial class AxisDialog : Form
     private readonly bool canLearn;
     private readonly Func<Task<bool>>? prepareLearning;
     private readonly TableLayoutPanel analogLayout;
+    private readonly Label saveNotice = Ui.Label(L.ProfileSaveNotice, 9);
     private static NumericUpDown Number() => new() { Minimum = int.MinValue, Maximum = int.MaxValue, Width = 145, ThousandsSeparator = true };
     public AxisDialog(int axis, AxisBinding original, List<InputField> fields, bool canLearn, Func<Task<bool>>? prepareLearning = null)
     {
@@ -27,10 +28,11 @@ internal sealed partial class AxisDialog : Form
         Result = new DeviceProfile { Flags = 0, Axes = [original, new(), new(), new()] }.Clone().Axes[0];
         baselines = fields.Where(f => f.Valid).ToDictionary(f => f.Index, f => f.Value);
         using IDisposable formLayout = Ui.Form(this, DeviceProfile.AxisNames[axis] + L.T(" の設定", " settings"), new(860, 570)); MaximizeBox = false;
-        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 5 };
+        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 6 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
+        root.RowStyles.Add(new(SizeType.AutoSize));
         root.Controls.Add(Ui.Label(DeviceProfile.AxisNames[axis], 17, true), 0, 0);
         mode.Items.AddRange([L.T("未使用（中心に固定）", "Unused (centered)"), L.T("アナログ入力", "Analog input"), L.T("2つのボタンで負方向 / 正方向", "Two buttons for negative / positive")]);
         mode.SelectedIndex = Result.Mode; root.Controls.Add(mode, 0, 1);
@@ -76,9 +78,11 @@ internal sealed partial class AxisDialog : Form
         Button pos = Ui.Button(L.T("正方向（右 / 下）を学習", "Learn positive (right / down)"), (_, _) => LearnPair(1)); pos.Enabled = canLearn;
         p.Controls.Add(neg, 0, 0); p.Controls.Add(negative, 0, 1); p.Controls.Add(pos, 0, 2); p.Controls.Add(positive, 0, 3); pairPanel.Controls.Add(p);
         message.Dock = DockStyle.Fill; message.Padding = new(0, 8, 0, 8); message.ForeColor = Ui.Muted; root.Controls.Add(message, 0, 3);
+        saveNotice.Dock = DockStyle.Fill; saveNotice.ForeColor = Ui.Muted;
+        root.Controls.Add(saveNotice, 0, 4);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft };
         Button apply = Ui.Button(L.T("適用", "Apply"), (_, _) => Apply(), true); Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
-        footer.Controls.Add(apply); footer.Controls.Add(cancel); CancelButton = cancel; root.Controls.Add(footer, 0, 4); Controls.Add(root);
+        footer.Controls.Add(apply); footer.Controls.Add(cancel); CancelButton = cancel; root.Controls.Add(footer, 0, 5); Controls.Add(root);
         source.SelectedIndexChanged += (_, _) =>
         {
             if (source.SelectedItem is not InputField f) return;
@@ -111,12 +115,14 @@ internal sealed partial class AxisDialog : Form
         if (!IsHandleCreated || mode.SelectedIndex != 1) return;
         int U(int value) => LogicalToDeviceUnits(value);
         Rectangle work = Screen.FromControl(this).WorkingArea;
-        int rows = Math.Max(1, Math.Min(Math.Max(1, source.Items.Count), (work.Height - U(560)) / U(54)));
+        // Reserve the wrapped save reminder in addition to the original controls.
+        int noticeHeight = saveNotice.GetPreferredSize(new(U(812), int.MaxValue)).Height + saveNotice.Margin.Vertical;
+        int rows = Math.Max(1, Math.Min(Math.Max(1, source.Items.Count), (work.Height - U(560) - noticeHeight) / U(54)));
         int columns = Math.Max(1, (source.Items.Count + rows - 1) / rows);
         rows = Math.Max(1, (source.Items.Count + columns - 1) / columns);
         int width = Math.Min(work.Width - U(32), U(860) * columns);
         MinimumSize = new(Math.Min(width, U(860)) + Width - ClientSize.Width, U(570));
-        ClientSize = new(width, Math.Min(work.Height - (Height - ClientSize.Height) - U(24), U(490) + rows * U(54)));
+        ClientSize = new(width, Math.Min(work.Height - (Height - ClientSize.Height) - U(24), U(490) + noticeHeight + rows * U(54)));
         PerformLayout();
         analogLayout.RowStyles[1].Height = source.Fit(rows, analogLayout.ClientSize.Width - source.Margin.Horizontal) + source.Margin.Vertical;
         PerformLayout();

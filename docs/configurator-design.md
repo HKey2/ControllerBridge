@@ -1,6 +1,6 @@
 # Configuration and storage design
 
-This describes the current ControllerBridge configurator 0.20.0 and firmware 0.20.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
+This describes the current ControllerBridge configurator 0.20.1 and firmware 0.20.1. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
 
 ## Architecture and capabilities
 
@@ -47,7 +47,7 @@ Migration preserves version-5 LED values, including the zero default in 0.16.x/0
 
 Valid output bytes are 0, 1, 2, 4, 5, and 6. The controller-button preference is retained even while another tab is selected. Every accepted profile includes this field. Whole-bank operations preserve original profile bytes rather than rewriting unrelated slots.
 
-Digital binding fields are interface (1), report ID (1), bit offset (2), bit width (1), mode (1), flags (1), rapid rate (1), lower bound (4), and upper bound (4). Flags are signed=1 and report-ID-present=2. Mode 0 is disabled, 1 compares a range, and 2-5 represent hat Up/Right/Down/Left. Rapid fire is zero or 2-30 cycles per second; unassigned bindings and analog digital pairs require zero.
+Digital binding fields are interface (1), report ID (1), bit offset (2), bit width (1), mode (1), flags (1), rapid rate (1), lower bound (4), and upper bound (4). Flags are signed=1 and report-ID-present=2. Mode 0 is disabled, 1 compares a range, and 2-5 represent hat Up/Right/Down/Left. Rapid fire is zero (Off) or 1–60 cycles per second; unassigned bindings and analog digital pairs require zero. The GUI starting rate for an Off output is 20, without rewriting stored rates or enabling outputs automatically. Firmware capabilities advertise bounds 1 and 60 in bytes 48–49. This range expansion changes no wire offsets or profile/bank versions; older firmware still rejects rates outside 2–30.
 
 Digital output order is Y, B, A, X, L, R, ZL, ZR, Minus, Plus, left-stick press, right-stick press, HOME, Capture, Up, Right, Down, Left.
 

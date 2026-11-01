@@ -38,9 +38,9 @@ internal sealed partial class LedRgbDialog : Form
         FlowLayoutPanel preview = new() { AutoSize = true, WrapContents = false, Margin = new(22, 0, 0, 0) };
         Label previewLabel = Ui.Label(L.T("プレビュー", "Preview"), 9); previewLabel.Anchor = AnchorStyles.Left;
         preview.Controls.Add(swatch); preview.Controls.Add(previewLabel); root.Controls.Add(preview, 0, 4);
-        Label hint = Ui.Label(L.T("本体には入力したRGB値（0～255）を送信します。0 / 0 / 0 は消灯です。\n状態通知の色・点滅は優先されます。\n変更後は「スロットを本体に保存」で反映してください。",
-            "The entered RGB values (0–255) are sent to the LED. 0 / 0 / 0 is off.\nStatus colors and flashes take priority.\nAfter editing, choose “Save slot to device” to apply the color."), 9);
-        hint.ForeColor = Ui.Muted; hint.Margin = new(4, 8, 4, 8); root.Controls.Add(hint, 0, 5);
+        Label hint = Ui.Label(L.T("本体には入力したRGB値（0～255）を送信します。0 / 0 / 0 は消灯です。\n状態通知の色・点滅は優先されます。\n",
+            "The entered RGB values (0–255) are sent to the LED. 0 / 0 / 0 is off.\nStatus colors and flashes take priority.\n") + L.ProfileSaveNotice, 9);
+        hint.Dock = DockStyle.Fill; hint.ForeColor = Ui.Muted; hint.Margin = new(4, 8, 4, 8); root.Controls.Add(hint, 0, 5);
         FlowLayoutPanel actions = new() { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Dock = DockStyle.Bottom, Margin = Padding.Empty };
         accept = Ui.Button("OK", (_, _) => { if (ValidateChildren() && (!custom.Checked || TryReadHex(out _))) DialogResult = DialogResult.OK; }, true);
         cancel = Ui.Button(L.T("キャンセル", "Cancel")); cancel.DialogResult = DialogResult.Cancel; cancel.CausesValidation = false;

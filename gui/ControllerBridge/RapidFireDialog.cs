@@ -1,6 +1,6 @@
 namespace ControllerBridge;
 
-internal sealed class RapidFireDialog : Form
+internal sealed partial class RapidFireDialog : Form
 {
     private readonly CheckBox[] enabled = new CheckBox[18];
     private readonly NumericUpDown[] rates = new NumericUpDown[18];
@@ -8,13 +8,13 @@ internal sealed class RapidFireDialog : Form
 
     public RapidFireDialog(DeviceProfile profile)
     {
-        using IDisposable formLayout = Ui.Form(this, L.T("ボタン別の連射設定", "Per-button rapid fire settings"), new(820, 620)); MaximizeBox = false;
+        using IDisposable formLayout = Ui.Form(this, L.T("連射設定", "Rapid fire settings"), new(820, 620)); MaximizeBox = false;
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 5 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        root.Controls.Add(Ui.Label(L.T("ボタン別の連射", "Per-button rapid fire"), 19, true), 0, 0);
-        Label description = Ui.Label(L.T("押している間だけ連射します。1回は押下＋解放、速度は毎秒2～30回（1回刻み）。\nONのチェックを外すと通常の押しっぱなしになります。", "Rapid fire runs only while a button is held. Each cycle is a press and release, at 2–30 cycles per second.\nUncheck ON for a normal held input."));
+        root.Controls.Add(Ui.Label(L.T("連射設定", "Rapid fire settings"), 19, true), 0, 0);
+        Label description = Ui.Label(L.T("設定可能範囲は毎秒1～60連射", "Available range: 1–60 rapid-fire cycles per second"));
         description.Dock = DockStyle.Fill; description.ForeColor = Ui.Muted; root.Controls.Add(description, 0, 1);
         TableLayoutPanel groups = new() { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         for (int i = 0; i < 3; i++) groups.ColumnStyles.Add(new(SizeType.Percent, 100f / 3));
@@ -37,7 +37,7 @@ internal sealed class RapidFireDialog : Form
                 int index = indices[row]; DigitalBinding binding = profile.Buttons[index];
                 Label label = Ui.Label(DeviceProfile.Targets[index], 10); label.Anchor = AnchorStyles.Left;
                 CheckBox check = new() { Text = "ON", AutoSize = true, Checked = binding.RapidHz != 0, Enabled = binding.Mode != 0, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = DeviceProfile.Targets[index] + L.T(" 連射 ON/OFF", " rapid fire ON/OFF") };
-                NumericUpDown rate = new() { Minimum = 2, Maximum = 30, Value = binding.RapidHz == 0 ? 10 : binding.RapidHz,
+                NumericUpDown rate = new() { Minimum = DigitalBinding.RapidMinHz, Maximum = DigitalBinding.RapidMaxHz, Value = binding.RapidHz == 0 ? DigitalBinding.RapidDefaultHz : binding.RapidHz,
                     Width = 68, Enabled = check.Checked && check.Enabled, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = DeviceProfile.Targets[index] + L.T(" 連射 回/秒", " rapid fire cycles/s") };
                 check.CheckedChanged += (_, _) => rate.Enabled = check.Checked && check.Enabled;
                 enabled[index] = check; rates[index] = rate;
@@ -46,7 +46,7 @@ internal sealed class RapidFireDialog : Form
             scroll.Controls.Add(table); groups.Controls.Add(scroll, group, 0);
         }
         root.Controls.Add(groups, 0, 2);
-        Label notice = Ui.Label(L.T("未割り当ての出力は先に割り当ててください。「適用」のあと、本体への保存で反映します。", "Assign unmapped outputs first. Choose Apply, then save to the device."), 9);
+        Label notice = Ui.Label(L.T("未割り当てのボタンには設定出来ません", "Rapid fire cannot be set for unassigned buttons") + "\n" + L.ProfileSaveNotice, 9);
         notice.Dock = DockStyle.Fill; notice.ForeColor = Ui.Muted; notice.Padding = new(0, 8, 0, 8); root.Controls.Add(notice, 0, 3);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft };
         Button apply = Ui.Button(L.T("適用", "Apply"), (_, _) =>

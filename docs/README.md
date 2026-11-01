@@ -1,6 +1,6 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator 0.20.0 and normal firmware 0.20.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator 0.20.1 and normal firmware 0.20.1. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
 | Document | Contents |
 |---|---|
@@ -14,4 +14,4 @@ These documents describe the current Windows configurator 0.20.0 and normal firm
 | [Compatibility](compatibility.md) | Tested controllers, unsupported cases, and unresolved limitations |
 | [Verification](verification.md) | Current build checks, current-format validation, empty startup, screenshots, and memory budget |
 
-The button-shift screenshot uses the 0.20.0 English GUI. The general main-window and firmware-update screenshots retain their 0.19.0 reference images; the unchanged axis dialog retains its 0.16.0 image. Their version labels describe those captures.
+The rapid-fire and button-shift screenshots use the 0.20.1 GUI with the shared profile-save reminder. The general main-window and firmware-update screenshots retain their 0.19.0 reference images; the axis reference image is from 0.16.0, before the shared reminder was added. Their version labels and older save-button wording describe those captures. Current profile editing uses **Save profile to device**.

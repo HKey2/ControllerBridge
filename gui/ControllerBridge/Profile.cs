@@ -30,6 +30,7 @@ internal static class Wire
 
 public sealed class DigitalBinding
 {
+    public const byte RapidMinHz = 1, RapidMaxHz = 60, RapidDefaultHz = 20;
     public byte Interface { get; set; }
     public byte ReportId { get; set; }
     public ushort BitOffset { get; set; }
@@ -41,8 +42,8 @@ public sealed class DigitalBinding
     public int High { get; set; }
     public void Validate(bool allowRapid = false)
     {
-        if (RapidHz != 0 && (!allowRapid || Mode == 0 || RapidHz is < 2 or > 30))
-            throw new InvalidDataException(L.T("連射は割り当て済みの出力ボタンに、毎秒2～30回で設定してください。", "Set rapid fire to 2–30 presses per second on an assigned output button."));
+        if (RapidHz != 0 && (!allowRapid || Mode == 0 || RapidHz is < RapidMinHz or > RapidMaxHz))
+            throw new InvalidDataException(L.T("連射は割り当て済みの出力ボタンに、毎秒1～60回で設定してください。", "Set rapid fire to 1–60 presses per second on an assigned output button."));
         if (Mode == 0) return;
         Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
         if (Mode > 5 || Flags > 3 || Low > High || !Wire.Fits(Low, Bits, Flags) || !Wire.Fits(High, Bits, Flags) ||

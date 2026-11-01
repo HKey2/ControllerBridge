@@ -86,7 +86,7 @@ internal sealed partial class RegistrationWizard : Form
             for (int i = 0; i < 4; i++) review.Items.Add(new ListViewItem([DeviceProfile.AxisNames[i], profile.Axes[i].ToString()]));
             if (profile.Shift.Keys.Count != 0)
             {
-                review.Items.Add(new ListViewItem([L.T("シフトキー（AND）", "Shift keys (AND)"), string.Join(" + ", profile.Shift.Keys)]));
+                review.Items.Add(new ListViewItem([L.T("シフトキー（AND）", "Shift keys (AND)"), string.Join(" + ", profile.Shift.Keys.Select(k => ShiftSettings.DescribeKey(k, fields)))]));
                 for (int i = 0; i < 18; i++) if ((profile.Shift.Overrides & (1u << i)) != 0)
                     review.Items.Add(new ListViewItem([L.T("裏：", "Shift: ") + DeviceProfile.Targets[i], profile.Shift.Buttons[i].ToString()]));
             }

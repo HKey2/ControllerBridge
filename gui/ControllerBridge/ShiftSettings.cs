@@ -14,6 +14,12 @@ public sealed class ShiftSettings
     }
     internal static bool SameSource(DigitalBinding a, DigitalBinding b) =>
         a.Interface == b.Interface && a.ReportId == b.ReportId && a.BitOffset == b.BitOffset && a.Bits == b.Bits && (a.Flags & 3) == (b.Flags & 3);
+    internal static string DescribeKey(DigitalBinding key, IEnumerable<InputField> fields)
+    {
+        InputField? field = fields.FirstOrDefault(f => f.Interface == key.Interface && f.ReportId == key.ReportId &&
+            f.BitOffset == key.BitOffset && f.Bits == key.Bits && (f.Flags & 3) == (key.Flags & 3));
+        return (field?.Label ?? L.T("入力名未確認", "Input name unavailable")) + $"  [{key}]";
+    }
     internal static bool Pressed(DigitalBinding b, int value)
     {
         if (b.Mode == 0 || value < b.Low || value > b.High) return false;

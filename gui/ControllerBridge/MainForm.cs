@@ -160,7 +160,7 @@ internal sealed partial class MainForm : Form
         saved.Dock = DockStyle.Fill; saved.ForeColor = Ui.Muted; footer.Controls.Add(saved, 0, 0);
         reload = Ui.Button(L.T("本体から再読込", "Reload device"), async (_, _) => await Reload());
         useProfile = Ui.Button(L.T("この設定を使用", "Use this profile"), async (_, _) => await UseProfile());
-        saveButton = Ui.Button(L.T("スロットを本体に保存", "Save slot to device"), async (_, _) => await SaveSelected(), true);
+        saveButton = Ui.Button(L.ProfileSaveButton, async (_, _) => await SaveSelected(), true);
         footer.Controls.Add(reload, 1, 0); footer.Controls.Add(useProfile, 2, 0); footer.Controls.Add(saveButton, 3, 0); root.Controls.Add(footer, 0, 2); Controls.Add(root);
 
         slots.DrawItem += DrawSlot;
@@ -267,7 +267,7 @@ internal sealed partial class MainForm : Form
     private void MarkDirty()
     {
         dirty[selected] = true; slots.Invalidate(slots.GetItemRectangle(selected));
-        SetText(saved, L.T("* は未保存の編集です。「スロットを本体に保存」で反映します。", "* marks unsaved edits. Choose “Save slot to device” to apply them.")); UpdateEnabled();
+        SetText(saved, L.T("* は未保存の編集です。「プロファイルをデバイスに保存」で反映されます。", "* marks unsaved edits. Choose “Save profile to device” to apply them.")); UpdateEnabled();
     }
     private void UpdateEnabled()
     {
@@ -653,7 +653,7 @@ internal sealed partial class MainForm : Form
             DeviceProfile copy = profiles[selected].Clone(); copy.ProfileId = Guid.NewGuid();
             copy.Name = ProfileSlots.DuplicateName(profiles, copy.Name);
             profiles[destination] = copy; selected = destination; MarkDirty(); RefreshSlots(); BindSelected();
-            SetText(saved, L.F("スロット {0} に複製しました。「スロットを本体に保存」で反映します。", "Copied to slot {0}. Choose “Save slot to device” to apply it.", destination + 1));
+            SetText(saved, L.F("スロット {0} に複製しました。「プロファイルをデバイスに保存」で反映されます。", "Copied to slot {0}. Choose “Save profile to device” to apply it.", destination + 1));
         }
         catch (Exception ex) { Ui.Error(this, ex); }
     }

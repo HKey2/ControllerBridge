@@ -1,6 +1,43 @@
 # Current verification
 
-Applies to ControllerBridge Windows configurator and normal firmware 0.20.0. This release adds a button-only shifted page, AND modifiers and inherited mappings, and migrates version-5 settings to the expanded version-6 profile/bank format. New JSON exports use version 3 and retain version-2 import support. The dated 0.19.0 entries below describe the checks and images at those times; their old hashes and compatibility statements are historical. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+Applies to ControllerBridge Windows configurator and normal firmware 0.20.1. This update expands rapid fire to 1–60 cycles per second with a new starting rate of 20, while retaining saved rates. The button-only shifted page, AND modifiers, inherited mappings and version-6 profile/bank format remain supported. JSON exports use version 3 and retain version-2 import support. Dated entries below describe their own builds and checks; older hashes and measurements are historical. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+
+## 2026-11-01: profile save wording and shared settings reminder
+
+The profile action is now **Save profile to device** (Japanese: **プロファイルをデバイスに保存**). Unsaved-edit, duplicate, import and mouse-mapping guidance uses the same action name. The rapid-fire dialog title and heading are now **Rapid fire settings**. Its Japanese range and unavailable-button guidance follows the requested wording, and the former held-button explanatory line has been removed from that dialog.
+
+Rapid fire, LED RGB, button shift and axis settings all use one shared localized reminder: changes are not written until **Save profile to device** is chosen on the profile screen. Immediate-write dialogs such as profile switching and firmware updates retain guidance matching their own save behavior. The axis window reserves the measured height of the new reminder when arranging its input list and calibration controls.
+
+The final self-contained EXE passed **361 checks per language, 722 total**: rapid fire 23, shift 55, LED 162, axis 82, profile menu 23 and output tabs 16. Japanese and English captures were visually inspected. Results are in `build/save-wording/checks-final/summary.json`. The first axis run exposed a one-pixel vertical overflow after adding the reminder; the layout now reserves its wrapped height and both final axis suites pass. The original diagnostic remains in `build/save-wording/checks/ja/axis`.
+
+The existing DPI runner also passed **13,157 checks per language, 26,314 total**, including simulated transitions 96 → 120 → 144 → 192 → 96 → 192 → 96 and bounded-window checks. Results are in `build/save-wording/dpi/summary.json`. Windows display settings were not changed; this is a controlled layout check, not a physical monitor-move test.
+
+This is a GUI wording/layout update using the existing .NET 9 SDK. No physical device was opened or programmed. Firmware 0.20.1 and its UF2 remain byte-identical (`3E7BCE463636A2F4EA0F622420D6F98917669CB6440D8BB13F3077434FD1985C`). Board allocation is unchanged: Flash code/initial values 96,100 bytes plus 49,152 reserved, leaving 1,951,900; static SRAM 151,588 plus 8,192 for stacks, leaving 372,700. Profile and bank payload sizes remain 848 and 13,908 bytes.
+
+## 2026-11-01: rapid-fire range 1–60 and new default 20
+
+GUI controls, profile validation and firmware capabilities now agree on **1–60 complete press/release cycles per second**, in steps of one. Zero still means Off. The GUI shows 20 when enabling a currently Off output; saved nonzero values such as 2, 7, 10 and 30 remain unchanged. Opening or applying the dialog without enabling an Off output preserves zero. The same rules apply to main and shifted button pages. Wire fields, version-6 profiles, 16-slot banks and JSON version 3 are unchanged. The version is 0.20.1 so the bundled updater can distinguish firmware that accepts the wider range.
+
+- Normal RP2350 firmware builds with the existing pinned toolchain. UF2: 192,512 bytes; SHA-256 `3E7BCE463636A2F4EA0F622420D6F98917669CB6440D8BB13F3077434FD1985C`.
+- **45,930 C checks passed**, including **44,164 rapid-fire checks**. Every integer rate from 1 through 60 is checked immediately before and at each mathematical half-cycle boundary over three seconds. Existing independent-button, release/repress, output-pause, timer-wrap, axis and C# wire-fixture cases remain. Runtime capabilities advertise minimum 1 and maximum 60.
+- **17 CLI checks passed** against the unchanged profile and snapshot formats.
+- The self-contained Windows GUI passes **744 checks per language, 1,488 total**: general self-test 138, rapid fire 23, shift 55, LED 162, updater 124, connection 46, profile menu 23, arrival 42, axis 82, input log 33 and output tabs 16. The rapid dialog checks verify range/default, preservation of stored values, Off/Cancel/Apply behavior, disabled unmapped outputs, main/shifted binary round trips, profile JSON and whole-bank backup at 1, 20 and 60. Japanese and English rapid-setting captures were visually inspected.
+
+The first English self-test stopped at the existing `File.Replace` operation while replacing a test JSON file (`build/rapid-range/checks/en/self/error.txt`). The same EXE passed in a fresh output directory; no production file-save behavior was changed. The underlying intermittent file-operation cause remains undetermined. Final reports retain the Japanese run and English retry in `build/rapid-range/verification.json`.
+
+These are deterministic software checks with simulated inputs/storage. No board was opened or programmed, and this run does not establish physical USB delivery or game acceptance at 60 cycles per second. Flash code/initial values decrease by 48 bytes from 0.20.0; SRAM and persistent allocation sizes are unchanged.
+
+## 2026-11-01: shift key numbers and simultaneous registration
+
+The shift key list, learning feedback and registration review now use the same `InputField.Label` button numbers as the input log and live status. Saved USB source details remain visible to distinguish identical button numbers across interfaces or report IDs. Labels are resolved only with this profile's matching controller descriptor; offline or unrelated descriptors do not supply guessed button numbers.
+
+Choosing **Learn shift keys** captures a gesture from its first new press until all captured inputs are released. Multiple fields, interfaces and report IDs can join the gesture. Existing held-input protection remains active. Already registered keys do not consume capacity twice, and an addition exceeding four total keys is rejected as a whole. Selecting an output, removing a modifier, closing, or losing the connection cancels the pending gesture. Applying the draft while captured keys remain held asks for their release first. See [the updated workflow](button-shift.md).
+
+The final self-contained .NET 9 EXE passed **310 checks per language, 620 total**: shift 55, general self-test 134, input log 33, controller arrival 42 and connection UI 46. The expanded shift cases cover actual modal input delivery from both the main window and registration wizard, multiple changes in one poll and across polls, four-key capacity, duplicate sources, held inputs, single-key additions, cancellation of delayed preparation, hat/trigger ranges, button-number resolution and the registration review. Japanese and English captures of learning, registered keys and the review were visually inspected. Results are in `build/shift-learning/checks/summary.json`.
+
+Two initial runs stopped because new synthetic profiles omitted required VID/name values (`build/shift-learning/initial/ja/error.txt` and `build/shift-learning/gesture-checks/ja/error.txt`). The test fixtures were corrected; production profile validation was not relaxed. No physical USB device was opened or programmed. Real controller timing remains unverified by this GUI test run.
+
+This was a GUI change with no profile/bank format or firmware change. The 0.20.0 UF2 remained byte-identical (`3588776F42A03FCD91E895E3A07C98205E89F8F0ACD439554B485E1B4DC7E30D`). At that point board allocation was Flash 96,148 bytes plus 49,152 reserved (1,951,852 remaining), and static SRAM 151,588 bytes plus 8,192 for stacks (372,700 remaining). The current table below reflects the subsequent firmware build.
 
 ## 2026-11-01: DPI layout correction
 
@@ -32,7 +69,7 @@ Run the regression matrix after preparing the normal firmware package and restor
 .\tools\check-gui-dpi.ps1 -OutputDirectory build/dpi-new-run
 ```
 
-Use a fresh output directory. The runner opens only preview forms and a fake updater device. It records results and captures per case, and leaves OS settings, physical USB devices and saved profiles untouched. The project and runner continue to use the installed .NET 9 SDK. The current 0.20.0 firmware UF2 remains byte-identical (`3588776F42A03FCD91E895E3A07C98205E89F8F0ACD439554B485E1B4DC7E30D`), so the board memory figures below are unchanged.
+Use a fresh output directory. The runner opens only preview forms and a fake updater device. It records results and captures per case, and leaves OS settings, physical USB devices and saved profiles untouched. The project and runner continue to use the installed .NET 9 SDK. The 0.20.0 firmware UF2 used for that DPI correction remained byte-identical (`3588776F42A03FCD91E895E3A07C98205E89F8F0ACD439554B485E1B4DC7E30D`), so that GUI-only correction did not change board allocation.
 
 ## 2026-11-01: button shift and format migration
 
@@ -200,13 +237,13 @@ No SDK/runtime is installed or updated by these scripts. The target framework re
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 96,148; persistent storage 49,152 | 1,951,852 |
+| Flash, 2,097,152 bytes | Code/initial values 96,100; persistent storage 49,152 | 1,951,900 |
 | SRAM, 532,480 bytes | Static data 151,588; two stacks 8,192 | 372,700 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 
 Static SRAM consists of vector table 272, initialized data 34,016, and BSS 117,300 bytes. The linker minimum heap of 2,048 bytes is part of the remaining SRAM, not an additional subtraction. These are allocation figures, not measured peak stack or free-heap values.
 
-These figures were measured from the 0.20.0 ELF/linker map. Compared with 0.19.0, code/initial values grow by 9,264 bytes, static SRAM by 28,140 bytes, and reserved Flash by 16,384 bytes. The profile is 848 bytes (488-byte main prefix plus a 360-byte shift block); the bank is 13,908 bytes. The UF2 is 192,512 bytes. Optional diagnostic builds have separate memory requirements.
+These figures were measured from the 0.20.1 ELF/linker map. Compared with 0.20.0, code/initial values decrease by 48 bytes; static SRAM and reserved Flash are unchanged. Compared with 0.19.0, code/initial values grow by 9,216 bytes, static SRAM by 28,140 bytes, and reserved Flash by 16,384 bytes. The profile is 848 bytes (488-byte main prefix plus a 360-byte shift block); the bank is 13,908 bytes. The UF2 is 192,512 bytes. Optional diagnostic builds have separate memory requirements.
 
 Button-page transitions use runtime state only; they do not write Flash. Both pages share all four axis settings. The GUI editor and test image buffers allocate PC memory, outside the board figures above.

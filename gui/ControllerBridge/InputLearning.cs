@@ -143,7 +143,7 @@ internal sealed class MappingEditor : UserControl
         Label axisHelp = Ui.Label(L.T("出力軸: Xは左→右、Yは上→下。2つのボタンからスティック軸も作れます。", "Output axes: X is left → right; Y is up → down. Two buttons can also control an axis."), 9);
         axisHelp.Dock = DockStyle.Fill; axisHelp.ForeColor = Ui.Muted;
         if (mouseMode) {
-            axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n変更後は「スロットを本体に保存」で反映してください。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save slot to device” to apply your changes.");
+            axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save profile to device” to apply your changes.");
             root.Controls.Add(axisHelp, 0, 5);
         } else {
             foreach (Button axis in axes) tips.SetToolTip(axis, axisHelp.Text);
@@ -271,7 +271,7 @@ internal sealed class MappingEditor : UserControl
         int rapidCount = Enumerable.Range(0, 18).Count(i => Binding(i).RapidHz != 0);
         rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（本体の更新が必要）", "Rapid fire (update required)");
         rapid.Enabled = profile.Enabled && supportsRapid;
-        tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒2～30回を設定します。", "Set each button to OFF or 2–30 presses per second.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));
+        tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒1～60回を設定します。新規設定は20回です。", "Set each button to OFF or 1–60 presses per second. New settings start at 20.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));
         string[] shortNames = [L.T("左 X", "Left X"), L.T("左 Y", "Left Y"), L.T("右 X", "Right X"), L.T("右 Y", "Right Y")];
         for (int i = 0; i < 4; i++) axes[i].Text = shortNames[i] + " · " + (profile.Axes[i].Mode switch { 1 => L.T("アナログ", "Analog"), 2 => L.T("2ボタン", "2 buttons"), _ => L.T("未使用", "Unused") });
     }

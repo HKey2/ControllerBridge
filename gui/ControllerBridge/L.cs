@@ -4,6 +4,9 @@ namespace ControllerBridge;
 
 internal static partial class L
 {
+    public static string ProfileSaveButton => T("プロファイルをデバイスに保存", "Save profile to device");
+    public static string ProfileSaveNotice => T("注意:プロファイル画面で「プロファイルをデバイスに保存」するまで書き込まれません。",
+        "Note: Changes are not written until you choose “Save profile to device” on the profile screen.");
     public static bool Japanese => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ja";
     public static string FontFamily => Japanese ? "Yu Gothic UI" : "Segoe UI";
     public static string T(string ja, string en) => Japanese ? ja : en;

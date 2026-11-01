@@ -20,6 +20,7 @@ internal static class Program
         {
             if (args.Length >= 2 && args[0] == "--self-test") { SelfTest.Run(args[1]); return 0; }
             if (args.Length >= 2 && args[0] == "--check-button-shift") { ShiftDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-rapid-fire") { RapidFireDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-led-rgb") { MainForm.RunLedChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-controller-arrival") { MainForm.RunControllerArrivalChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-firmware-update") { FirmwareChecks.Run(Path.GetFullPath(args[1])); return 0; }
@@ -138,8 +139,8 @@ internal static class SelfTest
         File.WriteAllText(rapidJson, JsonSerializer.Serialize(new ProfileFile { Version = 1, Profile = p }));
         rejected = false; try { ProfileFile.Load(rapidJson); } catch (InvalidDataException) { rejected = true; }
         Check(rejected, "previous JSON export format is rejected");
-        foreach (byte hz in new byte[] { 2, 30 }) { p.Buttons[2].RapidHz = hz; Check(DeviceProfile.Decode(p.Encode()).Buttons[2].RapidHz == hz, "rapid endpoints"); }
-        foreach (byte hz in new byte[] { 1, 31, 255 })
+        foreach (byte hz in new byte[] { 1, 2, 10, 20, 30, 31, 60 }) { p.Buttons[2].RapidHz = hz; Check(DeviceProfile.Decode(p.Encode()).Buttons[2].RapidHz == hz, "rapid range and existing rates"); }
+        foreach (byte hz in new byte[] { 61, 255 })
         { p.Buttons[2].RapidHz = hz; rejected = false; try { p.Encode(); } catch (InvalidDataException) { rejected = true; } Check(rejected, "invalid rapid rate rejected"); }
         p.Buttons[2].RapidHz = 7;
         foreach (ushort version in new ushort[] { 1, 2, 3, 4 })

@@ -12,8 +12,8 @@
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
 #define UP_ID_BYTES 16
-#define UP_RAPID_MIN_HZ 2
-#define UP_RAPID_MAX_HZ 30
+#define UP_RAPID_MIN_HZ 1
+#define UP_RAPID_MAX_HZ 60
 enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8 };
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4 };
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
@@ -37,7 +37,7 @@ static inline void up_mouse_set_trackball_gain10(up_mouse_options *o,uint16_t ga
 typedef struct {
     uint8_t interface_number,report_id;
     uint16_t bit_offset;
-    // Rapid fire: 0=off, 2..30 cycles/second.
+    // Rapid fire: 0=off, 1..60 cycles/second. Existing saved rates are retained.
     // Axis button-pair bindings always keep this byte zero.
     uint8_t bits,mode,flags,rapid_hz;
     int32_t low,high;
