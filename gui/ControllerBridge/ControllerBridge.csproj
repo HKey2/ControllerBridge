@@ -16,12 +16,17 @@
     <Product>ControllerBridge</Product>
     <Title>ControllerBridge</Title>
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../firmware-version.txt').Trim())</Version>
+    <UdlrTest Condition="'$(UdlrTest)' == ''">false</UdlrTest>
+    <FirmwareBuildDirectory Condition="'$(FirmwareBuildDirectory)' == ''">$(MSBuildProjectDirectory)/../../build</FirmwareBuildDirectory>
+    <DefineConstants Condition="'$(UdlrTest)' == 'true'">$(DefineConstants);UDLR_TEST</DefineConstants>
+    <AssemblyName Condition="'$(UdlrTest)' == 'true'">ControllerBridgeUdlrTest</AssemblyName>
+    <Version Condition="'$(UdlrTest)' == 'true'">$(Version)-udlr</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>../../Resources/ControllerBridge_icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../Resources/ControllerBridge_icon.ico" LogicalName="ControllerBridge.App.ico" />
-    <EmbeddedResource Include="../../build/ControllerBridge.uf2" LogicalName="ControllerBridge.Firmware.uf2" />
-    <EmbeddedResource Include="../../build/firmware-package.json" LogicalName="ControllerBridge.Firmware.json" />
+    <EmbeddedResource Include="$(FirmwareBuildDirectory)/ControllerBridge.uf2" LogicalName="ControllerBridge.Firmware.uf2" />
+    <EmbeddedResource Include="$(FirmwareBuildDirectory)/firmware-package.json" LogicalName="ControllerBridge.Firmware.json" />
   </ItemGroup>
 </Project>

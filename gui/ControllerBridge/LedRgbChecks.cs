@@ -97,6 +97,15 @@ internal sealed partial class LedRgbDialog
         check(dialog.values.All(v => v.Enabled && v.Minimum == 0 && v.Maximum == 255), "all channels accept 0 through 255");
         check(dialog.hex.Text == "FF8011" && dialog.hex.Enabled, "slider edits synchronize the six-digit uppercase code");
         check(dialog.swatch.BackColor.ToArgb() == Color.FromArgb(255, 215, 130).ToArgb(), "fixed approximation converts unequal RGB channels independently");
+        foreach (int dpi in new[] { 96, 144, 192, 96 })
+        {
+            MouseUdlrSettingsDialog.Transition(dialog, dpi);
+            check(dialog.colorPicker.Width == dialog.colorPicker.Height && dialog.colorPicker.Text.Length == 0 &&
+                dialog.colorPicker.AccessibleName == L.T("カラーピッカー", "Color picker") && dialog.pickerTip.GetToolTip(dialog.colorPicker) == dialog.colorPicker.AccessibleName,
+                "square icon has localized accessible name and tooltip at " + dpi);
+            check(dialog.colorPicker.Parent!.ClientRectangle.Contains(dialog.colorPicker.Bounds), "color picker button fits at " + dpi);
+            MouseUdlrSettingsDialog.CaptureImage(dialog, Path.Combine(directory, "led-picker-" + dpi + ".png"));
+        }
         Capture("led-custom.png");
         dialog.hex.SelectAll(); dialog.hex.Paste("000004");
         check(dialog.values[0].Value == 0 && dialog.values[1].Value == 0 && dialog.values[2].Value == 4 && dialog.accept.Enabled, "pasting 000004 updates all three sliders");

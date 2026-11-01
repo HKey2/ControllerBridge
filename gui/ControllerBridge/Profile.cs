@@ -99,32 +99,43 @@ public sealed class AxisBinding
         2 => L.T("2つのボタン（負 / 正）", "Two buttons (negative / positive)"), _ => L.T("未使用・中心固定", "Unused / centered") };
 }
 
+public enum PaddleOutputAxis { X, Y }
+
 public sealed class MouseProfileSettings
 {
     public bool TrackballEnabled { get; set; } = true;
     public bool PaddleEnabled { get; set; } = true;
+    // Pointer movement only; hidden device cursor gains are stored separately.
     public decimal TrackballGain { get; set; } = 16.0m;
     public decimal PaddleGain { get; set; } = 1.0m;
     public bool InvertX { get; set; }
     public bool InvertY { get; set; }
     public bool InvertPaddle { get; set; }
+    public bool TrackballToDpad { get; set; }
+    public bool PaddleToDpad { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool DirectionKeysEnabled => TrackballEnabled && TrackballToDpad || PaddleEnabled && PaddleToDpad;
+    public PaddleOutputAxis PaddleAxis { get; set; } = PaddleOutputAxis.X;
     internal void Write(byte[] b, int at)
     {
-        if (TrackballGain < 1 || TrackballGain > 64 || TrackballGain * 10 != decimal.Truncate(TrackballGain * 10))
-            throw new InvalidDataException(L.T("トラックボールの感度は1.0～64.0倍、0.1刻みで設定してください。", "Set trackball gain to 1.0–64.0 in steps of 0.1."));
+        if (TrackballGain < 1 || TrackballGain > 256 || TrackballGain * 10 != decimal.Truncate(TrackballGain * 10))
+            throw new InvalidDataException(L.T("トラックボールの感度は1.0～256.0倍、0.1刻みで設定してください。", "Set trackball gain to 1.0–256.0 in steps of 0.1."));
         if (PaddleGain < 1 || PaddleGain > 10 || PaddleGain * 10 != decimal.Truncate(PaddleGain * 10))
             throw new InvalidDataException(L.T("パドルの感度は1.0～10.0倍、0.1刻みで設定してください。", "Set paddle gain to 1.0–10.0 in steps of 0.1."));
-        b[at] = (byte)((TrackballEnabled ? 1 : 0) | (PaddleEnabled ? 2 : 0) | (InvertX ? 4 : 0) | (InvertY ? 8 : 0) | (InvertPaddle ? 16 : 0));
+        if (PaddleAxis is not (PaddleOutputAxis.X or PaddleOutputAxis.Y))
+            throw new InvalidDataException(L.T("パドルの出力軸はX軸またはY軸を選択してください。", "Select X or Y for the paddle output axis."));
+        b[at] = (byte)((TrackballEnabled ? 1 : 0) | (PaddleEnabled ? 2 : 0) | (InvertX ? 4 : 0) | (InvertY ? 8 : 0) | (InvertPaddle ? 16 : 0) | (PaddleAxis == PaddleOutputAxis.Y ? 32 : 0) | (TrackballToDpad ? 64 : 0) | (PaddleToDpad ? 128 : 0));
         ushort gain = (ushort)(TrackballGain * 10);
         b[at + 1] = (byte)gain; b[at + 2] = (byte)(PaddleGain * 10); b[at + 3] = (byte)(gain >> 8);
     }
     internal static MouseProfileSettings Read(byte[] b, int at)
     {
         int gain = b[at + 1] | b[at + 3] << 8;
-        if (b[at] > 31) throw new InvalidDataException(L.T("未対応のマウス設定です。", "These mouse settings are not supported."));
         return new() { TrackballEnabled = (b[at] & 1) != 0, PaddleEnabled = (b[at] & 2) != 0,
             TrackballGain = gain / 10m, PaddleGain = b[at + 2] / 10m,
-            InvertX = (b[at] & 4) != 0, InvertY = (b[at] & 8) != 0, InvertPaddle = (b[at] & 16) != 0 };
+            InvertX = (b[at] & 4) != 0, InvertY = (b[at] & 8) != 0, InvertPaddle = (b[at] & 16) != 0,
+            PaddleAxis = (b[at] & 32) != 0 ? PaddleOutputAxis.Y : PaddleOutputAxis.X,
+            TrackballToDpad = (b[at] & 64) != 0, PaddleToDpad = (b[at] & 128) != 0 };
     }
 }
 
@@ -169,6 +180,7 @@ public sealed class DeviceProfile
     public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 }) || Shift.Buttons.Where((b, i) => (Shift.Overrides & (1u << i)) != 0).Any(b => b.RapidHz > 0);
     public byte[] Encode()
     {
+        if (OutputMode == 1 && Mouse.DirectionKeysEnabled) throw new InvalidDataException(L.T("十字キー変換にはゲームパッドまたはマウス＋ゲームパッド出力を選択してください。", "Choose Gamepad or Mouse + Gamepad for D-pad conversion."));
         if (Version != 6 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
             (Enabled && (Vid == 0 || string.IsNullOrWhiteSpace(Name))) || Buttons is null || Buttons.Length != 18 || Axes is null || Axes.Length != 4)
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));

@@ -31,12 +31,16 @@ internal sealed partial class MainForm : Form
     private readonly BufferedTableLayoutPanel body, details;
     private readonly TextBox name = new() { Dock = DockStyle.Fill, MaxLength = 47 };
     private readonly NumericUpDown interval = new() { Minimum = 0, Maximum = 255, Width = 78, Anchor = AnchorStyles.Left };
-    private readonly NumericUpDown mouseGain = new() { Minimum = 1, Maximum = 64, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
+    private readonly NumericUpDown mouseGain = new() { Minimum = 1, Maximum = 256, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown paddleGain = new() { Minimum = 1, Maximum = 10, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
     private readonly CheckBox trackballOn = new() { Text = L.T("トラックボール ON", "Trackball ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox paddleOn = new() { Text = L.T("パドル ON", "Paddle ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertX = new() { Text = L.T("X方向を反転", "Invert X"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertY = new() { Text = L.T("Y方向を反転", "Invert Y"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly BufferedTableLayoutPanel pointingTuning;
+    private readonly ComboBox paddleAxis = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 88, Anchor = AnchorStyles.Left, AccessibleName = L.T("パドルの出力軸", "Paddle output axis") };
+    private readonly CheckBox trackballKeys = new() { Text = L.T("↑↓←→に変換", "Convert to ↑↓←→"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox paddleKeys = new() { Text = L.T("←→に変換", "Convert to ←→"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertPaddle = new() { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton mouseButtons = new() { Text = L.T("マウス扱い", "Mouse"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton gamepadButtons = new() { Text = L.T("コントローラー扱い", "Controller"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -47,7 +51,7 @@ internal sealed partial class MainForm : Form
     private readonly Label identity = Ui.Label("", 9);
     private readonly Label saved = Ui.Label(L.T("16スロットを本体に保存できます。", "Store up to 16 profiles on the bridge."), 9);
     private readonly Label outputStatus = Ui.Label("", 9);
-    private readonly Button connect, reload, saveButton, useProfile, switchMethod, delete, duplicate, ledSettings, backup, restore, firmwareUpdate;
+    private readonly Button connect, reload, saveButton, useProfile, switchMethod, mouseUdlrSettings, delete, duplicate, ledSettings, backup, restore, firmwareUpdate;
     private MappingEditor ActiveEditor => outputTabs.SelectedIndex == 0 ? editor :
         outputTabs.SelectedIndex == 2 && gamepadButtons.Checked ? combinedEditor : mouseEditor;
     public bool ConnectedSuccessfully { get; private set; }
@@ -55,22 +59,33 @@ internal sealed partial class MainForm : Form
 
     public MainForm(bool preview = false, bool autoConnect = true, bool automaticFirmwareGuidance = true)
     {
+#if UDLR_TEST
+        const string productTitle = "ControllerBridge UDLR TEST v";
+#else
+        const string productTitle = "ControllerBridge v";
+#endif
         this.preview = preview; this.automaticFirmwareGuidance = automaticFirmwareGuidance;
-        using IDisposable formLayout = Ui.Form(this, "ControllerBridge v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16, 12, 16, 12), ColumnCount = 1, RowCount = 3 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel header = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, RowCount = 1, Padding = new(2, 0, 2, 8) };
-        header.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) header.ColumnStyles.Add(new(SizeType.AutoSize));
+        BufferedTableLayoutPanel header = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5, RowCount = 1, Padding = new(2, 0, 2, 8) };
+        header.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 4; i++) header.ColumnStyles.Add(new(SizeType.AutoSize));
         header.RowStyles.Add(new(SizeType.AutoSize));
         connection.Dock = DockStyle.Fill; connection.ForeColor = Ui.Muted;
         header.Controls.Add(connection, 0, 0);
         firmwareUpdate = Ui.Button(L.T("ファームウェア更新", "Firmware update"), async (_, _) => await UpdateFirmware()); firmwareUpdate.Dock = DockStyle.Fill; header.Controls.Add(firmwareUpdate, 1, 0);
         connect = Ui.Button(L.T("接続 / 再接続", "Connect / Reconnect"), async (_, _) => await Connect()); connect.Dock = DockStyle.Fill; header.Controls.Add(connect, 2, 0);
         switchMethod = Ui.Button(L.T("プロファイル切替方法…", "Profile switching…"), async (_, _) => await ConfigureSwitchMethod()); switchMethod.Dock = DockStyle.Fill; header.Controls.Add(switchMethod, 3, 0);
+        mouseUdlrSettings = Ui.Button(L.T("マウス UDLR設定", "Mouse UDLR settings"), async (_, _) => await ConfigureMouseUdlr()); mouseUdlrSettings.Dock = DockStyle.Fill; header.Controls.Add(mouseUdlrSettings, 4, 0);
+#if UDLR_TEST
+        header.ColumnCount++;
+        header.ColumnStyles.Add(new(SizeType.AutoSize));
+        header.Controls.Add(Ui.Button(L.T("UDLRテスト…", "UDLR test…"), async (_, _) => await OpenUdlrTest()), 5, 0);
+#endif
         root.Controls.Add(header, 0, 0);
 
         body = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
@@ -124,9 +139,9 @@ internal sealed partial class MainForm : Form
         for (int i = 0; i < 3; i++)
         {
             TabPage page = new(titles[i]) { BackColor = Ui.Surface, Padding = new(5) };
-            BufferedTableLayoutPanel content = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            BufferedTableLayoutPanel content = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
             content.ColumnStyles.Add(new(SizeType.Percent, 100));
-            content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.Percent, 100));
+            content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.Percent, 100));
             tabContents[i] = content; page.Controls.Add(content); outputTabs.TabPages.Add(page);
         }
         timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new(10, 4, 8, 4) };
@@ -134,25 +149,31 @@ internal sealed partial class MainForm : Form
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
         Label intervalHelp = Ui.Label(L.T("0 = コントローラーの標準値", "0 = controller default"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
-        tabContents[0].Controls.Add(editor, 0, 1);
-        mouseContent = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        tabContents[0].Controls.Add(editor, 0, 2);
+        mouseContent = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
         mouseContent.ColumnStyles.Add(new(SizeType.Percent, 100));
-        mouseContent.RowStyles.Add(new(SizeType.AutoSize)); mouseContent.RowStyles.Add(new(SizeType.Percent, 100));
-        BufferedTableLayoutPanel tuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
+        mouseContent.RowStyles.Add(new(SizeType.Percent, 100));
+        BufferedTableLayoutPanel tuning = pointingTuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
         tuning.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) tuning.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel ballRow = TuningRow(trackballOn, mouseGain, invertX, invertY);
-        BufferedTableLayoutPanel paddleRow = TuningRow(paddleOn, paddleGain, invertPaddle);
+        BufferedTableLayoutPanel ballRow = TuningRow(trackballOn, mouseGain, invertX, invertY, trackballKeys);
+        paddleAxis.Items.AddRange([L.T("X軸", "X axis"), L.T("Y軸", "Y axis")]); paddleAxis.SelectedIndex = 0;
+        Label paddleAxisLabel = Ui.Label(L.T("出力軸", "Output axis"), 10); paddleAxisLabel.Anchor = AnchorStyles.Left;
+        BufferedTableLayoutPanel paddleRow = TuningRow(paddleOn, paddleGain, paddleAxisLabel, paddleAxis, invertPaddle, paddleKeys);
+        SetTip(paddleAxis, L.T("パドルの出力軸を選択します。方向キーへの変換時もX軸は←→、Y軸は↑↓になります。", "Choose the paddle output axis. Direction conversion also follows X (←→) or Y (↑↓)."));
+        SetTip(mouseGain, L.T("通常のポインタ移動だけに適用します。カーソル移動用の内部感度には影響しません。", "Applies only to pointer movement; it does not change the hidden cursor gain."));
+        SetTip(paddleGain, L.T("通常のポインタ移動だけに適用します。カーソル移動用の内部感度には影響しません。", "Applies only to pointer movement; it does not change the hidden cursor gain."));
         Label buttonBehaviorLabel = Ui.Label(L.T("ボタン動作", "Button behavior"), 10); buttonBehaviorLabel.Anchor = AnchorStyles.Left;
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
-        mouseContent.Controls.Add(tuning, 0, 0);
+        SetTip(trackballKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後のX/Yを個別に蓄積し、本体共通の64で↑↓←→を1回押して離します。超過分は捨てます。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted X/Y independently; at the device-wide threshold of 64, press/release ↑↓←→ once and discard excess."));
+        SetTip(paddleKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後の回転を蓄積し、本体共通の64でX軸は←→、Y軸は↑↓を1回押して離します。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted rotation; at the device-wide threshold of 64, press/release ←→ on X or ↑↓ on Y once."));
         // Keep both editors in the control tree while hidden so they receive
         // the same font and monitor-DPI changes as the visible editor.
         Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
         mappingPages.Controls.Add(mouseEditor); mappingPages.Controls.Add(combinedEditor);
         combinedEditor.Visible = false;
-        mouseContent.Controls.Add(mappingPages, 0, 1);
+        mouseContent.Controls.Add(mappingPages, 0, 0);
         tabContents[1].Controls.Add(mouseContent, 0, 1);
         body.Controls.Add(left, 0, 0); body.Controls.Add(right, 1, 0); root.Controls.Add(body, 0, 1);
         BufferedTableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(0, 12, 0, 0) };
@@ -179,11 +200,13 @@ internal sealed partial class MainForm : Form
         outputTabs.SelectedIndexChanged += (_, _) =>
         {
             if (syncingOutput || loading || outputTabs.SelectedIndex < 0) return;
+            if (outputTabs.SelectedIndex == 1 && profiles[selected].Mouse.DirectionKeysEnabled) { outputTabs.SelectedIndex = 2; return; }
             profiles[selected].OutputMode = (byte)outputTabs.SelectedIndex;
             AbortLearning(); MarkDirty(); BindSelected();
         };
         mouseGain.ValueChanged += (_, _) => MouseProfileChanged(); paddleGain.ValueChanged += (_, _) => MouseProfileChanged();
-        foreach (CheckBox toggle in new[] { trackballOn, paddleOn, invertX, invertY, invertPaddle }) toggle.CheckedChanged += (_, _) => MouseProfileChanged();
+        paddleAxis.SelectedIndexChanged += (_, _) => MouseProfileChanged();
+        foreach (CheckBox toggle in new[] { trackballOn, paddleOn, invertX, invertY, invertPaddle, trackballKeys, paddleKeys }) toggle.CheckedChanged += (_, _) => MouseProfileChanged();
         foreach (RadioButton option in new[] { mouseButtons, gamepadButtons }) option.CheckedChanged += (_, _) =>
         {
             if (syncingOutput || loading || !option.Checked || outputTabs.SelectedIndex != 2) return;
@@ -196,11 +219,11 @@ internal sealed partial class MainForm : Form
         DpiChanged += (_, _) => BeginInvoke(() => { if (!IsDisposed) SizeSlotRows(); }); FormClosing += OnClosing;
         Ui.ThemeInputs(this); SyncMousePage(); RefreshSlots(); BindSelected(); UpdateEnabled();
     }
-    private static BufferedTableLayoutPanel TuningRow(CheckBox toggle, NumericUpDown gain, params CheckBox[] options)
+    private static BufferedTableLayoutPanel TuningRow(CheckBox toggle, NumericUpDown gain, params Control[] options)
     {
         BufferedTableLayoutPanel row = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 + options.Length, RowCount = 1, Margin = Padding.Empty };
         for (int i = 0; i < row.ColumnCount; i++) row.ColumnStyles.Add(new(SizeType.AutoSize));
-        Label label = Ui.Label(L.T("感度（倍）", "Gain (×)"), 10); label.Anchor = AnchorStyles.Left;
+        Label label = Ui.Label(L.T("ポインタ感度（倍）", "Pointer gain (×)"), 10); label.Anchor = AnchorStyles.Left;
         row.Controls.Add(toggle, 0, 0); row.Controls.Add(label, 1, 0); row.Controls.Add(gain, 2, 0);
         for (int i = 0; i < options.Length; i++) row.Controls.Add(options[i], i + 3, 0);
         return row;
@@ -255,8 +278,8 @@ internal sealed partial class MainForm : Form
         details.Visible = identity.Visible = outputStatus.Visible = p.Enabled; duplicate.Visible = ledSettings.Visible = p.Enabled;
         delete.Text = p.Enabled ? L.T("プロファイル削除", "Delete profile") : L.T("コントローラーを追加", "Add controller"); Ui.ButtonColors(delete, !p.Enabled);
         interval.Value = p.InputInterval; trackballOn.Checked = p.Mouse.TrackballEnabled; paddleOn.Checked = p.Mouse.PaddleEnabled;
-        mouseGain.Value = p.Mouse.TrackballGain; paddleGain.Value = p.Mouse.PaddleGain;
-        invertX.Checked = p.Mouse.InvertX; invertY.Checked = p.Mouse.InvertY; invertPaddle.Checked = p.Mouse.InvertPaddle;
+        mouseGain.Value = p.Mouse.TrackballGain; paddleGain.Value = p.Mouse.PaddleGain; paddleAxis.SelectedIndex = (int)p.Mouse.PaddleAxis;
+        invertX.Checked = p.Mouse.InvertX; invertY.Checked = p.Mouse.InvertY; invertPaddle.Checked = p.Mouse.InvertPaddle; trackballKeys.Checked = p.Mouse.TrackballToDpad; paddleKeys.Checked = p.Mouse.PaddleToDpad;
         identity.Text = p.Enabled ? $"VID {p.Vid:X4} / PID {p.Pid:X4}" + ((p.Flags & 2) != 0 ? L.T($"  •  入力形式 {p.DescriptorHash:X8}", $"  •  Input layout {p.DescriptorHash:X8}") : "") : "";
         loading = false;
         bool learn = preview || bridge is not null && caps is { Connected: true } && p.Matches(caps);
@@ -285,9 +308,18 @@ internal sealed partial class MainForm : Form
             L.T("ファームウェア0.14.0以降が必要です。", "Requires firmware 0.14.0 or later.");
         SetTip(backup, backupTip); SetTip(restore, backupTip);
         switchMethod.Enabled = online && !working && !preview && clean && enabled && caps?.SupportsSwitchKeys == true;
+        mouseUdlrSettings.Enabled = online && !working && (preview || caps?.SupportsDirectionSettings == true);
+        SetTip(mouseUdlrSettings, preview || caps?.SupportsDirectionSettings == true
+            ? L.T("全プロファイル共通の移動しきい値とホールド時間を本体に保存します。", "Save the movement threshold and hold time shared by all profiles.")
+            : L.T("ファームウェア0.20.10以降が必要です。", "Requires firmware 0.20.10 or later."));
         trackballOn.Enabled = paddleOn.Enabled = enabled && !working;
-        mouseGain.Enabled = invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
-        paddleGain.Enabled = invertPaddle.Enabled = enabled && !working && paddleOn.Checked;
+        invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
+        mouseGain.Enabled = invertX.Enabled;
+        invertPaddle.Enabled = paddleKeys.Enabled = enabled && !working && paddleOn.Checked;
+        paddleGain.Enabled = invertPaddle.Enabled;
+        trackballKeys.Enabled = enabled && !working && trackballOn.Checked;
+        paddleAxis.Enabled = enabled && !working && paddleOn.Checked;
+        paddleKeys.Text = paddleAxis.SelectedIndex == 1 ? L.T("↑↓に変換", "Convert to ↑↓") : L.T("←→に変換", "Convert to ←→");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (preview || caps?.SupportsProfileOutput == true);
         useProfile.Enabled = online && !working && !preview && !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } && caps.ActiveSlot != selected && profiles[selected].Matches(caps);
     }
@@ -433,11 +465,16 @@ internal sealed partial class MainForm : Form
     private void UpdateProfileOutputStatus()
     {
         DeviceProfile p = profiles[selected];
+#if UDLR_TEST
+        string text = L.T("出力: USBキーボード（UDLRテスト）", "Output: USB keyboard (UDLR test)");
+#else
         string text = p.OutputMode == 0 ? L.T("出力: ゲームパッド", "Output: gamepad") : p.OutputMode == 1 ? L.T("出力: USBマウス", "Output: USB mouse") :
             p.ControllerButtons ? L.T("出力: マウス移動＋コントローラー操作", "Output: mouse movement + controller inputs") : L.T("出力: マウス＋−／＋／HOME", "Output: mouse + − / + / HOME");
-        if (p.OutputMode != 0)
-            text += L.T($"  •  ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "×" : "OFF")}",
-                $"  •  Ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "×" : "OFF")}");
+#endif
+        if (p.OutputMode != 0 || p.Mouse.DirectionKeysEnabled)
+            text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",
+                $"  •  Pointer gain: ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}");
+        if (p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動を↑↓←→に変換（64／回）", "  •  Movement → ↑↓←→ (64/click)");
         SetText(outputStatus, p.Enabled ? text : "");
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)
@@ -570,7 +607,8 @@ internal sealed partial class MainForm : Form
     {
         int index = Math.Max(0, outputTabs.SelectedIndex);
         if (timing.Parent != tabContents[index]) tabContents[index].Controls.Add(timing, 0, 0);
-        if (index > 0 && mouseContent.Parent != tabContents[index]) tabContents[index].Controls.Add(mouseContent, 0, 1);
+        if (pointingTuning.Parent != tabContents[index]) tabContents[index].Controls.Add(pointingTuning, 0, 1);
+        if (index > 0 && mouseContent.Parent != tabContents[index]) tabContents[index].Controls.Add(mouseContent, 0, 2);
         bool combined = index == 2; buttonBehavior.Visible = combined;
         bool controller = combined && gamepadButtons.Checked;
         mouseEditor.Visible = !controller; combinedEditor.Visible = controller;
@@ -578,14 +616,16 @@ internal sealed partial class MainForm : Form
         mouseEditor.SetNavigationMode(combined);
         string mouseHint = combined && gamepadButtons.Checked ? L.T("マウス移動と、下のボタン・方向・スティックを送信します。マウスクリックは出力しません。", "Sends mouse movement and the buttons, D-pad and sticks below. No mouse clicks.") :
             combined ? L.T("B→左クリック、A→右クリック。コントローラー側は−／＋／HOMEのみ送信します。", "B → left click, A → right click. The controller sends only − / + / HOME.") :
-            L.T("パドルは横移動に変換します。両方ONで同時に使えます。", "The paddle controls horizontal movement. Enable both to use them together.");
+            L.T("パドルは選択したX軸／Y軸の移動に変換します。両方ONで同時に使えます。", "The paddle moves along the selected X or Y axis. Enable both to use them together.");
         SetTip(buttonBehavior, mouseHint); SetTip(mouseButtons, mouseHint); SetTip(gamepadButtons, mouseHint);
     }
     private void MouseProfileChanged()
     {
         if (loading) return;
         profiles[selected].Mouse = new() { TrackballEnabled = trackballOn.Checked, PaddleEnabled = paddleOn.Checked, TrackballGain = mouseGain.Value, PaddleGain = paddleGain.Value,
-            InvertX = invertX.Checked, InvertY = invertY.Checked, InvertPaddle = invertPaddle.Checked }; MarkDirty();
+            InvertX = invertX.Checked, InvertY = invertY.Checked, InvertPaddle = invertPaddle.Checked, PaddleAxis = (PaddleOutputAxis)Math.Max(0, paddleAxis.SelectedIndex), TrackballToDpad = trackballKeys.Checked, PaddleToDpad = paddleKeys.Checked };
+        if (profiles[selected].OutputMode == 1 && profiles[selected].Mouse.DirectionKeysEnabled) profiles[selected].OutputMode = 2;
+        SyncOutputControls(); MarkDirty();
     }
     private void SyncOutputControls()
     {

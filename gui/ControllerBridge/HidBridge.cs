@@ -27,6 +27,19 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsProfileOutput => (Features & 4096) != 0;
     public bool SupportsGuardedRegistration => (Features & 8192) != 0;
     public bool SupportsButtonShift => (Features & 16384) != 0;
+    public bool SupportsPaddleAxis => (Features & 32768) != 0;
+    public bool SupportsGain256 => (Features & 65536) != 0;
+    public bool SupportsDirectionKeys => (Features & 131072) != 0;
+    public bool SupportsDirectionSettings => (Features & 262144) != 0;
+    internal void ValidatePointingSettings(DeviceProfile profile)
+    {
+        if (profile.Mouse.TrackballGain > 64 && !SupportsGain256)
+            throw new InvalidDataException(L.T("64倍を超える感度にはファームウェア0.20.3以降が必要です。", "Gain above 64 requires firmware 0.20.3 or later."));
+        if ((profile.Mouse.TrackballToDpad || profile.Mouse.PaddleToDpad) && !SupportsDirectionKeys)
+            throw new InvalidDataException(L.T("移動の十字キー変換にはファームウェア0.20.3以降が必要です。", "Movement-to-D-pad conversion requires firmware 0.20.3 or later."));
+        if (profile.Mouse.PaddleAxis == PaddleOutputAxis.Y && !SupportsPaddleAxis)
+            throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。本体を更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
+    }
     public bool SelectionUnsaved => (Flags & 16) != 0;
     public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
@@ -284,6 +297,7 @@ internal sealed class HidBridge : IDisposable
         if (slot < 0 || slot >= DeviceProfile.SlotCount || !before.SupportsMouseProfiles) throw new InvalidDataException(L.T("16スロットと個別感度にはファームウェア0.10.0以降が必要です。", "16 slots and per-profile gain require firmware 0.10.0 or later."));
         if (profile.Mouse.TrackballGain > 10 && !before.SupportsExtendedTrackballGain)
             throw new InvalidDataException(L.T("10.0倍を超えるトラックボール感度にはファームウェア0.13.0以降が必要です。", "Trackball gain above 10.0 requires firmware 0.13.0 or later."));
+        before.ValidatePointingSettings(profile);
         if (profile.Shift.Keys.Count != 0)
         {
             if (!before.SupportsButtonShift) throw new InvalidDataException(L.T("シフト設定には同梱の0.20.0以降のファームウェアが必要です。", "Button shift requires the bundled firmware 0.20.0 or later."));
@@ -356,6 +370,7 @@ internal sealed class HidBridge : IDisposable
         Capabilities before = Caps();
         if (!before.SupportsBankTransfer || before.BankGeneration != expectedGeneration)
             throw new IOException(L.T("本体のスロット設定を再読込してから保存してください。", "Reload the device's slots before saving."));
+        foreach (DeviceProfile profile in bank.Profiles) before.ValidatePointingSettings(profile);
         byte[] data = bank.Encode(), begin = new byte[12];
         Wire.W32(begin, 0, expectedGeneration); Wire.W32(begin, 4, Wire.Crc(data)); Wire.W32(begin, 8, (uint)data.Length);
         bool committed = false;

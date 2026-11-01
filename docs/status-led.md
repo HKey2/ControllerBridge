@@ -27,7 +27,7 @@ Editing affects a draft until **Save profile to device**. The active saved profi
 
 R, G and B use three horizontal slider rows, with a numeric readout on each row. A text box prefixed by a separate `#` label sits below them. It accepts exactly six hexadecimal digits, supports native paste and either letter case, and automatically removes one optional leading `#`. Code edits update the R/G/B sliders and readouts; slider edits update the code. For example, `000004` or `#000004` means R=0, G=0, B=4. Incomplete, invalid and overlong strings disable OK and leave the last valid preview unchanged. They cannot be committed or silently truncated. Selecting the default color shows `000001` and disables custom entry while keeping the numeric readouts legible.
 
-**Color picker…**, on the right, opens the Windows color chooser with the current raw RGB bytes. Confirming a color synchronizes the sliders, numbers, code and preview. Cancelling the chooser leaves the draft untouched. The picker is enabled only for custom RGB; neither picker confirmation nor the LED dialog's OK button saves to the device.
+The square **eyedropper icon** on the right has a localized **Color picker** tooltip and accessible name. Its vector glyph scales with the display. Clicking it opens the Windows color chooser with the current raw RGB bytes. Confirming a color synchronizes the sliders, numbers, code and preview. Cancelling the chooser leaves the draft untouched. The picker is enabled only for custom RGB; neither picker confirmation nor the LED dialog's OK button saves to the device.
 
 The single preview uses a fixed internal gamma of **4.0**, selected after the user's comparison with the physical LED. Each input byte `v` maps to `round(255 * (v / 255)^(1 / 4.0))` for screen display. There is no adjustable curve, explanatory curve text or uncorrected swatch in the dialog. The previous `%LOCALAPPDATA%/ControllerBridge/led-preview.json` preference is no longer read or written; an existing file is left unused.
 
@@ -41,7 +41,7 @@ The single preview uses a fixed internal gamma of **4.0**, selected after the us
 | 128 | 215 |
 | 255 | 255 |
 
-This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current 0.20.1 allocation figures, including button shift, are in [verification](verification.md#current-normal-build-memory).
+This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current 0.20.10 allocation figures, including button shift, are in [verification](verification.md#current-normal-build-memory).
 
 ## Wire order and physical observation
 

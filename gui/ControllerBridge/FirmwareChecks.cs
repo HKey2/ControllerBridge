@@ -37,7 +37,7 @@ internal static class FirmwareChecks
             Check(rejected, description);
         }
         FirmwarePackage package = FirmwarePackage.Load();
-        Check(package.Image.Length > 512 && package.Version == typeof(MainForm).Assembly.GetName().Version?.ToString(3), "embedded UF2 checksum, block layout and version match the application");
+        Check(package.Image.Length > 512 && package.Version == typeof(MainForm).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false).Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0], "embedded UF2 checksum, block layout and version match the application");
         byte[] response = new byte[56]; "CBV1"u8.CopyTo(response); response[4] = response[5] = 1;
         Encoding.ASCII.GetBytes(package.Version).CopyTo(response, 8); "ControllerBridge"u8.CopyTo(response.AsSpan(32));
         Check(FirmwareInfo.Read(response)?.Version == package.Version, "normal firmware identity decodes");

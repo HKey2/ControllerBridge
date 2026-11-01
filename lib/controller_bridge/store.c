@@ -19,6 +19,23 @@ static uint32_t store_offset(unsigned slot) {
 static uint32_t store_size(unsigned slot) { return (slot<4?1u:4u)*FLASH_SECTOR_SIZE; }
 typedef struct { uint32_t magic, version, length, crc; } store_header;
 static uint8_t write_buffer[4*FLASH_SECTOR_SIZE];
+#define DIRECTION_OFFSET 64u
+#define DIRECTION_MAGIC 0x31434b44u // DKC1
+typedef struct { uint32_t magic,version,threshold,crc; } direction_setting;
+#define DIRECTION_GAIN_MAGIC 0x31474b44u // DKG1, follows the unchanged DKC1 record.
+typedef struct {
+    uint32_t magic,version;
+    uint16_t trackball_gain10,paddle_gain10;
+    uint32_t crc;
+} direction_gain_setting;
+#define DIRECTION_HOLD_MAGIC 0x31544844u // DHT1, appended at sector offset 96.
+typedef struct { uint32_t magic,version,hold_ms,crc; } direction_hold_setting;
+#define DIRECTION_WAIT_MAGIC 0x31545744u // DWT1, appended at sector offset 112.
+typedef struct { uint32_t magic,version,wait_ms,crc; } direction_wait_setting;
+typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait; } direction_records;
+_Static_assert(sizeof(direction_records)==64,"cursor Flash records layout");
+_Static_assert(DIRECTION_OFFSET+sizeof(direction_records)<=FLASH_SECTOR_SIZE,"cursor records fit configuration sector");
+_Static_assert(sizeof(store_header)+sizeof(ub_configuration)<=DIRECTION_OFFSET,"configuration extension overlap");
 extern char __flash_binary_end;
 static uint32_t crc32(const uint8_t *data,uint32_t length) {
     uint32_t crc=~0u;
@@ -41,12 +58,13 @@ bool ub_store_load_legacy_bank(unsigned copy,void *data,uint32_t bytes) {
     if(h->magic!=STORE_MAGIC || h->version!=STORE_VERSION || h->length!=bytes || h->crc!=crc32((const uint8_t *)(h+1),bytes))return false;
     memcpy(data,h+1,bytes);return true;
 }
-bool ub_store_save(unsigned slot,const void *data,uint32_t bytes,bool host_running) {
+static bool save(unsigned slot,const void *data,uint32_t bytes,bool host_running,const direction_records *direction) {
     if(!store_slot_valid(slot) || bytes>store_size(slot)-sizeof(store_header) ||
        (uintptr_t)&__flash_binary_end>XIP_BASE+STORE_BASE)return false;
     memset(write_buffer,0xff,sizeof(write_buffer));
     store_header h={STORE_MAGIC,STORE_VERSION,bytes,crc32(data,bytes)};
     memcpy(write_buffer,&h,sizeof(h)); memcpy(write_buffer+sizeof(h),data,bytes);
+    if(direction)memcpy(write_buffer+DIRECTION_OFFSET,direction,sizeof(*direction));
     if(host_running && !uc_host_pause(1000))return false;
     uint32_t irq=save_and_disable_interrupts();
     uint32_t offset=store_offset(slot);
@@ -56,4 +74,55 @@ bool ub_store_save(unsigned slot,const void *data,uint32_t bytes,bool host_runni
     restore_interrupts(irq);
     if(host_running)uc_host_resume();
     return memcmp((const void *)(XIP_BASE+offset),write_buffer,store_size(slot))==0;
+}
+
+bool ub_store_save(unsigned slot,const void *data,uint32_t bytes,bool host_running) {
+    return save(slot,data,bytes,host_running,NULL);
+}
+bool ub_store_load_direction_threshold(uint32_t *threshold) {
+    ub_configuration config;
+    if(!ub_store_load(0,&config,sizeof(config)))return false;
+    const direction_setting *s=(const direction_setting *)(XIP_BASE+store_offset(0)+DIRECTION_OFFSET);
+    if(s->magic!=DIRECTION_MAGIC || s->version!=1 || !s->threshold || s->threshold>65535u ||
+       s->crc!=crc32((const uint8_t *)s,12))return false;
+    *threshold=s->threshold;return true;
+}
+bool ub_store_load_direction_settings(udk_settings *settings) {
+    *settings=(udk_settings)UDK_DEFAULT_SETTINGS;
+    ub_configuration config;
+    if(!ub_store_load(0,&config,sizeof(config)))return false;
+    bool threshold_valid=ub_store_load_direction_threshold(&settings->threshold);
+    const direction_gain_setting *g=(const direction_gain_setting *)(XIP_BASE+store_offset(0)+DIRECTION_OFFSET+sizeof(direction_setting));
+    udk_settings candidate=*settings;
+    candidate.trackball_gain10=g->trackball_gain10;candidate.paddle_gain10=g->paddle_gain10;
+    bool gains_valid=g->magic==DIRECTION_GAIN_MAGIC && g->version==1 &&
+        g->crc==crc32((const uint8_t *)g,12) && udk_settings_valid(&candidate);
+    if(gains_valid)*settings=candidate;
+    const direction_hold_setting *h=(const direction_hold_setting *)(g+1);
+    candidate=*settings;candidate.hold_ms=h->hold_ms;
+    bool hold_valid=h->magic==DIRECTION_HOLD_MAGIC && h->version==1 &&
+        h->crc==crc32((const uint8_t *)h,12) && udk_settings_valid(&candidate);
+    if(hold_valid)*settings=candidate;
+    // Before DWT1 existed, the saved hold time controlled both phases.
+    // Inherit it only for a missing/invalid wait record, preserving upgrade behavior.
+    settings->wait_ms=settings->hold_ms;
+    const direction_wait_setting *w=(const direction_wait_setting *)(h+1);
+    candidate=*settings;candidate.wait_ms=w->wait_ms;
+    bool wait_valid=w->magic==DIRECTION_WAIT_MAGIC && w->version==1 &&
+        w->crc==crc32((const uint8_t *)w,12) && udk_settings_valid(&candidate);
+    if(wait_valid)*settings=candidate;
+    return threshold_valid && gains_valid && hold_valid && wait_valid;
+}
+bool ub_store_save_configuration(const ub_configuration *config,const udk_settings *settings,bool host_running) {
+    if(!udk_settings_valid(settings))return false;
+    direction_records records={
+        .threshold={DIRECTION_MAGIC,1,settings->threshold,0},
+        .gains={DIRECTION_GAIN_MAGIC,1,settings->trackball_gain10,settings->paddle_gain10,0},
+        .hold={DIRECTION_HOLD_MAGIC,1,settings->hold_ms,0},
+        .wait={DIRECTION_WAIT_MAGIC,1,settings->wait_ms,0}};
+    records.threshold.crc=crc32((const uint8_t *)&records.threshold,12);
+    records.gains.crc=crc32((const uint8_t *)&records.gains,12);
+    records.hold.crc=crc32((const uint8_t *)&records.hold,12);
+    records.wait.crc=crc32((const uint8_t *)&records.wait,12);
+    return save(0,config,sizeof(*config),host_running,&records);
 }

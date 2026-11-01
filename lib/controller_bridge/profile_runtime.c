@@ -27,6 +27,8 @@ static uint16_t vid,pid,revision;
 static int active=-1;
 static int mouse_x=-1,mouse_y=-1,mouse_wheel=-1;
 static um_fraction mouse_fraction;
+static um_key_state direction_state;
+static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool connected,partial,persisted,binding_error;
 static uint8_t host_status,input_protocol;
 static uc_event last_input;
@@ -110,14 +112,29 @@ bool upr_mouse_ready(void) {
     unsigned enabled=bank.profiles[active].mouse.flags&3;
     return !enabled || (enabled&mouse_sources())!=0;
 }
-void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0}; }
+void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0};direction_state=(um_key_state){0}; }
+bool upr_direction_enabled(void) {
+    if(!upr_ready())return false;
+    unsigned flags=bank.profiles[active].mouse.flags;
+    return ((flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) ||
+        ((flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS));
+}
+void upr_direction_accumulators(int32_t tenths[3]) {
+    tenths[0]=direction_state.ball_x10;tenths[1]=direction_state.ball_y10;tenths[2]=direction_state.paddle10;
+}
+unsigned upr_direction_threshold(void) { return direction_settings.threshold; }
+bool upr_set_direction_settings(const udk_settings *settings) {
+    if(!udk_settings_valid(settings))return false;
+    direction_settings=*settings;direction_state=(um_key_state){0};return true;
+}
 static bool mouse_field(int index,const uc_event *e,int32_t *value) {
     if(index<0)return false;
     const observed_field *f=&fields[index];
     return e->interface_number==f->iface && uc_hid_field_value(&f->field,(f->flags&UP_REPORT_ID)!=0,e->data,e->length,value);
 }
-bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
-    *x=*y=0;
+bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys) {
+    *x=*y=0;*keys=(um_key_events){0};
+    if(!keys_ready)direction_state=(um_key_state){0};
     if(e->type!=UC_INPUT || !upr_ready())return false;
     const up_mouse_options *options=&bank.profiles[active].mouse;
     int32_t dx=0,dy=0,wheel=0;bool touched=false;
@@ -126,6 +143,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     if((options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel))touched=true;
     else wheel=0;
     if(!touched)return false;
+    if(keys_ready)um_direction_keys(&direction_state,options,dx,dy,wheel,&direction_settings,keys);
 #ifdef BRIDGE_MOUSE_FIXED_PROBE
     um_fixed_delta(options,dx,dy,2,BRIDGE_MOUSE_FIXED_AMPLITUDE,x,y);
 #else
@@ -133,7 +151,11 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
 #endif
     return true;
 }
+bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
+    um_key_events ignored;return upr_pointing_input(e,false,x,y,&ignored);
+}
 void upr_init(void) {
+    direction_settings=(udk_settings)UDK_DEFAULT_SETTINGS;
     bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
     mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
     switch_guard.keys=switch_guard.held=0;
@@ -301,7 +323,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

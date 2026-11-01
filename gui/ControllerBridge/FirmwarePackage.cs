@@ -33,7 +33,7 @@ internal sealed record FirmwarePackage(string Version, byte[] Image)
         JsonElement root = json.RootElement;
         string version = root.GetProperty("version").GetString() ?? "";
         if (root.GetProperty("product").GetString() != "ControllerBridge" || root.GetProperty("board").GetString() != "RP2350-USB-A" ||
-            !FirmwareInfo.ValidVersion(version) || version != assembly.GetName().Version?.ToString(3)) throw Invalid();
+            !FirmwareInfo.ValidVersion(version) || version != typeof(MainForm).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false).Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion.Split('+')[0]) throw Invalid();
         using Stream resource = assembly.GetManifestResourceStream("ControllerBridge.Firmware.uf2") ?? throw Invalid();
         using MemoryStream buffer = new(); resource.CopyTo(buffer);
         byte[] image = buffer.ToArray();

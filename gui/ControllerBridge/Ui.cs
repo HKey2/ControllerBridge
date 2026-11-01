@@ -103,7 +103,7 @@ internal static class Ui
 
 // Native flat-button disabled text can remain black even with .NET 9 dark mode.
 // Keep the standard enabled painting/input/accessibility; paint only disabled state.
-internal sealed class DarkButton : Button
+internal class DarkButton : Button
 {
     public DarkButton() => SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]

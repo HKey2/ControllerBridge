@@ -44,7 +44,7 @@ internal sealed class ButtonLearner
 
 // Reused by the main window and the registration wizard. All edits stay in RAM
 // until the owning window explicitly calls SaveAsync.
-internal sealed class MappingEditor : UserControl
+internal sealed partial class MappingEditor : UserControl
 {
     private readonly bool mouseMode, shiftPage;
     private readonly Button shift, inherit;
@@ -257,10 +257,15 @@ internal sealed class MappingEditor : UserControl
             if (buttons[i] is null) continue;
             bool set = Binding(i).Mode != 0;
             buttons[i].Text = mouseMode ? TargetName(i) + (i == 1 ? L.T("\nBと共通", "\nShared with B") : i == 2 ? L.T("\nAと共通", "\nShared with A") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
-            if (shiftPage && (profile.Shift.Overrides & (1u << i)) != 0) buttons[i].Text += " *";
+            bool shiftedOverride = shiftPage && (profile.Shift.Overrides & (1u << i)) != 0;
+            bool registeredShift = shiftedOverride && set;
+            if (registeredShift) buttons[i].Text += " *";
             buttons[i].AccessibleName = TargetName(i) + L.T(" 出力ボタン", " output button");
             buttons[i].AccessibleDescription = (set ? L.T("割り当て済み: ", "Assigned: ") : "") + Binding(i);
-            tips.SetToolTip(buttons[i], TargetName(i) + " ← " + Binding(i) + (shiftPage ? (profile.Shift.Overrides & (1u << i)) == 0 ? L.T("（表から継承）", " (inherited)") : L.T("（裏ボタン登録あり）", " (registered shifted mapping)") : ""));
+            // A no-output override must still suppress inheritance, but it is not a registered input.
+            string shiftStatus = !shiftPage ? "" : !shiftedOverride ? L.T("（表から継承）", " (inherited)") :
+                registeredShift ? L.T("（裏ボタン登録あり）", " (registered shifted mapping)") : L.T("（裏ボタン登録なし）", " (no registered shifted mapping)");
+            tips.SetToolTip(buttons[i], TargetName(i) + " ← " + Binding(i) + shiftStatus);
             Ui.ButtonColors(buttons[i], i == selected, set);
             buttons[i].Invalidate();
         }

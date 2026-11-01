@@ -18,12 +18,13 @@ enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4 };
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
 enum { UP_AXIS_DISABLED, UP_AXIS_ANALOG, UP_AXIS_BUTTON_PAIR };
-enum { UP_MOUSE_TRACKBALL=1, UP_MOUSE_PADDLE=2, UP_MOUSE_INVERT_X=4, UP_MOUSE_INVERT_Y=8, UP_MOUSE_INVERT_PADDLE=16 };
+enum { UP_MOUSE_TRACKBALL=1, UP_MOUSE_PADDLE=2, UP_MOUSE_INVERT_X=4, UP_MOUSE_INVERT_Y=8, UP_MOUSE_INVERT_PADDLE=16, UP_MOUSE_PADDLE_Y=32, UP_MOUSE_TRACKBALL_KEYS=64, UP_MOUSE_PADDLE_KEYS=128 };
 // Byte 484: low two bits choose the USB layout; bit 2 remembers how
 // buttons behave in combined mode. Keep the preference when another tab is used.
 enum { UP_OUTPUT_GAMEPAD=0, UP_OUTPUT_MOUSE=1, UP_OUTPUT_COMBINED=2, UP_OUTPUT_CONTROLLER_BUTTONS=4 };
 typedef struct {
-    // Gain uses low and high bytes at fixed wire offsets.
+    // Pointer-only gains use low/high bytes at fixed wire offsets.
+    // Cursor gains live separately in udk_settings, never in this profile.
     // Bytes 485..487 store exact RGB888 when UP_LED_CUSTOM is set.
     uint8_t flags,trackball_gain10,paddle_gain10,trackball_gain10_hi,output_mode,led_rgb[3];
 } up_mouse_options;

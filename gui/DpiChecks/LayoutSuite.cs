@@ -94,6 +94,14 @@ internal static class LayoutSuite
             float expected = (index == 0 || pad ? 56 : 170) * form.DeviceDpi / 96f;
             Check(Math.Abs(grid.ColumnStyles[0].Width - expected) <= 2, context + $": mapping grid keeps DPI dimensions for mode {index}/{pad}: {grid.ColumnStyles[0].Width} vs {expected}");
             if (index > 0 && !pad) Check(Math.Abs(grid.RowStyles[1].Height - (index == 2 ? grid.RowStyles[0].Height : 0)) <= 1, context + ": mouse navigation row matches first row");
+            if (index > 0)
+            {
+                var paddle = (ComboBox)Field(form, "paddleAxis"); paddle.SelectedIndex = 1; Pump(form);
+                Check(paddle.Visible && paddle.Enabled && paddle.Items.Count == 2, context + ": paddle axis available");
+                foreach (Control control in paddle.Parent!.Controls) Reachable(control, context + ": paddle row");
+                Size text = TextRenderer.MeasureText(paddle.Text, paddle.Font);
+                Check(text.Width + SystemInformation.VerticalScrollBarWidth <= paddle.ClientSize.Width, context + ": paddle selection text fits");
+            }
             ButtonsFit(form, context + $" mode {index}/{pad}");
         }
     }

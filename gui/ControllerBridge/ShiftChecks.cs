@@ -93,6 +93,7 @@ internal sealed partial class ShiftDialog
         Check(SlotBackup.Load(Path.Combine(directory, "shift-slots.json")).Profiles[5].SameContent(profile), "new bank backup preserves shifted mappings");
         Check(current.Move(5, 2).Profiles[2].SameContent(profile), "slot reorder retains shifted mappings");
         MainForm.CheckShiftHost(directory, Check);
+        MappingEditor.CheckShiftRegistration(directory, Check);
         CheckLearningGestures(directory, Check);
         File.WriteAllText(Path.Combine(directory, "shift-checks.json"), JsonSerializer.Serialize(new { passed = true, checks, hardwareOpened = false }, new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -214,6 +215,50 @@ internal sealed partial class ShiftDialog
         review.EnsureVisible(row.Index); Application.DoEvents();
         using Bitmap bitmap = new(wizard.Width, wizard.Height); wizard.DrawToBitmap(bitmap, new(0, 0, wizard.Width, wizard.Height)); bitmap.Save(Path.Combine(directory, "shift-registration-review.png"));
         wizard.Close();
+    }
+}
+
+internal sealed partial class MappingEditor
+{
+    internal static void CheckShiftRegistration(string directory, Action<bool, string> check)
+    {
+        InputField source = new() { Index = 0, Bits = 1, UsagePage = 9, Usage = 1, Maximum = 1, Valid = true };
+        DeviceProfile profile = new() { Flags = 1, Vid = 0x1234, Name = "Shift registration checks" };
+        profile.Buttons[0] = source.Digital(1, 1, 1);
+        using MappingEditor main = new();
+        using MappingEditor shifted = new(shiftPage: true);
+        string Tip() => shifted.tips.GetToolTip(shifted.buttons[0]) ?? "";
+        main.Bind(profile, [source], false, true);
+        shifted.Bind(profile, [source], false, true);
+        shifted.SelectButton(0);
+        check(!shifted.buttons[0].Text.Contains('*') && Tip().Contains(L.T("表から継承", "inherited")), "inherited main mapping is not a registered shifted input");
+        shifted.clear.PerformClick();
+        check(!shifted.buttons[0].Text.Contains('*') && Tip().Contains(L.T("裏ボタン登録なし", "no registered shifted mapping")), "No output removes the registered marker and reports no shifted mapping");
+        check((profile.Shift.Overrides & 1) != 0 && shifted.Binding(0).Mode == 0 && profile.Buttons[0].Mode != 0, "No output retains suppression without changing the main mapping");
+        main.SelectButton(0); main.clear.PerformClick();
+        shifted.Bind(profile, [source], false, true);
+        check(shifted.Binding(0).Mode == 0 && !shifted.buttons[0].Text.Contains('*') && Tip().Contains(L.T("裏ボタン登録なし", "no registered shifted mapping")), "clearing the main mapping leaves an unassigned shifted output unregistered");
+        DeviceProfile restored = profile.Clone();
+        shifted.Bind(restored, [source], false, true);
+        check(!shifted.buttons[0].Text.Contains('*') && Tip().Contains(L.T("裏ボタン登録なし", "no registered shifted mapping")), "unassigned registration state survives binary save and reload");
+        // A later main assignment must not silently reactivate a deliberately muted shifted output.
+        restored.Buttons[0] = source.Digital(1, 1, 1);
+        shifted.Bind(restored, [source], false, true);
+        check(shifted.Binding(0).Mode == 0, "reassigning the main input preserves explicit shifted no-output behavior");
+        shifted.SelectButton(0); shifted.inherit.PerformClick();
+        check(shifted.Binding(0).Mode != 0 && (restored.Shift.Overrides & 1) == 0 && !shifted.buttons[0].Text.Contains('*'), "Inherit from main restores the main mapping without claiming a shifted registration");
+        shifted.Bind(restored, [source], true, true); shifted.SelectButton(0); shifted.OnInput(source, 1);
+        check(shifted.buttons[0].Text.Contains('*') && Tip().Contains(L.T("裏ボタン登録あり", "registered shifted mapping")), "learning an actual shifted input restores registered status");
+        main.Bind(restored, [source], false, true); main.SelectButton(0); main.clear.PerformClick();
+        shifted.Bind(restored, [source], false, true);
+        check(shifted.Binding(0).Mode != 0 && shifted.buttons[0].Text.Contains('*'), "clearing a main mapping preserves an independently registered shifted input");
+        shifted.SelectButton(0); shifted.clear.PerformClick();
+        check(!shifted.buttons[0].Text.Contains('*') && shifted.Binding(0).Mode == 0, "clearing the independently registered shifted input removes its marker");
+        using ShiftDialog dialog = new(restored, [source], false, true, null) { ShowInTaskbar = false, Opacity = 0 };
+        dialog.Show(); Application.DoEvents(); dialog.PerformLayout();
+        using Bitmap bitmap = new(dialog.Width, dialog.Height); dialog.DrawToBitmap(bitmap, new(0, 0, dialog.Width, dialog.Height));
+        bitmap.Save(Path.Combine(directory, "shift-unassigned.png")); dialog.Close();
+        File.WriteAllText(Path.Combine(directory, "shift-unassigned-tooltip.txt"), Tip());
     }
 }
 

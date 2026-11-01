@@ -2,6 +2,7 @@
 #define PROFILE_RUNTIME_H
 #include "controller_profile.h"
 #include "controller_bridge.h"
+#include "controller_mouse.h"
 // 31 is reserved by the application for status LED diagnostics.
 #define UPR_CMD_PROFILE_ID 32
 #define UPR_CMD_SELECT_PROFILE 33
@@ -18,6 +19,10 @@
 #define UPR_FEATURE_PROFILE_OUTPUT 4096u
 #define UPR_FEATURE_GUARDED_REGISTRATION 8192u
 #define UPR_FEATURE_BUTTON_SHIFT 16384u
+#define UPR_FEATURE_PADDLE_AXIS 32768u
+#define UPR_FEATURE_GAIN256 65536u
+#define UPR_FEATURE_DIRECTION_KEYS 131072u
+#define UPR_FEATURE_DIRECTION_SETTINGS 262144u
 void upr_init(void);
 // True means the outgoing state must be reset to neutral (new device/profile).
 bool upr_event(const uc_event *event);
@@ -28,6 +33,12 @@ bool upr_mouse_ready(void);
 void upr_mouse_reset(void);
 // Decode this packet, including repeated identical deltas; never use GUI events.
 bool upr_mouse_delta(const uc_event *event,int32_t *x,int32_t *y);
+bool upr_pointing_input(const uc_event *event,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys);
+bool upr_direction_enabled(void);
+void upr_direction_accumulators(int32_t tenths[3]);
+unsigned upr_direction_threshold(void);
+// Apply the separately stored hidden cursor settings at initialization.
+bool upr_set_direction_settings(const udk_settings *settings);
 unsigned upr_field_count(void);
 unsigned upr_active_slot(void); // 0..15, 255 for none
 uint8_t upr_input_interval(void);

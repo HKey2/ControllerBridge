@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.20.1 and RP2350-USB-A firmware 0.20.1. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.20.10 and RP2350-USB-A firmware 0.20.10. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -71,15 +71,15 @@ Select a profile, then choose **LED RGB settings** directly below **Delete profi
 
 **OK** changes the selected draft; **Cancel** leaves it unchanged. Choose **Save profile to device** to persist it. The color is shown when that profile is active, input is received, and the output host is ready. Browsing another slot does not change the hardware color. Error, save, waiting, and profile-number indications retain their existing colors and priority. After an indication ends, the active profile color returns.
 
-![LED RGB settings with three slider rows and a color-picker button](gui-led-rgb-en.png)
+![LED RGB settings with three slider rows and a square eyedropper button](gui-led-rgb-en.png)
 
 The screenshot uses a synthetic custom-color sample: R=255, G=128, B=17 (#FF8011). It does not read or change a physical device.
 
-The **Color picker…** button on the right opens the Windows color chooser with the current RGB values. Confirming a color updates all three sliders, numeric readouts, the hexadecimal code and the preview. Cancelling the chooser preserves the previous values. Custom controls, including the picker, are enabled when **Custom RGB values** is selected.
+The square **eyedropper icon** on the right opens the Windows color chooser with the current RGB values. Confirming a color updates all three sliders, numeric readouts, the hexadecimal code and the preview. Cancelling the chooser preserves the previous values. Custom controls, including the picker, are enabled when **Custom RGB values** is selected. Hover over the icon to see **Color picker**; it also has a localized accessible name. The vector icon scales with the display.
 
 The `#` field below the R/G/B sliders accepts six hexadecimal digits with or without a leading `#`; the prefix is removed automatically. For example, paste `000004` or `#000004` to set R=0, G=0, B=4. Uppercase and lowercase letters are accepted. Editing either the code or a slider updates the other controls and the preview. Incomplete, invalid or overlong codes cannot be confirmed; they are not silently shortened into another color. **Cancel** remains available while editing an incomplete code.
 
-The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The preview itself does not require a firmware change. This release bundles 0.20.1 for the expanded rapid-fire range and button shift; install the matching firmware.
+The single preview uses gamma 4.0 internally, following the user's comparison with the actual LED. There is no gamma control, explanatory curve text or uncorrected swatch. Earlier PC preview preferences are ignored. The entered code and channel bytes remain exact; this display correction does not alter the profile or firmware output. The preview itself does not require a firmware change. This release bundles 0.20.10, including independent Mouse UDLR hold and wait settings; install the matching firmware.
 
 New profiles and existing 0.16.x/0.17.x profiles default to dim blue. Duplicating a profile copies its color; reordering, individual export/import, and whole-bank backup/restore retain it. Selecting **Default dim blue** removes the custom setting. The color is not assigned automatically or required to be unique; use a different color for each profile if desired.
 
@@ -122,7 +122,7 @@ The screenshot shows the saved **Cyber analog** profile's **Left stick X** setti
 
 The meter uses the descriptor range before calibration, inversion, or dead zone. A range crossing zero uses zero as its reference; other ranges use their midpoint. Missing input shows a waiting state; out-of-range values appear gray. Select the source, measure its travel, record the released center, and apply the result.
 
-The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.20.1 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
+The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.20.10 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
 
 ![Rapid fire settings with new default 20 and preserved saved values](gui-rapid-fire-en.png)
 
@@ -151,7 +151,57 @@ Selecting a tab edits the profile. Save the slot to persist it. Only the combine
 
 A USB layout change reconnects USB-C; the USB-A input host remains running. Changing only combined-mode button behavior needs no USB reconnection.
 
-For the EGRET II mini Paddle Controller, trackball and paddle can be enabled independently. Trackball gain is 1.0-64.0, default 16.0; paddle gain is 1.0-10.0, default 1.0, both in 0.1 steps. The paddle produces horizontal movement. With both enabled, horizontal trackball and paddle movement are added.
+For the EGRET II mini Paddle Controller, trackball and paddle can be enabled independently. Trackball gain is 1.0-256.0, default 16.0; paddle gain is 1.0-10.0, default 1.0, both in 0.1 steps. The paddle can produce horizontal or vertical movement.
+
+### Movement to D-pad
+
+The pointing controls are available in **Gamepad**, **USB mouse**, and **Mouse + Gamepad** tabs. Enable **Convert to ↑↓←→** for the trackball, **Convert to ←→** (X) or **Convert to ↑↓** (Y) for the paddle, or both, then choose **Save profile to device**. Enabling either conversion from USB mouse selects Mouse + Gamepad, because gamepad directions require a gamepad interface. Trying to select USB mouse while conversion is enabled retains the settings and selects Mouse + Gamepad. Disabled input sources retain their conversion preferences.
+
+Pointer movement and direction conversion have separate gains. **Pointer gain (×)** keeps each profile’s existing values and defaults (trackball 16.0, paddle 1.0), and stays editable when that source is ON, including while conversion is enabled. These controls and the profile summary describe pointer movement only. Cursor gains are hidden device-wide parameters, initially **6.0× for the trackball** and **1.5× for the paddle**, saved separately from profiles. They have no numeric display or editing control in the profile/test screens. Direction inversion remains effective. Ball X, ball Y and paddle have independent signed sums. At the configured positive or negative threshold (initially +64 or -64), that source produces **one click**, clears its sum and discards excess. Opposite movement cancels and fractional tenths are retained. With the initial threshold and cursor gains, 10 raw ball counts give 60 and the next count produces one click; 42 raw paddle counts give 63 and the next count produces one click. Simultaneous thresholds produce clicks in ball-X, ball-Y, paddle order.
+
+The paddle follows **Output axis** in both mouse and direction modes: X produces left/right (←→), Y produces up/down (↑↓). The axis selector remains enabled during conversion, and the checkbox label changes with it. **Reverse rotation** reverses either pair. With normal firmware **0.20.6 or later**, conversion is an additional output: in **Mouse + Gamepad**, both enabled sources continue mouse movement using their saved pointer gain (ball 1.0–256.0, paddle 1.0–10.0), while hidden cursor gains drive independent D-pad clicks. No physical D-pad or direction assignment is needed. The **Gamepad** tab still selects a gamepad-only USB layout; choose **Mouse + Gamepad** for both outputs. Firmware 0.20.3–0.20.5 suppressed mouse movement for converted sources. Existing conversion preferences are retained.
+
+The movement threshold, minimum pressed duration and minimum released interval are separate persistent device-wide settings, shared by all profiles and normal/test firmware. Their defaults are **64 pt**, **16 ms hold** and **16 ms wait**. Each click holds its press for at least the hold duration after the press is acknowledged, then remains released for at least the wait duration after release is acknowledged before starting another click. Changing one duration does not change the other. Normal buttons/axes and pointer movement continue independently. The ideal upper bound is 1000 / (hold ms + wait ms) clicks per second before host polling overhead: **31.25 clicks per second** with both defaults. The separate direction queue holds four waiting clicks in addition to the current click; extra clicks are counted and discarded. With the defaults, four queued clicks represent about 128 ms of additional work plus polling. Held physical D-pad input has priority and cancels conflicting generated work. USB loss, profile changes and output resets clear pending movement. The user confirmed operation with 16 ms press/release durations; these are application defaults, not documented Nintendo minimums.
+
+Separately stored hidden cursor gains and the always-editable pointer fields require **0.20.5 or later**. Firmware 0.20.4 uses the same initial conversion gains as constants; 0.20.3 uses profile gain and paddle left/right only. The profile format remains compatible with those versions. Before returning to a version older than 0.20.3, turn both conversion options off in every profile and reduce trackball gain to at most 64, then save with the current firmware. Individual JSON exports, slot backups, duplication and reorder retain pointer values without changing profile or bank size.
+
+```powershell
+python tools/controllerctl.py profile-mouse --trackball-gain 256 --trackball-to-dpad --paddle-to-dpad
+```
+
+![Editable pointer gain with separate hidden cursor gains](gui-direction-keys-en.png)
+
+## Mouse UDLR settings
+
+Choose **Mouse UDLR settings**, immediately to the right of **Profile switching...** at the top of the main window. This opens the settings shared by **all profiles**. It requires a connected board with matching firmware 0.20.10 supporting the three-setting protocol; the button is disabled when disconnected or unsupported.
+
+| Parameter | Default | Allowed integer range | Effect |
+|---|---:|---:|---|
+| Movement threshold | 64 pt | 1–256 pt | Signed accumulated movement required for one direction click |
+| Hold time | 16 ms | 1–512 ms | Minimum pressed duration after the press is acknowledged |
+| Wait time | 16 ms | 1–512 ms | Minimum released interval after release is acknowledged, before the next click |
+
+The fields load the current device values. Choose **Save to device** to apply and persist all three settings, then verify them by reading back. The values survive restart and profile switching. **Cancel** discards dialog edits. A save failure leaves the dialog and entered values available for retry. Unsaved profile edits remain intact; this operation does not save those drafts. Cursor gains and per-profile pointer sensitivity retain their values.
+
+The dialog explains that pointer movement is sent as direction-key operations and that the settings are common to all profiles. Units sit directly beside the spinners; the ranges above remain enforced but are not printed in the dialog. On upgrade from a shared-duration version, an absent wait setting inherits the saved hold duration to preserve the earlier behavior. A valid saved wait value is retained.
+
+If an older stored value is outside the new editing range, the dialog shows a notice and a value inside the range. The device is changed only when **Save to device** is chosen. Opening the dialog or cancelling does not rewrite old settings.
+
+![Mouse UDLR settings button immediately right of Profile switching](gui-mouse-udlr-button-en.png)
+
+![Mouse UDLR settings with movement threshold 64 pt, hold time 16 ms and wait time 16 ms](gui-mouse-udlr-settings-en.png)
+
+## Paddle output axis
+
+In **USB mouse** or **Mouse + gamepad**, choose **X axis** or **Y axis** from **Output axis** on the paddle row, then choose **Save profile to device**. X is horizontal and Y is vertical. Existing profiles and new profiles default to X. The selection belongs to each profile and survives duplication, export/import, whole-bank backup/restore, and reordering. Turning **Paddle ON** off disables its controls while retaining the axis choice.
+
+![Paddle output axis set to Y in the English mouse settings](gui-paddle-axis-en.png)
+
+For mouse movement, paddle gain (1.0–10.0) and **Reverse rotation** act on the selected axis. Direction conversion uses its separate hidden paddle gain (initially 1.5×) and retains reversal. Trackball **Invert X** and **Invert Y** affect only the trackball. With both inputs enabled, the paddle is added to the selected trackball axis; the other axis remains the trackball's value. Changing only the paddle axis does not require a USB layout change.
+
+Y-axis profiles require GUI and firmware **0.20.2 or later**. The GUI rejects saving Y to older firmware before beginning a profile or bank upload. Older firmware does not recognize saved Y profiles; set every paddle profile back to X and save with the current firmware before using an older firmware version.
+
+The CLI exposes the same setting: `python tools/controllerctl.py profile-mouse --slot 5 --paddle-axis y` (slots are 1–16). Use `--paddle-axis x` to restore horizontal output. This selects the axis for mouse movement and optional direction conversion; it does not map the paddle to a gamepad stick.
 
 ## Switch profiles without a PC
 

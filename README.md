@@ -2,9 +2,13 @@
 
 ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
 
-**Current development release: firmware 0.20.1 and Windows configurator 0.20.1.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
+**Current development release: firmware 0.20.10 and Windows configurator 0.20.10.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
 
-Rapid fire now supports **1–60 press/release cycles per second**, with **20** as the starting value when enabling an output that was Off. Existing saved rates remain unchanged, and Off remains Off until enabled. Install the matching 0.20.1 firmware to use the expanded range. Profile and backup formats are unchanged.
+Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle pointer gain **1.0–10.0× (default 1.0)**, in 0.1 steps. Saved values are unchanged. The **Pointer gain (×)** fields remain editable while conversion is enabled. In **Mouse + Gamepad**, conversion adds D-pad clicks while both pointer sources continue moving the mouse. No physical D-pad input or assignment is required. Direction conversion uses separate, hidden device-wide parameters, initially **6.0× for the trackball and 1.5× for the paddle**, stored independently of profile pointer gain. Enable **Convert to ↑↓←→** for the trackball, or **Convert to ←→ / ↑↓** for the paddle. The paddle follows its X/Y output axis. Each signed source sum emits one press/release pair at the configured threshold (initially ±64), then clears and discards excess. **Mouse UDLR settings**, immediately right of **Profile switching...**, edits the device-wide **Movement threshold** (default **64 pt**, range **1–256**), **Hold time** (default **16 ms**, range **1–512**) and **Wait time** (default **16 ms**, range **1–512**). Save writes all three settings to the device and verifies them by reading back; all profiles share them. Hold time controls the pressed phase, and the independent wait time controls the released interval before the next click. Each phase starts at its corresponding successful USB completion. The dialog shows units beside the spinners without range labels. Cursor gains remain hidden. The user confirmed operation at 16 ms. See [movement conversion](docs/configurator-guide.md#movement-to-d-pad).
+
+Paddle rotation can be assigned per profile to **X (horizontal)** or **Y (vertical)** using the **Output axis** list in the mouse settings. Existing profiles remain X. Gain and rotation reversal apply to the selected axis; trackball movement retains its own X/Y settings. Install the matching 0.20.10 firmware, choose the axis, then **Save profile to device**. Profile and bank sizes are unchanged. See the [paddle settings](docs/configurator-guide.md#paddle-output-axis).
+
+Rapid fire supports **1–60 press/release cycles per second**, with **20** as the starting value when enabling an output that was Off. Existing saved rates remain unchanged, and Off remains Off until enabled. The bundled firmware also supports this range. Profile and backup formats are unchanged.
 
 ![ControllerBridge profile list, English interface](docs/gui-main-en.png)
 
@@ -34,6 +38,7 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
 - **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 3. Version-2 backups and individual exports are imported with shift disabled; version 1 remains unsupported.
 - **Button shift…**, in the mapping editor, learns one to four physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
+- **Mouse UDLR settings** opens the shared movement-threshold/hold-time/wait-time dialog. Choose **Save to device** to apply and persist it independently of any unsaved profile edits. See [settings](docs/configurator-guide.md#mouse-udlr-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
 Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
@@ -46,7 +51,7 @@ Selecting an output tab edits the profile. Choose **Save profile to device** to 
 
 Only the combined tab offers **Button behavior: Mouse / Controller**. Mouse behavior sends left/right clicks and gamepad Minus/Plus/HOME. Controller behavior sends all mapped gamepad controls while the mouse supplies movement. A USB layout change reconnects USB-C while the USB-A input host continues running.
 
-For the EGRET II mini Paddle Controller, trackball and paddle can be enabled independently. Trackball gain is 1.0-64.0, default 16.0; paddle gain is 1.0-10.0, default 1.0, both in 0.1 steps. Input interval `0` uses the controller descriptor; `1` requests input every millisecond. NAK responses mean request rate is not the same as fresh data rate.
+For the EGRET II mini Paddle Controller, trackball and paddle can be enabled independently. Trackball gain is 1.0-256.0, default 16.0; paddle gain is 1.0-10.0, default 1.0, both in 0.1 steps. Input interval `0` uses the controller descriptor; `1` requests input every millisecond. NAK responses mean request rate is not the same as fresh data rate.
 
 ## Documentation and compatibility
 
@@ -84,11 +89,14 @@ Use the existing pinned Pico SDK 2.1.1, Arm GCC 14.2.1, and .NET 9 SDK. The GUI 
 .\dist\ControllerBridge.exe --check-button-shift captures/shift-check --language en
 .\dist\ControllerBridge.exe --check-led-rgb captures/led-check --language en
 .\dist\ControllerBridge.exe --check-firmware-update captures/firmware-check --language en
+.\dist\ControllerBridge.exe --check-mouse-udlr-settings captures/mouse-udlr-check --language en
 ```
 
 The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation. Developer previews accept `--preview --language en` or `--preview --language ja`.
 
-The 0.20.1 build passes 45,930 deterministic C checks and 17 CLI checks. Japanese and English GUI suites cover 744 checks each (1,488 total), including 23 rapid-fire and 55 shift checks per language. They cover the 1–60 range, default 20, retention of saved rates, simultaneous modifier registration, asynchronous learning cancellation, actual modal input delivery, old-format migration, and existing connection/update/axis/LED behavior. These use simulated inputs and Flash; no board was programmed for this change. Real controller/gameplay response and physical power interruption during migration remain unverified. See [verification and its limits](docs/verification.md).
+Firmware 0.20.10 passes **46,713 deterministic C checks**, **31 CLI checks**, and **157 physical checks** covering independent hold/wait settings, save/readback, reboot persistence and all 16 profiles. The latest GUI-only change passes **944 normal GUI checks** and **960 test GUI checks** in Japanese and English at 100%, 150% and 200% display scaling, including the square eyedropper button and simplified Mouse UDLR dialog. Firmware and board memory are unchanged by this GUI update. The firmware storage comparison after restoring 64 pt / 16 ms / 16 ms differs only by the new 16-byte wait record. See [verification and its limits](docs/verification.md).
+
+The U/D/L/R USB keyboard test is kept in the source and compiled only by `tools/build-udlr-test.ps1`. Normal builds omit its dialog, button, keyboard descriptor and command 50. See [test build and usage](docs/udlr-test.md).
 
 ## Memory budget
 
@@ -96,12 +104,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 96,100; persistent storage 49,152 | 1,951,900 |
-| SRAM, 532,480 bytes | Static data 151,588; two stacks 8,192 | 372,700 |
+| Flash, 2,097,152 bytes | Code/initial values 101,352; persistent storage 49,152 | 1,946,648 |
+| SRAM, 532,480 bytes | Static data 153,140; two stacks 8,192 | 371,148 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
+| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction records 64 | 3,968 |
 
-Static SRAM is vector table 272 + initialized data 34,016 + BSS 117,300 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. A profile is 848 bytes, the bank is 13,908 bytes, and the UF2 file is 192,512 bytes.
+Static SRAM is vector table 272 + initialized data 35,456 + BSS 117,412 bytes. The minimum heap reservation is included in remaining SRAM. These are not peak stack/heap measurements. A profile is 848 bytes, the bank is 13,908 bytes, and the UF2 file is 202,752 bytes.
 
 ## Repository contents and license
 

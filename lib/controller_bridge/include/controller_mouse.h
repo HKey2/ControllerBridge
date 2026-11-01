@@ -2,6 +2,7 @@
 #define CONTROLLER_MOUSE_H
 #include <stdbool.h>
 #include <stdint.h>
+#include "controller_direction.h"
 #include "usb_mouse.h"
 #include "controller_profile.h"
 
@@ -46,6 +47,12 @@ void um_flush(um_queue *queue,uint8_t buttons);
 bool um_pending(const um_queue *queue);
 int32_t um_scale(int32_t value,uint8_t options,bool y_axis);
 typedef struct { int32_t x10,y10; } um_fraction;
+enum { UM_KEY_UP,UM_KEY_DOWN,UM_KEY_LEFT,UM_KEY_RIGHT };
+typedef struct { int32_t ball_x10,ball_y10,paddle10; } um_key_state;
+typedef struct { uint8_t count,direction[3]; } um_key_events;
+// Signed gain-adjusted sums, three independent accumulators. Crossing a
+// threshold emits exactly one click for that source axis and discards excess.
+void um_direction_keys(um_key_state *state,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,const udk_settings *settings,um_key_events *keys);
 // Mix independently enabled sources at tenths precision; retain signed fractions.
 void um_mix(um_fraction *fraction,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,int32_t *x,int32_t *y);
 // Diagnostic constant-speed vector; ignores gain and paddle, keeps direction.

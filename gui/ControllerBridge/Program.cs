@@ -18,9 +18,15 @@ internal static class Program
         if (!first) { MessageBox.Show(L.T("ControllerBridgeは既に起動しています。先に開いた画面を使用してください。", "ControllerBridge is already running. Use its existing window."), "ControllerBridge"); return 2; }
         try
         {
+#if UDLR_TEST
+            if (args.Length >= 2 && args[0] == "--check-udlr-test") { UdlrTestDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
+#endif
             if (args.Length >= 2 && args[0] == "--self-test") { SelfTest.Run(args[1]); return 0; }
             if (args.Length >= 2 && args[0] == "--check-button-shift") { ShiftDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-rapid-fire") { RapidFireDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-paddle-axis") { MainForm.RunPaddleAxisChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-mouse-udlr-settings") { MouseUdlrSettingsDialog.RunChecks(Path.GetFullPath(args[1])); return 0; }
+            if (args.Length >= 2 && args[0] == "--check-direction-keys") { MainForm.RunDirectionChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-led-rgb") { MainForm.RunLedChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-controller-arrival") { MainForm.RunControllerArrivalChecks(Path.GetFullPath(args[1])); return 0; }
             if (args.Length >= 2 && args[0] == "--check-firmware-update") { FirmwareChecks.Run(Path.GetFullPath(args[1])); return 0; }
@@ -157,14 +163,14 @@ internal static class SelfTest
         byte[] mouseBytes = p.Encode(); Check(mouseBytes[480] == 18 && mouseBytes[481] == 35 && mouseBytes[482] == 99, "decimal mouse wire and toggles");
         Check(p.Clone().Mouse.TrackballGain == 3.5m && !p.Clone().Mouse.TrackballEnabled, "decimal mouse clone");
         ProfileFile.Save(rapidJson, p); Check(ProfileFile.Load(rapidJson).SameContent(p), "decimal and ON/OFF JSON persistence");
-        foreach (decimal gain in new[] { 1m, 10m, 10.1m, 16m, 25.5m, 25.6m, 63.9m, 64m })
+        foreach (decimal gain in new[] { 1m, 10m, 10.1m, 16m, 25.5m, 25.6m, 63.9m, 64m, 64.1m, 255.9m, 256m })
         {
             p.Mouse.TrackballGain = gain; byte[] encoded = p.Encode();
             Check(p.Clone().Mouse.TrackballGain == gain && Wire.U16(encoded, 0) == 6, "v5 gain boundaries preserve gain values");
             Check((encoded[481] | encoded[483] << 8) == gain * 10 && encoded[482] == 99, "extended gain bytes preserve paddle");
             ProfileFile.Save(rapidJson, p); Check(ProfileFile.Load(rapidJson).SameContent(p), "extended gain JSON persistence");
         }
-        foreach (decimal gain in new[] { 0.9m, 64.1m, 3.55m })
+        foreach (decimal gain in new[] { 0.9m, 256.1m, 3.55m })
         { p.Mouse.TrackballGain = gain; rejected = false; try { p.Encode(); } catch (InvalidDataException) { rejected = true; } Check(rejected, "invalid decimal gain rejected"); }
         p.Mouse.TrackballGain = 3.5m; mouseBytes[487] = 1; rejected = false;
         try { DeviceProfile.Decode(mouseBytes); } catch (InvalidDataException) { rejected = true; } Check(rejected, "RGB data without the custom-color flag is rejected");

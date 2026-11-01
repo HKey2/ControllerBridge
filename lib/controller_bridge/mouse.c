@@ -37,6 +37,7 @@ static int32_t tenths(int64_t value,int32_t *fraction) {
 }
 void um_mix(um_fraction *fraction,const up_mouse_options *o,int32_t raw_x,int32_t raw_y,int32_t wheel,int32_t *x,int32_t *y) {
     int64_t sx=0,sy=0;
+    // Direction clicks are an additional output, independent of pointer motion.
     if(o->flags&UP_MOUSE_TRACKBALL) {
         unsigned gain=up_mouse_trackball_gain10(o);
         sx=(int64_t)raw_x*gain;sy=(int64_t)raw_y*gain;
@@ -46,9 +47,33 @@ void um_mix(um_fraction *fraction,const up_mouse_options *o,int32_t raw_x,int32_
     if(o->flags&UP_MOUSE_PADDLE) {
         int64_t paddle=-(int64_t)wheel*o->paddle_gain10;
         if(o->flags&UP_MOUSE_INVERT_PADDLE)paddle=-paddle;
-        sx+=paddle;
+        if(o->flags&UP_MOUSE_PADDLE_Y)sy+=paddle;else sx+=paddle;
     }
     *x=tenths(sx,&fraction->x10);*y=tenths(sy,&fraction->y10);
+}
+static void key_axis(int32_t *accumulator,int64_t delta,int64_t threshold,uint8_t negative,uint8_t positive,um_key_events *keys) {
+    int64_t sum=(int64_t)*accumulator+delta;
+    if(sum>=threshold || sum<=-threshold) {
+        keys->direction[keys->count++]=sum>0?positive:negative;*accumulator=0;
+    } else *accumulator=(int32_t)sum;
+}
+void um_direction_keys(um_key_state *s,const up_mouse_options *o,int32_t raw_x,int32_t raw_y,int32_t wheel,const udk_settings *settings,um_key_events *keys) {
+    *keys=(um_key_events){0};
+    if(!udk_settings_valid(settings)) { *s=(um_key_state){0};return; }
+    int64_t limit=(int64_t)settings->threshold*10;
+    if((o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
+        int64_t x=(int64_t)raw_x*settings->trackball_gain10,y=(int64_t)raw_y*settings->trackball_gain10;
+        if(o->flags&UP_MOUSE_INVERT_X)x=-x;
+        if(o->flags&UP_MOUSE_INVERT_Y)y=-y;
+        key_axis(&s->ball_x10,x,limit,UM_KEY_LEFT,UM_KEY_RIGHT,keys);
+        key_axis(&s->ball_y10,y,limit,UM_KEY_UP,UM_KEY_DOWN,keys);
+    } else s->ball_x10=s->ball_y10=0;
+    if((o->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
+        int64_t rotation=-(int64_t)wheel*settings->paddle_gain10;
+        if(o->flags&UP_MOUSE_INVERT_PADDLE)rotation=-rotation;
+        bool vertical=(o->flags&UP_MOUSE_PADDLE_Y)!=0;
+        key_axis(&s->paddle10,rotation,limit,vertical?UM_KEY_UP:UM_KEY_LEFT,vertical?UM_KEY_DOWN:UM_KEY_RIGHT,keys);
+    } else s->paddle10=0;
 }
 void um_fixed_delta(const up_mouse_options *o,int32_t raw_x,int32_t raw_y,unsigned threshold,unsigned amplitude,int32_t *x,int32_t *y) {
     *x=*y=0;

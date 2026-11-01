@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Drawing.Drawing2D;
 
 namespace ControllerBridge;
 
@@ -15,6 +16,7 @@ internal sealed partial class LedRgbDialog : Form
     private readonly Label hexError = Ui.Label("", 9);
     private readonly Panel swatch = new() { Width = 230, Height = 48, BorderStyle = BorderStyle.FixedSingle, Margin = new(4, 4, 16, 8) };
     private readonly Button accept, cancel, colorPicker;
+    private readonly ToolTip pickerTip = new();
     private bool updating;
 
     public LedRgbDialog(DeviceProfile profile)
@@ -40,7 +42,10 @@ internal sealed partial class LedRgbDialog : Form
             valueLabels[i].TextAlign = ContentAlignment.MiddleRight;
             channels.Controls.Add(valueLabels[i], 2, i);
         }
-        colorPicker = Ui.Button(L.T("カラーピッカー…", "Color picker…"), (_, _) => ChooseColor()); colorPicker.Anchor = AnchorStyles.Right;
+        colorPicker = new EyedropperButton { Anchor = AnchorStyles.Right };
+        colorPicker.Click += (_, _) => ChooseColor();
+        pickerTip.SetToolTip(colorPicker, colorPicker.AccessibleName);
+        Disposed += (_, _) => pickerTip.Dispose();
         colorControls.Controls.Add(channels, 0, 0); colorControls.Controls.Add(colorPicker, 1, 0); root.Controls.Add(colorControls, 0, 2);
         FlowLayoutPanel code = new() { AutoSize = true, WrapContents = false, Margin = new(22, 0, 0, 0) };
         Label prefix = Ui.Label("#", 10); prefix.Anchor = AnchorStyles.Left;
@@ -125,5 +130,42 @@ internal sealed partial class LedRgbDialog : Form
             hexError.Text = ""; accept.Enabled = true;
         }
         finally { updating = false; }
+    }
+}
+
+
+// Paint a vector glyph at the current button size so it stays sharp at any DPI.
+internal sealed class EyedropperButton : DarkButton
+{
+    internal EyedropperButton()
+    {
+        AutoSize = false; MinimumSize = Size = new(40, 40); Padding = new(8); Margin = new(4);
+        FlatStyle = FlatStyle.Flat; UseVisualStyleBackColor = false; Cursor = Cursors.Hand;
+        AccessibleName = L.T("カラーピッカー", "Color picker");
+        AccessibleDescription = L.T("色の選択画面を開きます。", "Open the color chooser.");
+        Ui.ButtonColors(this, false);
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        GraphicsState state = e.Graphics.Save();
+        try
+        {
+            float scale = Math.Min(ClientSize.Width, ClientSize.Height) / 40f;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.TranslateTransform(ClientSize.Width / 2f, ClientSize.Height / 2f);
+            e.Graphics.ScaleTransform(scale, scale);
+            e.Graphics.RotateTransform(45);
+            Color ink = Enabled ? ForeColor : Color.FromArgb(0xad, 0xad, 0xad);
+            using Pen pen = new(ink, 1.7f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            using SolidBrush brush = new(ink);
+            using GraphicsPath bulb = new();
+            bulb.AddArc(-3, -11, 6, 6, 180, 180);
+            bulb.AddLine(3, -8, 3, -3); bulb.AddLine(3, -3, -3, -3); bulb.CloseFigure();
+            e.Graphics.FillPath(brush, bulb);
+            e.Graphics.DrawLine(pen, -5, -3, 5, -3);
+            e.Graphics.DrawLines(pen, new PointF[] { new(-2, -2), new(-2, 6), new(0, 10), new(2, 6), new(2, -2) });
+        }
+        finally { e.Graphics.Restore(state); }
     }
 }

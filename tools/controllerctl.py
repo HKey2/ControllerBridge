@@ -160,10 +160,11 @@ def decode_mouse_profile(b):
     flags = b[8]
     return dict(slot=b[4]+1 if b[4] < 16 else None, trackball_detected=bool(b[5]&1), paddle_detected=bool(b[5]&2),
                 trackball_enabled=bool(flags&1), paddle_enabled=bool(flags&2), trackball_gain=(b[9] | b[11] << 8)/10,
-                paddle_gain=b[10]/10, invert_x=bool(flags&4), invert_y=bool(flags&8), invert_paddle=bool(flags&16))
+                paddle_gain=b[10]/10, invert_x=bool(flags&4), invert_y=bool(flags&8), invert_paddle=bool(flags&16), paddle_axis='y' if flags&32 else 'x',
+                trackball_to_dpad=bool(flags&64), paddle_to_dpad=bool(flags&128))
 
 
-def gain_tenths(value, maximum=64):
+def gain_tenths(value, maximum=256):
     try:
         gain = Decimal(value)
         if not gain.is_finite() or not 1 <= gain <= maximum or gain*10 != (gain*10).to_integral_value(): raise ValueError()
@@ -173,25 +174,45 @@ def gain_tenths(value, maximum=64):
 
 
 def update_mouse_profile(bridge, slot=None, trackball=None, paddle=None, trackball_gain=None, paddle_gain=None,
-                         invert_x=None, invert_y=None, invert_paddle=None, output_mode=None):
+                         invert_x=None, invert_y=None, invert_paddle=None, output_mode=None, paddle_axis=None, trackball_to_dpad=None, paddle_to_dpad=None):
     caps = bridge.profile_caps()
     slot = caps['active'] if slot is None else slot
     raw, identity = bridge.read_profile(slot, caps)
     if not struct.unpack_from('<H', raw, 2)[0] & 1: raise ValueError('Choose a registered profile')
     if output_mode is not None:
         raw[484] = dict(gamepad=raw[484]&4, mouse=(raw[484]&4)|1, combined=2, **{'combined-gamepad': 6})[output_mode]
-    for mask, value in ((1, trackball), (2, paddle), (4, invert_x), (8, invert_y), (16, invert_paddle)):
+    for mask, value in ((1, trackball), (2, paddle), (4, invert_x), (8, invert_y), (16, invert_paddle), (64, trackball_to_dpad), (128, paddle_to_dpad)):
         if value is not None: raw[480] = (raw[480] | mask) if value else (raw[480] & ~mask)
     if trackball_gain is not None:
-        if not 10 <= trackball_gain <= 640: raise ValueError('Trackball gain must be 1.0..64.0')
+        if not 10 <= trackball_gain <= 2560: raise ValueError('Trackball gain must be 1.0..256.0')
         raw[481] = trackball_gain & 255
         raw[483] = trackball_gain >> 8
     if paddle_gain is not None:
         if not 10 <= paddle_gain <= 100: raise ValueError('Paddle gain must be 1.0..10.0')
         raw[482] = paddle_gain
+    if paddle_axis is not None:
+        if paddle_axis not in ('x', 'y'): raise ValueError('Paddle axis must be x or y')
+        raw[480] = raw[480] | 32 if paddle_axis == 'y' else raw[480] & ~32
+    if raw[480] & 32 and not caps['features'] & 32768:
+        raise RuntimeError('Paddle Y-axis output requires firmware 0.20.2 or later')
+    if (raw[481] | raw[483] << 8) > 640 and not caps['features'] & 65536:
+        raise RuntimeError('Gain above 64 requires firmware 0.20.3 or later')
+    if raw[480] & 192 and not caps['features'] & 131072:
+        raise RuntimeError('Movement-to-D-pad conversion requires firmware 0.20.3 or later')
+    active_keys = raw[480] & 65 == 65 or raw[480] & 130 == 130
+    if active_keys and raw[484] & 3 == 1: raw[484] = (raw[484] & 4) | 2
     generation = bridge.save_profile(slot, raw, caps['generation'], identity)
     return dict(slot=slot+1, generation=generation, flags=raw[480], trackball_gain=(raw[481] | raw[483] << 8)/10, paddle_gain=raw[482]/10,
-                output_mode=raw[484]&3, controller_buttons=bool(raw[484]&4), usb_reconnect_pending=bridge.output_reconnect_pending)
+                output_mode=raw[484]&3, controller_buttons=bool(raw[484]&4), paddle_axis='y' if raw[480]&32 else 'x', trackball_to_dpad=bool(raw[480]&64), paddle_to_dpad=bool(raw[480]&128), usb_reconnect_pending=bridge.output_reconnect_pending)
+
+
+def decode_direction_timing(b):
+    if len(b) != 56 or b[:5] != b'DPT1\x01':
+        raise RuntimeError('Direction timing requires firmware 0.20.7 or later')
+    phases = ('idle', 'waiting_press_ack', 'held', 'waiting_release_ack', 'released_gap')
+    names = 'minimum_press_us minimum_release_us pending_capacity press_samples press_min_us press_max_us release_samples release_min_us release_max_us pending_edges last_edge_ack_us source_received_us'.split()
+    return dict(phase=phases[b[5]] if b[5] < len(phases) else b[5],
+                direction=b[6], queued_clicks=b[7], **dict(zip(names, struct.unpack_from('<12I', b, 8))))
 
 
 def decode_mouse(b):
@@ -341,7 +362,7 @@ def measure(bridge, seconds, path, save=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('info', 'config', 'stop', 'reboot', 'bootsel', 'mouse-status'):
+    for name in ('info', 'config', 'stop', 'reboot', 'bootsel', 'mouse-status', 'direction-timing'):
         subs.add_parser(name)
     p = subs.add_parser('output', help='Save the active profile output mode; USB reconnects if the layout changes')
     p.add_argument('mode', choices=('gamepad', 'mouse', 'combined', 'combined-gamepad'))
@@ -353,6 +374,9 @@ def main():
     for control in ('trackball', 'paddle'):
         p.add_argument('--'+control, action=argparse.BooleanOptionalAction, default=None)
         p.add_argument('--'+control+'-gain', type=gain_tenths if control == 'trackball' else lambda value: gain_tenths(value, 10))
+    p.add_argument('--paddle-axis', choices=('x', 'y'))
+    p.add_argument('--trackball-to-dpad', action=argparse.BooleanOptionalAction, default=None)
+    p.add_argument('--paddle-to-dpad', action=argparse.BooleanOptionalAction, default=None)
     for axis in ('x', 'y', 'paddle'):
         p.add_argument('--invert-'+axis, action=argparse.BooleanOptionalAction, default=None)
     p = subs.add_parser('set')
@@ -384,6 +408,7 @@ def main():
     try:
         if args.command == 'info': print(json.dumps(bridge.info(), indent=2))
         elif args.command == 'config': print(json.dumps(decode_config(bridge.config()), indent=2))
+        elif args.command == 'direction-timing': print(json.dumps(decode_direction_timing(bridge.command(51)), indent=2))
         elif args.command == 'mouse-status':
             result = decode_mouse(bridge.command(36))
             features = bridge.profile_caps()['features']
@@ -395,7 +420,7 @@ def main():
             print(json.dumps(result, indent=2))
         elif args.command == 'profile-mouse':
             print(json.dumps(update_mouse_profile(bridge, None if args.slot is None else args.slot-1,
-                args.trackball, args.paddle, args.trackball_gain, args.paddle_gain, args.invert_x, args.invert_y, args.invert_paddle), indent=2))
+                args.trackball, args.paddle, args.trackball_gain, args.paddle_gain, args.invert_x, args.invert_y, args.invert_paddle, paddle_axis=args.paddle_axis, trackball_to_dpad=args.trackball_to_dpad, paddle_to_dpad=args.paddle_to_dpad), indent=2))
         elif args.command == 'output':
             print(json.dumps(update_mouse_profile(bridge, trackball_gain=args.gain, invert_x=args.invert_x,
                 invert_y=args.invert_y, output_mode=args.mode), indent=2))
