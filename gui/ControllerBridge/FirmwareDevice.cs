@@ -165,19 +165,4 @@ internal sealed class FirmwareDevice : IFirmwareDevice
         throw new TimeoutException(L.T("書き込み後の起動を確認できませんでした。USBケーブルを確認してください。再接続しても認識されない場合は、BOOTボタンを押しながら接続し、ファームウェア更新をやり直してください。", "The device did not restart with identifiable firmware. Check the USB cable. If reconnecting does not help, connect while holding BOOT and run Firmware update again."), TransferWarning);
     }
     public void Dispose() { }
-
-    internal static async Task InspectAsync(string path)
-    {
-        // Read-only diagnostics: no reboot, write, profile save or input generation.
-        using FirmwareDevice device = new();
-        FirmwareInfo? info = await device.ProbeAsync();
-        List<BootDrive> drives = await DrivesAsync();
-        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new
-        {
-            bundledVersion = FirmwarePackage.Load().Version, firmware = info,
-            connectedBridge = device.probePath is not null, usb = device.probeUsb,
-            unsupportedDevice = info is null && device.probeUsb is not null,
-            bootDrives = drives, physicalDeviceWritten = false
-        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-    }
 }

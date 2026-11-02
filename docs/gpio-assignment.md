@@ -26,8 +26,6 @@ The ordinary GPIOs used by the standard bridge are **12, 13, and 16**. Dedicated
 | [`boards/waveshare_rp2350_usb_a_diag.h`](../boards/waveshare_rp2350_usb_a_diag.h) | Board constants, RP2350A selection, Flash size and boot settings, USB/LED declarations |
 | [`CMakeLists.txt`](../CMakeLists.txt) | `PICO_BOARD`, default `waveshare_rp2350_usb_a_diag` |
 | [`apps/egret_switch/main.c`](../apps/egret_switch/main.c) | Main bridge: `.dp_pin=12` in `host_core()` |
-| [`apps/egret_diagnostic/main.c`](../apps/egret_diagnostic/main.c) | Input diagnostic: `.dp_pin=12`; startup log also hardcodes `dp=12 dm=13` |
-| [`apps/egret_poll_probe/main.c`](../apps/egret_poll_probe/main.c) | Polling probe: `.dp_pin=12` |
 | [`lib/controller_usb/transport_pio.c`](../lib/controller_usb/transport_pio.c) | `ut_init()`: PIO selection, pin order, Full Speed startup |
 | [`apps/egret_switch/status_led.c`](../apps/egret_switch/status_led.c), [`status_led.pio`](../apps/egret_switch/status_led.pio) | LED data format and timing |
 | [`lib/controller_usb/bootsel.c`](../lib/controller_usb/bootsel.c) | BOOT sampling and synchronization around Flash access |

@@ -15,7 +15,7 @@ internal sealed partial class MainForm
     private void HandleControllerArrival()
     {
         if (caps is not { Connected: true }) { controllerArrivals.Reset(); return; }
-        if (bridge is null && !preview || !CanRegisterInput || caps.BankGeneration != bankGeneration) return;
+        if (bridge is null || !CanRegisterInput || caps.BankGeneration != bankGeneration) return;
         int slot = controllerArrivals.Observe(caps, HasInputProfile(caps), FirstAvailableSlot,
             !working && !connecting && !polling && !closing && !ModalEditorOpen && !dirty.Any(value => value));
         if (slot < 0 || slot == selected) return;

@@ -13,8 +13,7 @@ internal static partial class L
     public static string F(string ja, string en, params object?[] values) => string.Format(CultureInfo.CurrentCulture, T(ja, en), values);
     public static void Initialize(ref string[] args)
     {
-        // Normal launches follow the OS UI language. This opt-in switch lets the
-        // preview and verification tools exercise both layouts without changing Windows.
+        // Follow the OS UI language unless the user selects Japanese or English.
         int index = Array.IndexOf(args, "--language");
         if (index < 0 || index + 1 >= args.Length) return;
         string language = args[index + 1];

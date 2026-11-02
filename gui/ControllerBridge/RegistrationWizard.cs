@@ -18,7 +18,6 @@ internal sealed partial class RegistrationWizard : Form
     private int step;
     private bool saving;
     public DeviceProfile Registered => profile;
-    internal void PreviewStep(int number) { step = number; ShowStep(); }
     public RegistrationWizard(int slot, Capabilities caps, List<InputField> fields, Func<Task<bool>> prepare, Func<DeviceProfile, Task> save)
     {
         this.caps = caps; this.save = save; this.fields = fields;

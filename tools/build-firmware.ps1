@@ -1,4 +1,4 @@
-param([string]$BuildType='Release',[ValidateSet('egret_diagnostic','ControllerBridge','egret_poll_probe')][string]$Target='ControllerBridge',[switch]$UsbTrace,[switch]$MouseFixedProbe,[ValidateRange(1,32767)][int]$MouseProbeAmplitude=10000,[ValidateSet(8,16)][int]$MousePacketBytes=8,[string]$PicoSdkPath=$env:PICO_SDK_PATH,[string]$PicoToolsRoot,[string]$BuildDirectory,[switch]$UdlrTest)
+param([string]$BuildType='Release',[string]$PicoSdkPath=$env:PICO_SDK_PATH,[string]$PicoToolsRoot,[string]$BuildDirectory)
 $ErrorActionPreference='Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 if (-not $PicoToolsRoot) { $PicoToolsRoot = Join-Path $env:USERPROFILE '.pico-sdk' }
@@ -6,7 +6,6 @@ if (-not $PicoSdkPath) { $PicoSdkPath = Join-Path $PicoToolsRoot 'sdk\2.1.1' }
 $env:PICO_SDK_PATH = $PicoSdkPath
 $toolRoot = $PicoToolsRoot
 if (-not $BuildDirectory) { $BuildDirectory = Join-Path $taskRoot 'build' }
-$udlrOption = if ($UdlrTest) { 'ON' } else { 'OFF' }
 $lock = Get-Content -LiteralPath (Join-Path $taskRoot 'dependencies.lock.json') -Raw | ConvertFrom-Json
 function Assert-PinnedSource([string]$Path,[string]$Expected,$AllowedChanges=@()) {
     $actual = & git -C $Path rev-parse HEAD
@@ -35,11 +34,7 @@ foreach ($entry in $manifest.files.PSObject.Properties) {
     }
 }
 $cmake = Join-Path $toolRoot 'cmake\v3.31.5\bin\cmake.exe'
-$traceOption = if ($UsbTrace) { 'ON' } else { 'OFF' }
-$probeOption = if ($MouseFixedProbe) { 'ON' } else { 'OFF' }
 & $cmake -S $taskRoot -B $BuildDirectory -G Ninja "-DCMAKE_BUILD_TYPE=$BuildType" '-DPICO_COMPILER=pico_arm_cortex_m33_gcc' "-DPICO_TOOLCHAIN_PATH=$toolRoot/toolchain/14_2_Rel1" "-DCMAKE_MAKE_PROGRAM=$toolRoot/ninja/v1.12.1/ninja.exe" "-Dpioasm_DIR=$toolRoot/tools/2.1.1/pioasm" "-Dpicotool_DIR=$toolRoot/picotool/2.1.1/picotool"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $cmake -S $taskRoot -B $BuildDirectory "-DBRIDGE_UDLR_TEST=$udlrOption" "-DBRIDGE_USB_TRACE=$traceOption" "-DBRIDGE_MOUSE_FIXED_PROBE=$probeOption" "-DBRIDGE_MOUSE_FIXED_AMPLITUDE=$MouseProbeAmplitude" "-DBRIDGE_MOUSE_PACKET_BYTES=$MousePacketBytes"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $cmake --build $BuildDirectory --target $Target --parallel 4
+& $cmake --build $BuildDirectory --target ControllerBridge --parallel 4
 exit $LASTEXITCODE

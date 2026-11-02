@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 & (Join-Path $PSScriptRoot 'build-app-icon.ps1')
 # Build the normal image and embed that exact image with its checksum and version.
-& (Join-Path $PSScriptRoot 'build-diagnostic.ps1') -Target ControllerBridge
+& (Join-Path $PSScriptRoot 'build-firmware.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $cache = Get-Content -LiteralPath (Join-Path $taskRoot 'build/CMakeCache.txt') -Raw
 if ($cache -notmatch '(?m)^PICO_BOARD:STRING=waveshare_rp2350_usb_a_diag\r?$') {

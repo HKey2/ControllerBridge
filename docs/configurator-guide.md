@@ -165,10 +165,6 @@ The movement threshold, minimum pressed duration and minimum released interval a
 
 Separately stored hidden cursor gains and the always-editable pointer fields require **0.20.5 or later**. Firmware 0.20.4 uses the same initial conversion gains as constants; 0.20.3 uses profile gain and paddle left/right only. The profile format remains compatible with those versions. Before returning to a version older than 0.20.3, turn both conversion options off in every profile and reduce trackball gain to at most 64, then save with the current firmware. Individual JSON exports, slot backups, duplication and reorder retain pointer values without changing profile or bank size.
 
-```powershell
-python tools/controllerctl.py profile-mouse --trackball-gain 256 --trackball-to-dpad --paddle-to-dpad
-```
-
 ![Editable pointer gain with separate hidden cursor gains](gui-direction-keys-en.png)
 
 ## Mouse UDLR settings
@@ -248,7 +244,7 @@ This subsection describes **Paddle Virtual Rolling**, which produces analog-stic
 |---|---|---|
 | Rotation sensitivity | 1.0°/pt | 0.1–10.0°/pt, in steps of 0.1 |
 | Rotation step | 30° | 5°, 10°, 15°, 20°, 30°, 40°, 45°, 60° or 90° |
-| Output stick | Right stick | Right stick / Left stick |
+| Output analog stick | Right stick | Right stick / Left stick |
 | Reverse rotation | Off | Reverses this virtual rotation independently of pointer settings |
 
 The default virtual lever has **12 positions, 30° apart**. This default follows the 12-contact endless rotary mechanism in the [user-supplied loop-lever article](https://ykuns-mechanical-club.com/loop.lever); [Alps Alpine's SRRM series specification](https://tech.alpsalpine.com/j/products/category/switches/sub/04/series/srrm/) independently documents 12-position endless switches with a nominal 30° switching angle. The latter is a reference for the mechanism, not identification of the article's SRN part or the connected paddle.
@@ -275,7 +271,7 @@ For mouse movement, paddle gain (1.0–10.0) and **Reverse rotation** act on the
 
 Y-axis profiles require GUI and firmware **0.20.2 or later**. The GUI rejects saving Y to older firmware before beginning a profile or bank upload. Older firmware does not recognize saved Y profiles; set every paddle profile back to X and save with the current firmware before using an older firmware version.
 
-The CLI exposes the same setting: `python tools/controllerctl.py profile-mouse --slot 5 --paddle-axis y` (slots are 1–16). Use `--paddle-axis x` to restore horizontal output. This selects the axis for pointer movement and optional Button clicks. Virtual Rolling selects its gamepad stick separately in Mouse UDLR settings.
+The selected axis applies to pointer movement and optional Button clicks. Virtual Rolling selects its output analog stick separately in Mouse UDLR settings.
 
 ## Switch profiles without a PC
 

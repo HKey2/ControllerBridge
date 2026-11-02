@@ -1,0 +1,15 @@
+# Capture receive timestamps for normal input scheduling without changing the
+# pinned vendor source. The hook runs after the packet/handshake has finished.
+file(READ "${CMAKE_SOURCE_DIR}/third_party/Pico-PIO-USB/src/pio_usb_host.c" _pio_host)
+set(_input_point "  uint8_t const receive_pid = pp->usb_rx_buffer[1];\n")
+string(FIND "${_pio_host}" "${_input_point}" _input_offset)
+if(_input_offset EQUAL -1)
+    message(FATAL_ERROR "Pinned PIO USB receive point changed")
+endif()
+string(REPLACE "${_input_point}" "${_input_point}  extern void uc_pio_input_complete(uint8_t, uint8_t, uint8_t, int, uint8_t);\n  uc_pio_input_complete(ep->dev_addr, ep->ep_num, receive_pid, receive_len, expect_pid);\n" _pio_timestamped "${_pio_host}")
+set(_input_file "${CMAKE_BINARY_DIR}/generated/pio_usb_host_timestamped.c")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
+file(CONFIGURE OUTPUT "${_input_file}" CONTENT "${_pio_timestamped}" @ONLY)
+get_target_property(_pio_sources pico_pio_usb INTERFACE_SOURCES)
+list(REMOVE_ITEM _pio_sources "${CMAKE_SOURCE_DIR}/third_party/Pico-PIO-USB/src/pio_usb_host.c")
+set_property(TARGET pico_pio_usb PROPERTY INTERFACE_SOURCES "${_pio_sources};${_input_file}")

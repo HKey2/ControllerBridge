@@ -28,6 +28,8 @@ ControllerBridgeは、USBコントローラーの入力をSwitch互換ゲーム�
 
 **現在の開発版：ファームウェア0.20.16／Windows設定アプリ0.20.16。** アプリは日本語のWindowsでは日本語、それ以外では英語で表示します。このREADMEには英語版と日本語版があります。詳細ドキュメントと参照用の画面画像は英語です。プロファイル名は入力した文字列のまま表示します。
 
+**GUIの修正：** マウスUDLR設定でモードを切り替えた際に、文字が重なって表示される問題を修正しました。パドルのVirtual Rollingでは、項目名を「出力先アナログスティック」、説明文を「パドルの仮想角度をアナログ軸の傾きに変換します。」に変更しました。
+
 トラックボールのポインター感度は**1.0～256.0倍（初期値16.0）**、パドルのポインター感度は**1.0～10.0倍（初期値1.0）**で、0.1刻みです。保存済みの値は変わりません。変換を有効にしている間も、**Pointer gain (×)** の欄を編集できます。**Mouse + Gamepad** では、トラックボールとパドルによるマウスポインターの移動を続けながら、変換によるゲームパッド出力（クリック、押し続ける操作、パドルのVirtual Rolling）を追加します。物理的な十字キーの入力や割り当ては不要です。従来のトラックボールのクリックモードは **Virtual Rolling** という名前になり、新しい **Hold** モードは後述します。
 
 ボタンクリックへの変換には、プロファイルのポインター感度とは別に保存する、画面に表示しない本体共通のパラメーターを使用します。初期値は**トラックボールが6.0倍、パドルが1.5倍**です。トラックボールでは **Convert to ↑↓←→**、パドルでは **Enable conversion** を有効にします。パドルの初期モードである **Button clicks** は、選択したX/Y出力軸に従います。各入力源の符号付き移動量の合計が設定したしきい値（初期値±64）に達すると、押下・解放を1組出力し、合計をクリアして超過分を破棄します。
@@ -91,7 +93,7 @@ EGRET II mini Paddle Controllerでは、トラックボールとパドルを個�
 
 ## ドキュメントと対応範囲
 
-まずは[ユーザーガイド](docs/configurator-guide.md)を参照してください。[ドキュメント一覧](docs/README.md)からは、現在の保存形式・プロトコルのリファレンス、GPIOの移植手順、LEDの動作、診断、対応上の制限、検証結果も参照できます。
+まずは[ユーザーガイド](docs/configurator-guide.md)を参照してください。[ドキュメント一覧](docs/README.md)からは、現在の保存形式・プロトコルのリファレンス、GPIOの移植手順、LEDの動作、対応上の制限、検証結果も参照できます。
 
 標準の入力経路は、直接接続した1台のFull Speed機器、4つのHIDインターフェース、8つのINエンドポイント、64バイトの入力パケット、256個の観測フィールドに対応します。USBハブ、Bluetooth、Low Speed／High Speed、HID Array型入力、Xbox One、任意のベンダー独自初期化は対応範囲外です。
 
@@ -108,32 +110,20 @@ EGRETコントローラー、X68000 Z JOYCARD、有線接続のM30のSwitch互�
 | `gui/ControllerBridge` | ControllerBridgeのWinFormsアプリ |
 | `boards` | 基板定義。アプリケーション側のピン定数は[GPIOガイド](docs/gpio-assignment.md)を参照 |
 | `hardware/case` | 印刷用ケースのSTLファイルとCC BY 4.0の帰属表示 |
-| `apps/egret_diagnostic` | 独立した入力専用USB CDC診断用ビルド対象 |
-| `tools` | ビルドスクリプトとローカル診断ツール |
+| `tools` | 製品のビルドスクリプト |
 
 コア1が入力を、コア0が割り当てと出力を処理します。通常のブリッジでは、入力に同梱のPico-PIO-USBを、出力にこのプロジェクト独自の内蔵USB実装を使います。TinyUSBは、別のCDC診断用ビルド対象でのみ使用します。
 
-## ビルドと検証
+## ビルド
 
 既存の固定済みPico SDK 2.1.1、Arm GCC 14.2.1、.NET 9 SDKを使用します。GUIの対象は `net9.0-windows` です。ビルドスクリプトは依存関係を確認し、システム全体の開発ツールのインストール、更新、変更は行いません。
 
 ```powershell
-.\tools\build-diagnostic.ps1 -Target ControllerBridge
+.\tools\build-firmware.ps1
 .\tools\build-configurator.ps1 -Restore
-.\dist\ControllerBridge.exe --self-test captures/gui-check --language en
-.\dist\ControllerBridge.exe --check-profile-menu captures/profile-check --language en
-.\dist\ControllerBridge.exe --check-axis-dialog captures/axis-check --language en
-.\dist\ControllerBridge.exe --check-button-shift captures/shift-check --language en
-.\dist\ControllerBridge.exe --check-led-rgb captures/led-check --language en
-.\dist\ControllerBridge.exe --check-firmware-update captures/firmware-check --language en
-.\dist\ControllerBridge.exe --check-mouse-udlr-settings captures/mouse-udlr-check --language en
 ```
 
-設定アプリのビルドでは、通常のファームウェアもビルドし、そのUF2をSHA-256マニフェストとともに埋め込みます。出力は `build/ControllerBridge.uf2`、`dist/ControllerBridge.exe`、および手動復旧用の独立した `dist/ControllerBridge.uf2` です。GUIの依存関係をすでに復元済みなら、`-Restore` を省略できます。ファームウェアのツールは、既定で `%USERPROFILE%\.pico-sdk` を使います。別の既存インストール先を使う場合は、`-PicoSdkPath` と `-PicoToolsRoot` を指定してください。開発用プレビューには、`--preview --language en` または `--preview --language ja` を指定できます。
-
-0.20.16の実装では、**決定的なCチェック50,830件**と、日本語・英語の20スイートでの**GUIチェック32,868件**（**通常版16,426件**、**テスト版16,442件**）が成功しています。検証範囲には、全9種類の角度の刻み、1回転、従来と変わらない30°出力、90°での上下左右、刻みの変更、保存形式の移行、保護付きの保存と読み戻し、位置を維持したグレー表示の操作欄、100／150／200%の表示レイアウトが含まれます。ファームウェアとGUIは、どちらの版も再ビルド済みです。実機へのアクセスは行っていません。[検証結果とその限界](docs/verification.md)を参照してください。
-
-U/D/L/R USBキーボードテストはソースに残してあり、`tools/build-udlr-test.ps1` でのみビルドします。通常のビルドには、そのダイアログ、ボタン、キーボード記述子、コマンド50を含めません。[テスト版のビルドと使い方](docs/udlr-test.md)を参照してください。
+設定アプリのビルドでは、通常のファームウェアもビルドし、そのUF2をSHA-256マニフェストとともに埋め込みます。出力は `build/ControllerBridge.uf2`、`dist/ControllerBridge.exe`、および手動復旧用の独立した `dist/ControllerBridge.uf2` です。GUIの依存関係をすでに復元済みなら、`-Restore` を省略できます。ファームウェアのツールは、既定で `%USERPROFILE%\.pico-sdk` を使います。別の既存インストール先を使う場合は、`-PicoSdkPath` と `-PicoToolsRoot` を指定してください。
 
 ## メモリ使用量
 
@@ -141,13 +131,13 @@ U/D/L/R USBキーボードテストはソースに残してあり、`tools/build
 
 | リソース | 使用量または予約量 | 残り |
 |---|---:|---:|
-| Flash：2,097,152バイト | コード・初期値108,920、永続保存領域49,152 | 1,939,080 |
-| SRAM：532,480バイト | 静的データ153,472、スタック2本分8,192 | 370,816 |
+| Flash：2,097,152バイト | コード・初期値109,040、永続保存領域49,152 | 1,938,960 |
+| SRAM：532,480バイト | 静的データ153,736、スタック2本分8,192 | 370,552 |
 | バンクのコピー1面：16,384バイト | データ13,908＋ヘッダー16 | 2,460 |
 | 測定記録：4,096バイト | データ3,784＋ヘッダー16 | 296 |
 | 共通設定：4,096バイト | 旧ヘッダー・データ56＋アラインメント8＋方向・モード記録144 | 3,888 |
 
-静的SRAMの内訳は、ベクターテーブル272バイト、初期値ありデータ35,768バイト、BSS 117,432バイトです。最小ヒープ予約の2,048バイトは、SRAMの残容量に含まれます。これらは確保容量であり、スタックやヒープの実測ピーク値ではありません。プロファイルのサイズは848バイト、バンクのデータは13,908バイト、通常版UF2は218,112バイトです。
+静的SRAMの内訳は、ベクターテーブル272バイト、初期値ありデータ36,032バイト、BSS 117,432バイトです。最小ヒープ予約の2,048バイトは、SRAMの残容量に含まれます。これらは確保容量であり、スタックやヒープの実測ピーク値ではありません。プロファイルのサイズは848バイト、バンクのデータは13,908バイト、通常版UF2は218,112バイトです。
 
 ## リポジトリの内容とライセンス
 

@@ -141,16 +141,6 @@ void um_rolling_overlay(um_rolling_state *s,uint32_t now_us,uint32_t idle_us,con
     else { report->rx=x;report->ry=y; }
 }
 
-void um_fixed_delta(const up_mouse_options *o,int32_t raw_x,int32_t raw_y,unsigned threshold,unsigned amplitude,int32_t *x,int32_t *y) {
-    *x=*y=0;
-    if(!(o->flags&UP_MOUSE_TRACKBALL) || !threshold || !amplitude || amplitude>32767)return;
-    int64_t sx=raw_x,sy=raw_y;
-    if(o->flags&UP_MOUSE_INVERT_X)sx=-sx;
-    if(o->flags&UP_MOUSE_INVERT_Y)sy=-sy;
-    int64_t ax=sx<0?-sx:sx,ay=sy<0?-sy:sy,size=ax>ay?ax:ay;
-    if(size<threshold)return;
-    *x=(int32_t)(sx*amplitude/size);*y=(int32_t)(sy*amplitude/size);
-}
 void um_push(um_queue *q,int32_t x,int32_t y,uint8_t buttons,uint32_t time,uint32_t sequence,bool source_input) {
     buttons&=3;
     if(source_input)q->inputs++;
@@ -222,7 +212,6 @@ static void next_batch(const um_queue *q,um_flight *f,bool wide,unsigned batch) 
     f->report.x=(int16_t)x;f->report.y=(int16_t)y;
 }
 void um_next_wide(const um_queue *q,um_flight *f,bool wide) { next_batch(q,f,wide,wide?8u:2u); }
-void um_next_single(const um_queue *q,um_flight *f,bool wide) { next_batch(q,f,wide,1); }
 void um_ack(um_queue *q,const um_flight *f) {
     q->acked_x+=(uint32_t)(int32_t)f->report.x;q->acked_y+=(uint32_t)(int32_t)f->report.y;
     if(f->report.x || f->report.y)q->movement_acks++;

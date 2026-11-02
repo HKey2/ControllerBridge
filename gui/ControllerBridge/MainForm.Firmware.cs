@@ -4,7 +4,7 @@ internal sealed partial class MainForm
 {
     private async Task UpdateFirmware(string? introduction = null)
     {
-        if (working || closing || preview) return;
+        if (working || closing) return;
         working = true; UpdateEnabled(); AbortLearning(); timer.Stop(); await WaitForPoll(); await WaitForConnection();
         if (closing) { working = false; return; }
         try

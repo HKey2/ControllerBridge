@@ -2,6 +2,45 @@
 
 Applies to ControllerBridge Windows configurator and normal firmware 0.20.16. Paddle Virtual Rolling offers nine rotation steps (5/10/15/20/30/40/45/60/90°), defaulting to the previous 30°. Inactive parameters stay visible and greyed out using one enabled-state path for initial opening, navigation and save completion. Shared click defaults remain 64 pt / 30 ms / 20 ms; Trackball Hold retains its independent threshold. Common settings use 208 bytes; profile/bank/measurement formats remain unchanged. Dated entries below describe their own builds. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
 
+## 2026-11-03 — Development-code separation
+
+Moved 47 dedicated development files into the Git-ignored `test/development/overlay` tree, preserving each file byte for byte. This includes GUI checks and captures, DPI tools, UDLR and diagnostic firmware, measurement scripts, and their dedicated documentation. C host checks and their runner are also under this local tree. Mixed-file verification entry points, synthetic preview paths, connection stubs and counters, optional keyboard/probe modes, and USB control tracing are retained only in a local integration patch. Normal input timestamps, user input logging, validation before saving, and firmware update destination checks remain product behavior.
+
+The normal project has no reference to `test`. A fresh product-only workspace containing no `test` directory built both firmware and the self-contained GUI with the existing toolchain. The production assembly contains none of the former check classes, synthetic-preview methods, or test/capture launch options. A regenerated local development workspace restores the previously checked integration code without modifying product files.
+
+Validation: all 28 Japanese/English GUI suites passed; the moved partial-paint comparison passed 192 comparisons with zero pixel differences. Local C verification passed 50,830 checks. The production C sources, with the diagnostic-only fixed-mouse-vector cases omitted, passed 50,813 checks. The separated DPI utility passed 50,404 checks across Japanese/English and 96/120/144/192 startup DPI, with simulated transitions. Local UDLR firmware/GUI and both diagnostic targets also build. These checks did not open or write a physical device.
+
+Evidence, build logs and the separation manifest are local-only in `test/development/results/check-isolation-20261103`. The normal `dist/ControllerBridge.exe` and its matching UF2 were rebuilt from product sources; existing release ZIP archives were not repackaged. The source separation does not change the firmware/application version (0.20.16). Current allocation figures are listed below; earlier entries describe earlier binaries and their paths.
+
+## 2026-11-03 — Paddle Virtual Rolling wording (0.20.16 GUI)
+
+Updated the Japanese output label to 「出力先アナログスティック」 and the explanation to 「パドルの仮想角度をアナログ軸の傾きに変換します。」. The accessible field name, corresponding English text (Output analog stick / Converts the paddle's virtual angle into analog-axis tilt.), guide table and English screenshots match. This changes display text only.
+
+The existing normal Japanese/English Mouse UDLR suites each pass **9,076 checks**, including layout and disabled-text repaint checks at simulated 96/144/192 DPI. Both published variants pass **124 embedded-firmware/update checks** each, for **18,400 checks across four suites**. Japanese 100% and English 200% captures were visually inspected. Existing .NET SDK 9.0.319 was used; version remains 0.20.16. All nine protected firmware/version/UF2/ELF/package-manifest files remain byte-identical, so current board memory figures are unchanged. No physical device was opened or written for this text edit. Evidence and delivery hashes are in `build/virtual-rolling-wording/`; both distribution EXEs are updated and existing release ZIPs are unchanged.
+
+## 2026-11-03 — Disabled checkbox background follow-up (0.20.16 GUI)
+
+The previous correction was incomplete: the same artifact was reproduced in the running application using the user's sequence, startup → Mouse UDLR settings → saved Trackball Hold → Paddle → Button clicks. The disabled checkbox draws its own text and glyph, but its inherited `ControlStyles.Opaque` means WinForms does not call `OnPaintBackground`. Its custom path therefore also has to paint the background. Leaving it untouched retained unrelated pixels from a reused paint buffer, including on the first display of the Paddle tab. The disabled path now fills `ClientRectangle` with `BackColor` before drawing the glyph and text; the earlier translation and clipping corrections remain in place.
+
+- Corrected the regression to respect each control's actual Opaque style: only non-opaque controls receive `OnPaintBackground`. Full and partial buffers start with different stale colors rather than a clean background. The previous EXE's source fails the first Japanese 96-DPI checkbox comparison with **1,721 different pixels**. This is retained as pre-fix evidence, not counted as a passing result.
+- The corrected normal and UDLR applications pass **36,816 checks in eight suites**: Mouse UDLR **9,076 / 9,084 per language** respectively, and **124 embedded-firmware/update checks** in each variant/language combination. All **384 full-versus-partial paint comparisons** have zero differing pixels. Coverage includes saved/newly selected Hold, checked/unchecked states, both buffer offsets, Japanese/English and simulated 96/144/192-DPI transitions. These checks do not claim physical multi-monitor testing.
+- **Live-window verification:** the previously delivered application reproduced the visible artifact. The corrected normal EXE was then launched against the already-connected board, opened with its saved Hold mode, and switched to Paddle with Button clicks selected. The actual on-screen capture `live-after.png` shows the Reverse rotation caption and disabled labels without the overlap. Settings were read for this verification; the dialog was cancelled and the application closed without saving, resetting or flashing the board.
+- Both GUI builds use the existing .NET SDK **9.0.319** and retain version **0.20.16**. The nine firmware/version/UF2/ELF/package-manifest files are byte-identical, so board memory usage and remaining capacity below are unchanged. This drawing-only follow-up does not require a firmware update.
+
+Evidence, prior source/EXEs, final suite reports, the live screenshot and delivery hashes are in `build/disabled-checkbox-background/`. The corrected applications are `dist/ControllerBridge.exe` and `test/udlr/dist/ControllerBridgeUdlrTest.exe`; existing release ZIPs are unchanged.
+
+## 2026-11-03 — Disabled Mouse UDLR partial repaint (0.20.16 GUI)
+
+**Follow-up:** This first correction was incomplete. The user reproduced the same artifact in the running application. Its test pre-painted the background and therefore missed the Opaque checkbox background contract; see the follow-up entry above.
+
+Fixed text ghosts around the disabled Reverse rotation checkbox after opening Mouse UDLR settings, selecting Trackball Hold, switching to Paddle, and selecting Button clicks. The disabled checkbox and labels now preserve the Graphics translation and clipping when TextRenderer obtains its native drawing context. Their positions, enabled states, values and saved settings are unchanged.
+
+- The new regression reproduces the reported navigation with Hold either selected during the session or already saved. Before the fix, its first Japanese 96-DPI partial-buffer repaint differed from a full repaint by **862 pixels**, and the check failed as expected. With the fix, all **384 partial-repaint comparisons** are pixel-identical to full repainting: checkbox checked/unchecked states and every disabled rolling label, vertical/horizontal buffer offsets, 96/144/192 DPI, Japanese/English, and normal/UDLR builds. DPI changes are simulated with the existing native-message helper; these are deterministic rendering checks rather than physical multi-monitor trials.
+- **36,816 checks pass** across eight focused suites: Mouse UDLR **9,076 per language** for the normal GUI and **9,084 per language** for UDLR, plus **124 embedded-firmware/update checks** for each of the four variant/language combinations. Coverage retains mode changes, save/readback/cancel/failure behavior and existing layout checks. Checkboxes are now included in bounds and preferred-size layout validation. Final Japanese 100% and English 200% captures were visually inspected.
+- Both GUI variants were published with the existing .NET SDK 9.0.319. The firmware version remains 0.20.16. All nine tracked version/UF2/ELF/manifest files are hash-identical before and after the GUI build; embedded-firmware validation passes for both variants. Board memory usage and remaining capacity are therefore unchanged. Firmware C checks were not rerun for this drawing-only correction. No physical board was opened, reset or written.
+
+Evidence, suite results, partial-repaint images, prior source/EXEs and delivery hashes are in `build/disabled-mode-paint/`. Earlier release ZIPs remain unchanged; the corrected applications are `dist/ControllerBridge.exe` and `test/udlr/dist/ControllerBridgeUdlrTest.exe`.
+
 ## 2026-11-02 — Configurable paddle rotation step (0.20.16)
 
 Paddle Virtual Rolling now selects 5°, 10°, 15°, 20°, 30°, 40°, 45°, 60° or 90° from a drop-down list. The default remains 30°. Every choice divides 360°; the endpoints give 72 and four positions. A changed step aligns the retained angle to the nearest new position and clears the residual on the next nonzero input. Ordinary stop/resume and other option edits preserve angle and residual. The fixed layout and unified enabled-state path retain all inactive parameters in place.
@@ -390,88 +429,26 @@ The initial client height increased from 1000 to 1100 (width remains 1290), and 
 
 The LED/settings suite was rerun on the final executable: 162 checks passed in each language. The screenshots and measurements use the current 96-DPI desktop; they do not establish fit on every smaller working area or display scaling. No hardware was written; current 0.19.0 memory figures are listed below.
 
-## Build and software checks
+## Product build and local verification
 
-The current 0.19.0 executable and firmware were rebuilt using the installed toolchains. The LED preview remains fixed at gamma 4.0, with synchronized six-digit RGB entry accepting an optional leading `#`.
+Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`. The normal GUI contains no self-test, screenshot, synthetic-preview or hardware-test command-line entry points. It accepts `--language ja` or `--language en` to select its interface language.
 
-| Check | Result |
-|---|---|
-| Normal firmware Release build | Passed with the existing Pico SDK 2.1.1 and Arm GCC 14.2.1 |
-| Windows self-contained publish | Passed with the existing .NET 9 SDK; output `ControllerBridge.exe` |
-| LED setting UI and persistence | 162 checks passed in Japanese and English; fixed preview curve, native hex paste with an optional # prefix, bidirectional synchronization, invalid-code rejection, exact RGB, default/off, draft/save/cancel, duplicate, reorder, JSON, and layout |
-| LED output driver | 45 checks passed using the real driver with simulated PIO/time |
-| GUI self-test | 134 checks passed in Japanese and English |
-| Firmware workflow, discovery and dialogs | 124 checks passed in Japanese and English, using simulated identities/devices, including cancellable BOOT waiting and final confirmation after detection |
-| Connection UI and automatic guidance | 46 checks passed in Japanese and English, including silent disconnected startup, unsupported status and guidance after an observed disconnect |
-| Factory-state board with real USB discovery | 16 read-only checks passed in each language; `UnknownFirmware`, startup BOOT wait and background arrival after simulated absence, with only Cancel and stable retries after each cancellation |
-| Previous disconnected startup with real USB discovery | 3 read-only checks passed in each language; `NotDetected`, zero guides, and three background retries over 6.8 seconds |
-| Previous 0.17.1 attached older bridge startup | 7 read-only checks passed; `UnknownFirmware` detected, one guide, three retries over 6.8 seconds after declining |
-| Previous 0.17.1 output tabs and profile menu | 16 and 23 checks respectively passed in each language |
-| Previous 0.17.1 read-only device inspection | Connected HID bridge and its USB location identified; old firmware did not support command 47 |
-| Previous 0.16.0 axis-dialog verification | 64 English checks passed; implementation unchanged |
-| Controller arrival UI | 42 checks passed in each language |
-| Guarded registration runtime | 40 deterministic C checks passed |
-| Current C storage/runtime/LED verification | 12,959 deterministic checks passed, including the new registration checks, 74 profile-output/color checks and 45 LED-driver checks |
-| Previous 0.16.0 diagnostic CLI verification | 16 checks passed; implementation unchanged |
+Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-LED checks verify exact RGB888 wire offsets and unchanged profile/bank sizes, default versus explicit black, full 255 values, canonical default reset, draft isolation, save, duplication, reorder, individual JSON and whole-bank backups. The real C driver is run against simulated PIO writes and time: checks cover the RGB wire order inferred from the user's physical observation, MSB-first 24-bit PIO setup, separate red/green/blue at both full and low levels, unequal channel values, diagnostic primary colors and logical RGB telemetry, unchanged-color suppression, changing one custom color to another, full FIFO retry, default/white/off, save success/failure, profile-number flashes, error recovery, host waiting, disconnect, and diagnostic override. Profile runtime tests exercise persisted colors through selection, BOOT/shortcut cycling, reload, reorder and default reset. These checks establish software values and state transitions; the user reported the physical red/green reversal in 0.18.0. The corrected 0.18.1 emission and Flash writes have not been physically verified by the agent. See the [wire-order evidence](status-led.md#wire-order-and-physical-observation).
-
-The preview update checks known gamma-4.0 reference points, monotonicity over the 8-bit domain, exact black, native paste of `000004`, `#000004` and mixed-case codes, prefix removal with caret preservation, spinner/code synchronization, malformed/incomplete/duplicate-prefix/embedded-prefix/overlong strings, recovery by editing a spinner, default mode, OK/cancel/reopen behavior, and unchanged profile bytes and dirty state. No per-PC preview preference is accessed. These checks validate the software mapping, not physical LED-to-monitor brightness agreement.
-
-The input-arrival, connection UI, firmware workflow, LED/settings and general GUI self-tests were run on the 0.19.0 executable in both languages. The attached-device observations below are retained from 0.17.1; the disconnected real USB discovery check was repeated with 0.19.0. The earlier LED dialog visual inspection remains applicable to its unchanged layout.
-
-The earlier icon generation check decoded all nine generated ICO sizes and compared its 64-pixel frame to the PNG. For this release, the separately supplied PNG and ICO are preserved byte for byte, and the icon extracted from the EXE matches the supplied ICO pixel for pixel. The main window and LED dialog captures show the icon in their title bars. Taskbar and Explorer cache refresh were not separately exercised.
-
-The updater checks exercise exact same-version exit, lower/higher/prerelease mismatches, immediate manual BOOT waiting, final confirmation only after detection, cancellation during waiting or at the detection boundary, declining confirmation, failure at probe/BOOT/write/verification, and post-write version mismatch. They validate the actual embedded package checksum, UF2 family/address/block limits, identity decoding, RP2350 disk markers, and ambiguity rejection. Dialog checks cover text fit, Cancel-only waiting, closing the wait, default No at final confirmation, closing confirmations, blocking closure while writing, and final results. Japanese and English screenshots were visually inspected.
-
-Connection checks cover no supported interface, missing version support, lower/higher versions, and transport errors. Across three repeated attempts in each settled state, enabled changes, text changes, invalidations, layout events, and editor rebindings were all zero, with no repeated guide. They also exercise preserving edits made during discovery, overlapping attempt suppression, foreground-operation priority, modal-editor deferral, stable empty-input host retries, and one final live-label update per input batch. Known-version mismatch and factory/other-software states are simulated; they have not been physically flashed for this verification.
-
-The attached physical HID bridge was independently identified as `UnknownFirmware`, rather than treating failure to discover any device as a hardware test. Its version-query response is unavailable. The real automatic BOOT guide was captured and declined; over the following 6.8 seconds, three background retries caused zero enabled/text changes, invalidations, layouts, editor rebindings, or additional guides. These counters establish that the application did not request periodic UI changes in this scenario; they are not a video/frame-timing measurement of the display compositor.
-
-Read-only inspection successfully located the connected bridge's USB parent and location path and received an unsupported-command response for firmware version query. It did not reboot the board or change any firmware, profile or setting. BOOT drive mapping, actual UF2 transfer, physical disconnection timing, and the full automatic return to the HID application have not yet been exercised on hardware. Success in simulated tests is not presented as a hardware flash test.
-
-Backup checks cover current-format round trips, rejection of previous JSON versions and unrelated product identifiers, checksums, exact bank bytes, identity, and atomic replacement. Binary and JSON profiles from versions 1-4 are rejected without conversion.
-
-The C checks include 39 checks of the actual storage implementation with a simulated Flash array: old header rejection, current writes and reloads, CRC failures, unused slots, and host-pause failures. Runtime checks confirm 16 unused slots at startup, with no automatically registered controller. Profile and bank tests cover new saves, reloads, selection persistence, and failed writes. These are host-side checks; physical Flash persistence and registration after installation have not been exercised on a board.
-
-Profile checks cover stored numbered names, copying a copy, ordering, UTF-8 truncation, name width, the row-specific context menu, JSON round trips, duplicate names and IDs, unsaved import, untouched other slots, and invalid/oversized files. These checks use preview data and do not write a physical device.
-
-The firmware dialog screenshots are generated from the current executable and visually inspected. The analog-dialog image and its checks are retained from 0.16.0; axis input was synthetic through the normal notification path and does not establish physical stick calibration. The standard file dialogs were not manually exercised in this verification.
-
-The GUI contains its own diagnostic entry points, so the following checks run from a fresh build. Each writes its results to the given output directory.
-
-```powershell
-.\tools\build-diagnostic.ps1 -Target ControllerBridge
-.\tools\build-configurator.ps1 -Restore
-.\dist\ControllerBridge.exe --self-test captures/gui-check --language en
-.\dist\ControllerBridge.exe --check-led-rgb captures/led-check --language en
-.\dist\ControllerBridge.exe --check-controller-arrival captures/arrival-check --language en
-.\dist\ControllerBridge.exe --check-profile-menu captures/profile-check --language en
-.\dist\ControllerBridge.exe --check-axis-dialog captures/axis-check --language en
-.\dist\ControllerBridge.exe --check-firmware-update captures/firmware-check --language en
-.\dist\ControllerBridge.exe --check-connection-ui captures/connection-check --language en
-.\dist\ControllerBridge.exe --check-startup-readonly captures/startup-check --language ja
-.\dist\ControllerBridge.exe --inspect-firmware captures/firmware-readonly.json
-.\dist\ControllerBridge.exe --check-input-log captures/input-log --language ja
-.\dist\ControllerBridge.exe --check-input-log-paint captures/input-log-paint --language ja
-.\dist\ControllerBridge.exe --check-axis-dialog captures/axis-dialog --language ja
-.\dist\ControllerBridge.exe --check-button-shift captures/shift --language ja
-```
-
-No SDK/runtime is installed or updated by these scripts. The target framework remains `net9.0-windows`. The board has not been flashed by this change. Use the new **Firmware update** workflow to install the embedded firmware. Settings written by 0.16.0 remain supported; older Flash records are ignored.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the firmware remains 0.20.16. Device settings and firmware were not written during this work.
 
 ## Current normal-build memory
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 108,920; persistent storage 49,152 | 1,939,080 |
-| SRAM, 532,480 bytes | Static data 153,472; two stacks 8,192 | 370,816 |
+| Flash, 2,097,152 bytes | Code/initial values 109,040; persistent storage 49,152 | 1,938,960 |
+| SRAM, 532,480 bytes | Static data 153,736; two stacks 8,192 | 370,552 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 144 | 3,888 |
 
-Static SRAM consists of vector table 272, initialized data 35,768, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 218,112 bytes.
+Static SRAM consists of vector table 272, initialized data 36,032, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 218,112 bytes.
 
-These figures were read from the final 0.20.16 ELF section tables. Reserved Flash remains 49,152 bytes. Common settings use 208 bytes, leaving 3,888; profile/bank/measurement sizes remain 848/13,908/3,784 bytes. Normal UF2 is 218,112 bytes. The optional UDLR build uses Flash 108,504 + reserved 49,152 (remaining 1,939,496), and SRAM 153,540 + stacks 8,192 (remaining 370,748); its UF2 is 217,088 bytes.
+These figures were read from the normal 0.20.16 ELF rebuilt after separating development tools. Reserved Flash remains 49,152 bytes. Common settings use 208 bytes, leaving 3,888; profile/bank/measurement sizes remain 848/13,908/3,784 bytes. Normal UF2 is 218,112 bytes. The local UDLR workspace build uses Flash 108,504 + reserved 49,152 (remaining 1,939,496), and SRAM 153,540 + stacks 8,192 (remaining 370,748); its UF2 is 217,088 bytes. UDLR sources and artifacts are local-only under `test`.
 
 These figures include the configurable rotation-step firmware. Button-page transitions use runtime state only; they do not write Flash. Both pages share all four axis settings. The GUI editor and test image buffers allocate PC memory, outside the board figures above.

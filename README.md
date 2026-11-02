@@ -28,6 +28,8 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 **Current development release: firmware 0.20.16 and Windows configurator 0.20.16.** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
+**GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
+
 Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle pointer gain **1.0–10.0× (default 1.0)**, in 0.1 steps. Saved values are unchanged. The **Pointer gain (×)** fields remain editable while conversion is enabled. In **Mouse + Gamepad**, conversion adds gamepad output (clicks, held controls or paddle Virtual Rolling) while both pointer sources continue moving the mouse. No physical D-pad input or assignment is required. The original trackball click mode is now named **Virtual Rolling**; the new **Hold** mode is described below. Button-click conversion uses separate, hidden device-wide parameters, initially **6.0× for the trackball and 1.5× for the paddle**, stored independently of profile pointer gain. Enable **Convert to ↑↓←→** for the trackball, or **Enable conversion** for the paddle. In its default **Button clicks** mode, the paddle follows its X/Y output axis. Each signed source sum emits one press/release pair at the configured threshold (initially ±64), then clears and discards excess. **Mouse UDLR settings**, immediately right of **Profile switching...**, edits the device-wide **Movement threshold** (default **64 pt**, range **1–256**), **Hold time** (default **30 ms**, range **1–512**) and **Wait time** (default **20 ms**, range **1–512**). The **Trackball** and **Paddle** tabs each provide four drop-down lists in a D-pad arrangement, selecting independent Switch-side outputs for their movement directions. Their defaults are **↑ / ↓ / ← / →** respectively. Choices include all four directions and 14 Switch buttons, with no analog axes or Unassigned entry. Choosing A for the upper list makes upward movement send A. **Reset to defaults** restores only the four assignments on the displayed tab, retaining the other tab and all numeric values. Existing shared assignments are copied to both sources when upgrading from 0.20.12. Save writes the shared numeric settings, both source maps, both source modes and their parameters together and verifies them by reading back; all profiles share them. Hold time controls the pressed phase, and the independent wait time controls the released interval before the next click. Each phase starts at its corresponding successful USB completion. The dialog shows units beside the spinners without range labels. Cursor gains remain hidden. These defaults apply to newly initialized settings. Valid saved durations, including 16/16 ms, are retained. See [movement conversion](docs/configurator-guide.md#movement-to-d-pad).
 
 **Trackball Hold** is available in **Mouse UDLR settings → Trackball → Mode**. Each valid movement report holds its assigned output while that axis's absolute movement is at least the dedicated **Movement threshold** (default **1 pt**, integer **1–127**). Zero or any subthreshold movement releases it; a sign reversal releases the old direction and holds the opposite one only if it meets the threshold. X/Y are independent, including diagonal holds. Existing four-direction assignments are retained in both modes. Hold uses raw per-report movement with profile X/Y inversion, without accumulation or gain scaling; the click threshold/hold/wait fields stay visible but disabled while this mode is displayed, retaining their values. Inactive parameters in either source tab are greyed out in place. Initial opening, tab/mode changes and save retries use the same enabled-state rules, so the tab and lower controls do not jump or clip. Upgrading preserves the old click behavior as Trackball Virtual Rolling. See [Hold setup and idle release](docs/configurator-guide.md#trackball-hold).
@@ -85,7 +87,7 @@ Internal input processing refers to the bridge's work between receiving input an
 
 ## Documentation and compatibility
 
-Start with the [user guide](docs/configurator-guide.md). The [documentation index](docs/README.md) also links the current storage/protocol reference, GPIO porting instructions, LED behavior, diagnostics, compatibility limits, and verification results.
+Start with the [user guide](docs/configurator-guide.md). The [documentation index](docs/README.md) also links the current storage/protocol reference, GPIO porting instructions, LED behavior, compatibility limits, and verification results.
 
 The standard input path supports one directly connected Full Speed device, four HID interfaces, eight IN endpoints, 64-byte input packets, and 256 observed fields. Hubs, Bluetooth, Low Speed/High Speed, HID array inputs, Xbox One, and arbitrary vendor initialization are outside the supported scope.
 
@@ -102,32 +104,20 @@ EGRET controls, X68000 Z JOYCARD controls, and wired M30 Switch-compatible input
 | `gui/ControllerBridge` | ControllerBridge WinForms application |
 | `boards` | Board definitions; see the [GPIO guide](docs/gpio-assignment.md) for application pin constants |
 | `hardware/case` | Printable case STL files and their CC BY 4.0 attribution |
-| `apps/egret_diagnostic` | Separate input-only USB CDC diagnostic target |
-| `tools` | Build scripts and local diagnostic tools |
+| `tools` | Product build scripts |
 
-Core 1 handles input; core 0 handles mapping and output. The normal bridge uses vendored Pico-PIO-USB for input and this project's native USB implementation for output. TinyUSB is used only by the separate CDC diagnostic target.
+Core 1 handles input; core 0 handles mapping and output. The normal bridge uses vendored Pico-PIO-USB for input and this project's native USB implementation for output.
 
-## Build and verify
+## Build
 
 Use the existing pinned Pico SDK 2.1.1, Arm GCC 14.2.1, and .NET 9 SDK. The GUI targets `net9.0-windows`. Build scripts check dependencies and do not install, upgrade, or change system toolchains.
 
 ```powershell
-.\tools\build-diagnostic.ps1 -Target ControllerBridge
+.\tools\build-firmware.ps1
 .\tools\build-configurator.ps1 -Restore
-.\dist\ControllerBridge.exe --self-test captures/gui-check --language en
-.\dist\ControllerBridge.exe --check-profile-menu captures/profile-check --language en
-.\dist\ControllerBridge.exe --check-axis-dialog captures/axis-check --language en
-.\dist\ControllerBridge.exe --check-button-shift captures/shift-check --language en
-.\dist\ControllerBridge.exe --check-led-rgb captures/led-check --language en
-.\dist\ControllerBridge.exe --check-firmware-update captures/firmware-check --language en
-.\dist\ControllerBridge.exe --check-mouse-udlr-settings captures/mouse-udlr-check --language en
 ```
 
-The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation. Developer previews accept `--preview --language en` or `--preview --language ja`.
-
-The 0.20.16 implementation passes **50,830 deterministic C checks** and **32,868 GUI checks** across 20 Japanese/English suites (**16,426 normal**, **16,442 test**). Coverage includes all nine rotation steps, full turns, unchanged 30° outputs, 90° cardinal directions, step changes, storage migration, guarded saves/readback, fixed greyed-out controls and 100/150/200% layouts. Both firmware and GUI variants were rebuilt. No physical board was accessed; see [verification and its limits](docs/verification.md).
-
-The U/D/L/R USB keyboard test is kept in the source and compiled only by `tools/build-udlr-test.ps1`. Normal builds omit its dialog, button, keyboard descriptor and command 50. See [test build and usage](docs/udlr-test.md).
+The configurator build also builds the normal firmware and embeds that exact UF2 with its SHA-256 manifest. Outputs are `build/ControllerBridge.uf2`, `dist/ControllerBridge.exe`, and a separate `dist/ControllerBridge.uf2` for manual recovery. Omit `-Restore` when GUI dependencies are already restored. Firmware tools default to `%USERPROFILE%\.pico-sdk`; use `-PicoSdkPath` and `-PicoToolsRoot` for another existing installation.
 
 ## Memory budget
 
@@ -135,13 +125,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 108,920; persistent storage 49,152 | 1,939,080 |
-| SRAM, 532,480 bytes | Static data 153,472; two stacks 8,192 | 370,816 |
+| Flash, 2,097,152 bytes | Code/initial values 109,040; persistent storage 49,152 | 1,938,960 |
+| SRAM, 532,480 bytes | Static data 153,736; two stacks 8,192 | 370,552 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 144 | 3,888 |
 
-Static SRAM consists of vector table 272, initialized data 35,768, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 218,112 bytes.
+Static SRAM consists of vector table 272, initialized data 36,032, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 218,112 bytes.
 
 ## Repository contents and license
 

@@ -69,15 +69,11 @@ typedef struct { uint32_t last_motion_us;uint16_t angle10;int16_t fraction10;uin
 _Static_assert(sizeof(um_rolling_state)==12,"rolling runtime allocation");
 void um_rolling_input(um_rolling_state *state,int32_t wheel,uint32_t time_us,const udk_settings *settings);
 void um_rolling_overlay(um_rolling_state *state,uint32_t now_us,uint32_t idle_us,const udk_settings *settings,sw_report *report);
-// Diagnostic constant-speed vector; ignores gain and paddle, keeps direction.
-void um_fixed_delta(const up_mouse_options *options,int32_t raw_x,int32_t raw_y,unsigned threshold,unsigned amplitude,int32_t *x,int32_t *y);
 void um_push(um_queue *queue,int32_t x,int32_t y,uint8_t buttons,uint32_t time,uint32_t sequence,bool source_input);
 void um_next(const um_queue *queue,um_flight *flight);
 // Report protocol can carry a whole high-gain delta without 8-bit splitting.
 // The legacy wrapper above deliberately keeps its 127-count limit.
 void um_next_wide(const um_queue *queue,um_flight *flight,bool wide);
-// Diagnostic packets must expose one source vector without merging magnitudes.
-void um_next_single(const um_queue *queue,um_flight *flight,bool wide);
 // Commit only on host ACK. Failed transfers are retried by the caller, or flushed
 // on disconnect/reset. An obsolete flight must never consume a new epoch's data.
 void um_ack(um_queue *queue,const um_flight *flight);

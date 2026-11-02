@@ -141,7 +141,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly ComboBox rollingStep = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90, Anchor = AnchorStyles.Right,
         AccessibleName = L.T("回転刻み", "Rotation step") };
     private readonly ComboBox rollingStick = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160, Anchor = AnchorStyles.Left,
-        AccessibleName = L.T("出力先スティック", "Output stick") };
+        AccessibleName = L.T("出力先アナログスティック", "Output analog stick") };
     private readonly CheckBox rollingInvert = new ModeCheckBox() { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true, Anchor = AnchorStyles.Left };
     private TableLayoutPanel paddleDirections = null!, rollingPanel = null!;
     private readonly Label status = ModeText("", 9);
@@ -251,11 +251,11 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
                 stepLabel.Anchor = stepUnits.Anchor = AnchorStyles.Left; stepUnits.Margin = new(0, 3, 0, 3); rollingStep.Margin = new(6, 6, 0, 6);
                 rollingStep.Items.AddRange(RollingSteps.Cast<object>().ToArray()); rollingStep.SelectedItem = (int)current.RollingStepDeg;
                 rollingPanel.Controls.Add(stepLabel, 0, 1); rollingPanel.Controls.Add(rollingStep, 1, 1); rollingPanel.Controls.Add(stepUnits, 2, 1);
-                Label stickLabel = ModeText(L.T("出力先スティック", "Output stick")); stickLabel.Anchor = AnchorStyles.Left;
+                Label stickLabel = ModeText(L.T("出力先アナログスティック", "Output analog stick")); stickLabel.Anchor = AnchorStyles.Left;
                 rollingStick.Items.AddRange([L.T("右スティック", "Right stick"), L.T("左スティック", "Left stick")]);
                 rollingStick.Margin = new(6, 6, 0, 6); rollingPanel.Controls.Add(stickLabel, 0, 2); rollingPanel.Controls.Add(rollingStick, 1, 2); rollingPanel.SetColumnSpan(rollingStick, 2);
                 rollingInvert.Margin = new(4, 8, 4, 8); rollingPanel.Controls.Add(rollingInvert, 0, 3); rollingPanel.SetColumnSpan(rollingInvert, 3);
-                Label hint = ModeText(L.T("回転中は最大、停止時は中央。角度は保持します。", "Full tilt while turning; centered when stopped. Angle retained."), 9);
+                Label hint = ModeText(L.T("パドルの仮想角度をアナログ軸の傾きに変換します。", "Converts the paddle's virtual angle into analog-axis tilt."), 9);
                 hint.ForeColor = Ui.Muted; hint.MaximumSize = new(460, 0); rollingPanel.Controls.Add(hint, 0, 4); rollingPanel.SetColumnSpan(hint, 3);
                 host.Controls.Add(rollingPanel, 0, 2);
                 rollingGain.Value = current.RollingGain10 / 10m; rollingStick.SelectedIndex = current.RollingLeft ? 1 : 0; rollingInvert.Checked = current.RollingInvert;
@@ -284,6 +284,9 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         UpdateModeControls();
     }
     private static readonly Color DisabledText = Color.FromArgb(0xad, 0xad, 0xad);
+    // Partial paint buffers have a translated origin and a restricted clip.
+    // Keep both when TextRenderer switches from Graphics to its native HDC.
+    private const TextFormatFlags DisabledGraphicsFlags = TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform;
     private static Label ModeText(string text, float size = 10, bool bold = false) => new ModeLabel
     {
         Text = text, AutoSize = true, ForeColor = Ui.Ink, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false,
@@ -298,7 +301,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             if (Enabled) { base.OnPaint(e); return; }
             Rectangle text = Rectangle.FromLTRB(Padding.Left, Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
             TextRenderer.DrawText(e.Graphics, Text, Font, text, DisabledText,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
         }
     }
     private sealed class ModeCheckBox : CheckBox
@@ -306,13 +309,18 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         protected override void OnPaint(PaintEventArgs e)
         {
             if (Enabled) { base.OnPaint(e); return; }
+            // ButtonBase is Opaque: WinForms skips OnPaintBackground. Unlike
+            // the normal adapter, this disabled path must clear its own face
+            // before drawing into a reused buffer (including the first tab show).
+            using SolidBrush background = new(BackColor);
+            e.Graphics.FillRectangle(background, ClientRectangle);
             var state = Checked ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedDisabled : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedDisabled;
             Size glyph = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
             Point location = new(Padding.Left, (Height - glyph.Height) / 2);
             CheckBoxRenderer.DrawCheckBox(e.Graphics, location, state);
             Rectangle text = Rectangle.FromLTRB(location.X + glyph.Width + LogicalToDeviceUnits(3), Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
             TextRenderer.DrawText(e.Graphics, Text, Font, text, DisabledText,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
         }
     }
     private void UpdateModeControls()
@@ -371,13 +379,13 @@ internal sealed partial class MainForm
 {
     private async Task ConfigureMouseUdlr()
     {
-        if (working || !preview && (bridge is null || caps?.SupportsRollingStep != true)) return;
+        if (working || bridge is null || caps?.SupportsRollingStep != true) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {
-            MouseUdlrSettingsClient? client = bridge is null ? null : new(bridge.RawAsync);
-            MouseUdlrSettings current = client is null ? MouseUdlrSettings.Defaults : await client.ReadAsync();
-            using MouseUdlrSettingsDialog dialog = new(current, client is null ? (_, next) => Task.FromResult(next) : client.SaveAsync);
+            MouseUdlrSettingsClient client = new(bridge.RawAsync);
+            MouseUdlrSettings current = await client.ReadAsync();
+            using MouseUdlrSettingsDialog dialog = new(current, client.SaveAsync);
             if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Saved)
                 SetText(saved, L.T("マウス UDLR設定を本体に保存しました。", "Saved Mouse UDLR settings to the device.") +
                     (dirty.Any(x => x) ? L.T(" プロファイルの未保存の編集は残っています。", " Profile edits are still unsaved.") : ""));

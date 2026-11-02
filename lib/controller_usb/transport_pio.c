@@ -12,9 +12,9 @@ static uint32_t next_frame;
 static ut_metrics metrics;
 static uint32_t received_us[PIO_USB_EP_POOL_CNT];
 
-// Called by the build-time instrumented vendor source, after RX/ACK finishes.
-// These are actual decoded bus responses, not inferred from report counts.
-void __not_in_flash_func(uc_pio_trace_in)(uint8_t address, uint8_t endpoint,
+// Called after RX/ACK finishes. The receive timestamp feeds normal input timing;
+// bus-response counters also provide the device's operational status.
+void __not_in_flash_func(uc_pio_input_complete)(uint8_t address, uint8_t endpoint,
                                        uint8_t pid, int length, uint8_t expected) {
     if (!(endpoint & 127) || address != 1) return;
     uint32_t now = time_us_32();

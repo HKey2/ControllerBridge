@@ -11,23 +11,12 @@
 #include "controller_mouse.h"
 #include "status_led.h"
 #include "firmware_version.h"
-#ifdef BRIDGE_UDLR_TEST
-#include "udlr_test.h"
-#endif
-#ifdef BRIDGE_USB_TRACE
-#include "usb_control_trace.h"
-#endif
 #include <stdatomic.h>
 #include <string.h>
 
 #define EVENT_COUNT 128
 enum { CMD_INFO=1,CMD_GET_CONFIG,CMD_SET_CONFIG,CMD_SAVE_CONFIG,CMD_START,CMD_STOP,
-       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_MOUSE_PROBE=39,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53 };
-#ifdef BRIDGE_MOUSE_FIXED_PROBE
-enum { MOUSE_FIXED_PROBE=1, MOUSE_FIXED_AMPLITUDE=BRIDGE_MOUSE_FIXED_AMPLITUDE };
-#else
-enum { MOUSE_FIXED_PROBE=0, MOUSE_FIXED_AMPLITUDE=0 };
-#endif
+       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53 };
 _Static_assert(UPR_CMD_PROFILE_ID>CMD_LED,"Profile identity command must not overlap application commands");
 enum { MEASURE_IDLE,MEASURE_STARTING,MEASURE_RUNNING,MEASURE_STOPPING };
 static uc_event events[EVENT_COUNT];
@@ -46,10 +35,6 @@ static uint32_t mouse_flushes_begin,mouse_input_x_begin,mouse_input_y_begin,mous
 static uint32_t last_mouse_ack_sequence,last_mouse_armed_sequence,last_mouse_poll_ack;
 static uint8_t output_configuration[59];
 static bool input_ready;
-#ifdef BRIDGE_UDLR_TEST
-static bool udlr_enabled;
-static uint32_t udlr_heartbeat;
-#endif
 static uc_statistics host_stats;
 static ub_queue outgoing;
 static ub_direction_pulse direction_pulse;
@@ -120,14 +105,12 @@ static void input_complete(uint32_t cookie,uint32_t time_us,bool acked,void *con
     ack_cookie=cookie; ack_time=time_us; ack_success=acked;
     atomic_store_explicit(&ack_pending,true,memory_order_release);
 }
-#ifndef BRIDGE_UDLR_TEST
 static void mouse_complete(uint32_t cookie,uint32_t time_us,bool acked,void *context) {
     (void)context;
     // A separate mailbox prevents a mouse completion from overwriting a pad ACK.
     mouse_ack_cookie=cookie;mouse_ack_time=time_us;mouse_ack_success=acked;
     atomic_store_explicit(&mouse_ack_pending,true,memory_order_release);
 }
-#endif
 static bool in_window(uint32_t timestamp) {
     return measuring() && (int32_t)(timestamp-measurement.start_us)>=0;
 }
@@ -221,8 +204,7 @@ static void schedule_mouse(void) {
         } else return;
     }
     bool wide=ud_mouse_protocol(combined_mode())==1;
-    if(MOUSE_FIXED_PROBE)um_next_single(&mouse_queue,&mouse_flight,wide);
-    else um_next_wide(&mouse_queue,&mouse_flight,wide);
+    um_next_wide(&mouse_queue,&mouse_flight,wide);
     uint32_t armed;
     uint8_t wire[UM_REPORT_BYTES];um_encode(&mouse_flight.report,wide,wire);
     if(ud_mouse_send(combined_mode(),wide,wire,sizeof(wire),mouse_flight.sequence,&armed)) {
@@ -240,11 +222,7 @@ static void schedule_mouse(void) {
 static void schedule_output(void) {
     if(mouse_mode()) { schedule_mouse();if(!combined_mode())return; }
     if(!ud_ready()) {
-#ifdef BRIDGE_UDLR_TEST
-        if(pad_was_ready) { udlr_enabled=false;reset_output(time_us_32()); }
-#else
         if(pad_was_ready && upr_direction_enabled())reset_output(time_us_32());
-#endif
         pad_was_ready=false;return;
     }
     pad_was_ready=true;
@@ -280,14 +258,7 @@ static void schedule_output(void) {
     flight=next;
     if(flight.direction_key)flight.sequence=++input_sequence;
     uint32_t armed;
-#ifdef BRIDGE_UDLR_TEST
-    uint8_t keyboard[8];uint8_t directions=flight.hold_directions;
-    if(flight.direction_level>=1 && flight.direction_level<=4)directions|=(uint8_t)(1u<<(flight.direction_level-1));
-    udlr_encode_directions(udlr_enabled?directions:0,keyboard);
-    bool sent=ud_send(keyboard,sizeof(keyboard),flight.sequence,&armed);
-#else
     bool sent=ud_send((const uint8_t *)&flight.report,sizeof(flight.report),flight.sequence,&armed);
-#endif
     if(sent) {
         if(from_queue) { ub_frame consumed; ub_queue_pop(&outgoing,&consumed); }
         ub_direction_sent(&direction_pulse,flight.direction_key,flight.sequence);
@@ -316,7 +287,7 @@ static void begin_measurement(uint32_t time_us) {
     mouse_flushes_begin=mouse_queue.flushes;mouse_input_x_begin=mouse_queue.input_x;mouse_input_y_begin=mouse_queue.input_y;
     mouse_acked_x_begin=mouse_queue.acked_x;mouse_acked_y_begin=mouse_queue.acked_y;
     if(combined_mode())measurement.dual.magic=0x314f5544; // DUO1
-    measurement.dual.reserved=MOUSE_FIXED_AMPLITUDE;
+    measurement.dual.reserved=0;
     if(mouse_mode()) {
         measurement.mouse_buttons.magic=0x3154424d; // MBT1
         measurement.mouse_buttons.input_initial=mouse_queue.buttons;
@@ -366,9 +337,6 @@ static void reset_output(uint32_t timestamp) {
     ub_queue_push(&outgoing,&neutral);
 }
 static bool request_profile_output(uint32_t now) {
-#ifdef BRIDGE_UDLR_TEST
-    (void)now;output_change_requested=false;return false;
-#else
     uint8_t desired=upr_output_options();
     if(phase==MEASURE_IDLE && !output_disconnected && (desired&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
         // Button routing does not change USB descriptors. Release the old
@@ -378,7 +346,6 @@ static bool request_profile_output(uint32_t now) {
     }
     output_change_requested=true;output_change_at=now+250000;
     return true;
-#endif
 }
 static bool boot_controls_idle;
 static uint32_t switch_inputs,last_switch_keys;
@@ -440,9 +407,6 @@ static void handle_host_event(const uc_event *e) {
         bool mapped=upr_apply(e,time_us_32(),ud_ready(),&frame.report);
         int32_t x=0,y=0;um_key_events keys={0};
         bool keys_ready=ud_ready() && (!mouse_mode() || combined_mode()) && !output_disconnected;
-#ifdef BRIDGE_UDLR_TEST
-        keys_ready=keys_ready && udlr_enabled;
-#endif
         bool relative=upr_pointing_input(e,keys_ready,&x,&y,&keys);
         frame.hold_directions=upr_hold_directions(e->time_us);
         if(relative && !mapped)upr_tick(time_us_32(),ud_ready(),&frame.report);
@@ -472,9 +436,6 @@ static void handle_host_event(const uc_event *e) {
         }
         memset(last_raw,0,sizeof(last_raw));memcpy(last_raw,e->data,e->length<4?e->length:4);
         if(in_window(frame.received_us))ub_hist_add(&measurement.mapping,time_us_32()-frame.received_us);
-#ifdef BRIDGE_UDLR_TEST
-        sw_neutral(&frame.report); // Only movement-generated letters are emitted.
-#endif
         bool changed=!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8) || outgoing.latest.hold_directions!=frame.hold_directions;
         if(combined_mode()&&measuring())measurement.dual.pad_seen|=frame.report.buttons0|((uint32_t)frame.report.buttons1<<8);
         if(changed && measuring())measurement.counts.input_changes++;
@@ -517,14 +478,10 @@ static void handle_command(void) {
     if(measuring())measurement.counts.diagnostic_commands++;
     switch(local[5]) {
     case CMD_FIRMWARE:
-#if !defined(BRIDGE_USB_TRACE) && !defined(BRIDGE_MOUSE_FIXED_PROBE) && BRIDGE_MOUSE_PACKET_BYTES == 8
         _Static_assert(sizeof(CONTROLLER_FIRMWARE_VERSION)<=24,"Firmware version must fit the USB response");
         memcpy(payload,"CBV1",4); payload[4]=1; payload[5]=1; // schema 1, RP2350-USB-A
         memcpy(payload+8,CONTROLLER_FIRMWARE_VERSION,sizeof(CONTROLLER_FIRMWARE_VERSION));
         memcpy(payload+32,"ControllerBridge",17);
-#else
-        reply[7]=1; // Diagnostic builds are not the bundled production firmware.
-#endif
         break;
     case CMD_INFO: {
         ud_statistics ds; ud_statistics_get(&ds);
@@ -607,26 +564,9 @@ static void handle_command(void) {
         put32(payload+44,(boot_button.idle_tracking?1u:0)|(boot_button.stable?2u:0)|(boot_button.need_release?4u:0));
         put32(payload+48,PB_HOLD_US/1000);put32(payload+52,50);break;
     }
-#ifdef BRIDGE_UDLR_TEST
-    case 50: {
-        // Version 2 intentionally has no threshold setter. Reject old clients.
-        if(memcmp(arg,"UDL2",4) || arg[4]>1 || get32(arg+8)) { reply[7]=1;break; }
-        udlr_enabled=false;reset_output(time_us_32());
-        if(arg[4]) {
-            direction_generated=direction_enqueued=direction_pressed=direction_released=direction_dropped=direction_blocked=0;
-            udlr_enabled=true;udlr_heartbeat=time_us_32();
-        }
-        memcpy(payload,"UTS2",4);payload[4]=2;payload[5]=udlr_enabled;
-        put32(payload+8,upr_direction_threshold());break;
-    }
-#endif
     case CMD_DIRECTION_KEYS: {
         int32_t sums[3];upr_direction_accumulators(sums);
         memcpy(payload,"DKY1",4);payload[4]=1;payload[5]=upr_direction_enabled();
-#ifdef BRIDGE_UDLR_TEST
-        payload[6]=2;payload[7]=udlr_enabled;
-        if(udlr_enabled)udlr_heartbeat=time_us_32();
-#endif
         put32(payload+8,upr_direction_threshold());memcpy(payload+12,sums,sizeof(sums));
         put32(payload+24,direction_generated);put32(payload+28,direction_enqueued);
         put32(payload+32,direction_pressed);put32(payload+36,direction_released);
@@ -676,11 +616,6 @@ static void handle_command(void) {
         memcpy(payload,"MWR1",4);payload[4]=ud_mouse_protocol(combined_mode());payload[5]=UM_REPORT_BYTES;
         payload[6]=mouse_mode();payload[7]=combined_mode();
         put32(payload+8,payload[4]?32767:127);break;
-    case CMD_MOUSE_PROBE:
-        memcpy(payload,"MFP1",4);put32(payload+4,MOUSE_FIXED_PROBE);
-        put32(payload+8,MOUSE_FIXED_PROBE?2:0);put32(payload+12,MOUSE_FIXED_AMPLITUDE);
-        put32(payload+16,MOUSE_FIXED_PROBE?1:0);
-        put32(payload+20,BRIDGE_MOUSE_PACKET_BYTES);break;
     case CMD_APPLY_OUTPUT:
         if(phase!=MEASURE_IDLE) { reply[7]=2;break; }
         if(get32(arg)!=upr_bank_generation() || arg[4]!=upr_active_slot()) { reply[7]=4;break; }
@@ -691,9 +626,6 @@ static void handle_command(void) {
         break;
     default: {
         bool changed=false;
-#ifdef BRIDGE_USB_TRACE
-        if(uct_command(local[5],arg,payload,&reply[7]))break;
-#endif
         if(!upr_command(local[5],arg,payload,&reply[7],phase!=MEASURE_IDLE,&changed))reply[7]=1;
         if(local[5]==20 && !reply[7])put32(payload+44,get32(payload+44)|32u|128u|256u|1024u);
         if(changed) {
@@ -709,27 +641,6 @@ static void handle_command(void) {
     publish_response(reply);
 }
 static void start_usb_output(uint8_t options) {
-#ifdef BRIDGE_UDLR_TEST
-    (void)options;active_output_options=0;udlr_enabled=false;
-    flight_valid=mouse_flight_valid=mouse_was_ready=pad_was_ready=false;
-    atomic_store_explicit(&ack_pending,false,memory_order_release);
-    atomic_store_explicit(&mouse_ack_pending,false,memory_order_release);
-    last_armed_sequence=last_mouse_armed_sequence=last_poll_ack=last_mouse_poll_ack=0;
-    ub_queue_reset(&outgoing);um_init(&mouse_queue);upr_mouse_reset();
-    ub_frame initial={.received_us=time_us_32(),.sequence=++input_sequence};sw_neutral(&initial.report);
-    ub_queue_push(&outgoing,&initial);
-    memcpy(output_configuration,udlr_configuration,sizeof(udlr_configuration));
-    output_configuration[33]=active_output_interval=config.output_interval_ms;
-    const uint8_t neutral[8]={0};
-    ud_options output={.device=udlr_device,.device_length=sizeof(udlr_device),
-        .configuration=output_configuration,.configuration_length=sizeof(udlr_configuration),
-        .report=udlr_report,.report_length=sizeof(udlr_report),
-        .manufacturer="ControllerBridge",.product="ControllerBridge UDLR test",.serial="UDLR-0216",
-        .input_length=8,.initial_input=neutral,
-        .configuration_report=um_feature_descriptor,.configuration_report_length=sizeof(um_feature_descriptor),
-        .get_feature=get_feature,.set_feature=set_feature,.complete=input_complete};
-    ud_init(&output);
-#else
     active_output_options=options;
     flight_valid=mouse_flight_valid=mouse_was_ready=pad_was_ready=false;
     atomic_store_explicit(&ack_pending,false,memory_order_release);
@@ -750,7 +661,7 @@ static void start_usb_output(uint8_t options) {
     // Match the interrupt endpoint reservation to the actual 8-byte input.
     // Switch 2 polled this at 1 ms; the legacy 64-byte reservation gave 8 ms.
     // EP0 remains 64 bytes for descriptors and diagnostic Feature reports.
-    output_configuration[31]=mouse_mode() && !combined_mode()?BRIDGE_MOUSE_PACKET_BYTES:8;
+    output_configuration[31]=8;
     output_configuration[33]=active_output_interval=config.output_interval_ms;
     ud_options output={.device=sw_device_descriptor,.device_length=18,
         .configuration=output_configuration,.configuration_length=34,.report=sw_report_descriptor,.report_length=102,
@@ -761,7 +672,7 @@ static void start_usb_output(uint8_t options) {
         output.secondary_report=um_report_descriptor;output.secondary_report_length=sizeof(um_report_descriptor);
         output.secondary_input_length=sizeof(initial_mouse);output.secondary_initial_input=initial_mouse;
         output.secondary_relative_mouse=true;output.secondary_complete=mouse_complete;
-        output_configuration[56]=BRIDGE_MOUSE_PACKET_BYTES;
+        output_configuration[56]=8;
         output_configuration[58]=active_output_interval;
     } else if(mouse_mode()) {
         output.device=um_device_descriptor;output.report=um_report_descriptor;output.report_length=sizeof(um_report_descriptor);
@@ -770,11 +681,7 @@ static void start_usb_output(uint8_t options) {
         output.manufacturer="ControllerBridge";output.product="ControllerBridge USB Mouse";
         output.input_length=sizeof(initial_mouse);output.initial_input=initial_mouse;output.relative_mouse=true;
     }
-#ifdef BRIDGE_USB_TRACE
-    output.observe_setup=uct_setup;output.observe_event=uct_event;
-#endif
     ud_init(&output);
-#endif
 }
 static void output_change_task(uint32_t now) {
     if(!output_change_requested || phase!=MEASURE_IDLE || (int32_t)(now-output_change_at)<0)return;
@@ -837,9 +744,6 @@ int __not_in_flash_func(main)(void) {
         uint32_t rapid_now=time_us_32();sw_report rapid_report;
         if(upr_tick(rapid_now,ud_ready(),&rapid_report)) {
             ub_frame frame={.report=rapid_report,.received_us=rapid_now,.sequence=++input_sequence,.hold_directions=upr_hold_directions(rapid_now)};
-#ifdef BRIDGE_UDLR_TEST
-            sw_neutral(&frame.report);
-#endif
             if(measuring()&&!combined_mode())measurement.counts.input_changes++;
             if(mouse_mode()) {
                 if(input_ready && mouse_output_ready()) {
@@ -860,9 +764,6 @@ int __not_in_flash_func(main)(void) {
                 ub_queue_push(&outgoing,&frame);
             }
         }
-#ifdef BRIDGE_UDLR_TEST
-        if(udlr_enabled && (uint32_t)(time_us_32()-udlr_heartbeat)>2000000u) { udlr_enabled=false;reset_output(time_us_32()); }
-#endif
         schedule_output(); handle_command();
         uint32_t now=time_us_32();
         boot_button_task(now);

@@ -184,11 +184,7 @@ bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,
     }
     if(!touched)return false;
     if(keys_ready)um_direction_keys(&direction_state,options,dx,dy,wheel,&direction_settings,keys);
-#ifdef BRIDGE_MOUSE_FIXED_PROBE
-    um_fixed_delta(options,dx,dy,2,BRIDGE_MOUSE_FIXED_AMPLITUDE,x,y);
-#else
     um_mix(&mouse_fraction,options,dx,dy,wheel,x,y);
-#endif
     return true;
 }
 bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {

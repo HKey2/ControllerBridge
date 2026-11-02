@@ -59,13 +59,7 @@ The brightness setting is an 8-bit PWM component value, not a measured ratio of 
 
 ## Color diagnostic
 
-Close the GUI and connect USB-C to the PC before running:
-
-```powershell
-python tools/led-test.py --level 1 --out captures/led-colors.json
-```
-
-The tool waits three seconds, then cycles blue, cyan, yellow, green, red, and purple, approximately one second on and one second off each, before restoring automatic state display. It does not save Flash or alter profiles. `--level` accepts 1-32 and `--repeat` accepts 1-3; diagnostic brightness does not change the normal default.
+The firmware exposes the following status/control interface. Diagnostic clients and color-cycling scripts are local development tools and are not included in the product repository.
 
 Feature command 31 accepts operation 0 to read, 1 to show a palette color for one second then remain in diagnostic off mode, 2 to enter diagnostic off mode, and 3 to restore automatic display. Operations 1/2 require operation 3 or a reboot to leave diagnostic override. Display changes are rejected during measurement.
 
