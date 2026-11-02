@@ -2,6 +2,10 @@
 
 ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
 
+[![ControllerBridge in its clear PETG case, with the LED illuminating the lid in a dark setting](docs/images/case/led-dark.jpg)](docs/case.md)
+
+The reference-board case uses a clear PETG lid with a light-diffusing fin. See the [case introduction, sample photos and STL downloads](docs/case.md). It is a remix of [barrenechea's Waveshare RP2350-USB-A Case](https://www.printables.com/model/1261378-waveshare-rp2350-usb-a-case), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
 **Current development release: firmware 0.20.16 and Windows configurator 0.20.16.** The application uses Japanese on Japanese Windows and English otherwise. Repository documentation and screenshots are English; profile names remain as entered.
 
 Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle pointer gain **1.0–10.0× (default 1.0)**, in 0.1 steps. Saved values are unchanged. The **Pointer gain (×)** fields remain editable while conversion is enabled. In **Mouse + Gamepad**, conversion adds gamepad output (clicks, held controls or paddle Virtual Rolling) while both pointer sources continue moving the mouse. No physical D-pad input or assignment is required. The original trackball click mode is now named **Virtual Rolling**; the new **Hold** mode is described below. Button-click conversion uses separate, hidden device-wide parameters, initially **6.0× for the trackball and 1.5× for the paddle**, stored independently of profile pointer gain. Enable **Convert to ↑↓←→** for the trackball, or **Enable conversion** for the paddle. In its default **Button clicks** mode, the paddle follows its X/Y output axis. Each signed source sum emits one press/release pair at the configured threshold (initially ±64), then clears and discards excess. **Mouse UDLR settings**, immediately right of **Profile switching...**, edits the device-wide **Movement threshold** (default **64 pt**, range **1–256**), **Hold time** (default **30 ms**, range **1–512**) and **Wait time** (default **20 ms**, range **1–512**). The **Trackball** and **Paddle** tabs each provide four drop-down lists in a D-pad arrangement, selecting independent Switch-side outputs for their movement directions. Their defaults are **↑ / ↓ / ← / →** respectively. Choices include all four directions and 14 Switch buttons, with no analog axes or Unassigned entry. Choosing A for the upper list makes upward movement send A. **Reset to defaults** restores only the four assignments on the displayed tab, retaining the other tab and all numeric values. Existing shared assignments are copied to both sources when upgrading from 0.20.12. Save writes the shared numeric settings, both source maps, both source modes and their parameters together and verifies them by reading back; all profiles share them. Hold time controls the pressed phase, and the independent wait time controls the released interval before the next click. Each phase starts at its corresponding successful USB completion. The dialog shows units beside the spinners without range labels. Cursor gains remain hidden. These defaults apply to newly initialized settings. Valid saved durations, including 16/16 ms, are retained. See [movement conversion](docs/configurator-guide.md#movement-to-d-pad).
@@ -75,6 +79,7 @@ EGRET controls, X68000 Z JOYCARD controls, and wired M30 Switch-compatible input
 | `apps/egret_switch` | Normal bridge firmware and status LED |
 | `gui/ControllerBridge` | ControllerBridge WinForms application |
 | `boards` | Board definitions; see the [GPIO guide](docs/gpio-assignment.md) for application pin constants |
+| `hardware/case` | Printable case STL files and their CC BY 4.0 attribution |
 | `apps/egret_diagnostic` | Separate input-only USB CDC diagnostic target |
 | `tools` | Build scripts and local diagnostic tools |
 
@@ -120,4 +125,4 @@ Static SRAM consists of vector table 272, initialized data 35,768, and BSS 117,4
 
 Diagnostic output under `captures/`, build outputs, release binaries, and caches are ignored. Pico-PIO-USB is vendored without its Git history and verified against recorded hashes.
 
-Project code is provided under the [BSD 2-Clause License](LICENSE), copyright 2026 HKey2. Third-party code retains its own licenses under `third_party/` and `licenses/`.
+Project code is provided under the [BSD 2-Clause License](LICENSE), copyright 2026 HKey2. Third-party code retains its own licenses under `third_party/` and `licenses/`. The remixed case STL files are separately licensed under [CC BY 4.0](hardware/case/LICENSE.md), with attribution to the original designer, barrenechea.
