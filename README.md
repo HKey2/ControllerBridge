@@ -26,7 +26,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: firmware 0.20.16 and Windows configurator 0.20.16.** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.20.16 - GUI r2 (firmware 0.20.16).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
 **GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
 
