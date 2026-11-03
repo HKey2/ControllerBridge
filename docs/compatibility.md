@@ -13,10 +13,19 @@ The standard hardware is an unmodified Waveshare RP2350-USB-A. Connect one input
 | XE1AJ-USB / Cyber Stick (`17A7:0005`) | Full Speed input, buttons, stick X/Y, and throttle Rz observed; a reference profile was saved, but game-specific analog play remains unverified |
 | Generic variable HID input | Buttons, report IDs, absolute axes, and four/eight-direction hats supported within resource limits; this does not guarantee every product |
 | Wired Xbox 360-format input | Backend implemented; physical input remains unverified |
+| retro freak standard controller (`1345:1030`) | Low Speed (1.5 Mbit/s); unsupported on the unmodified standard board. See the electrical limitation below |
 
 Unsupported scope includes USB hubs, Bluetooth, Low Speed/High Speed devices, HID array input interpretation, Xbox One, and arbitrary vendor-specific initialization.
 
 Resource limits are four HID interfaces, eight IN endpoints, 64-byte input packets, 256 decoded fields, 1,024-byte configuration descriptors, and 2,048-byte HID report descriptors. Inputs exceeding descriptor bounds are rejected instead of silently truncated.
+
+## Low Speed and the unmodified board
+
+The retro freak standard controller (`1345:1030`) enumerates on a PC as a Low Speed HID joystick with two 8-bit absolute axes, ten buttons, and an 8-byte interrupt input endpoint. Its captured descriptors are accepted by the existing HID parser, but that does not establish USB communication through this bridge.
+
+The standard board retains the fixed 1.5 kohm D+ pull-up R13 shown in the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB-A/RP2350-USB-A.pdf). With this Low Speed controller attached, the measured idle state has both D+ and D- high (SE1), instead of D+ low / D- high. A local Low Speed prototype sent valid SETUP and DATA packets at 1.5 Mbit/s, but the controller did not acknowledge them. Selecting Low Speed in firmware does not remove the fixed pull-up or correct the external idle state. The [manufacturer FAQ](https://www.waveshare.com/wiki/RP2350-USB-A) also discusses removing R13 for PIO-USB host hot-plug detection; it does not establish operation of this particular controller after that change.
+
+The project retains its unmodified-board requirement. Low Speed support has therefore **not** been added to the product. Firmware and product sources were restored to 0.20.16 after this investigation; existing Full Speed controllers are not automatically retried at Low Speed. Removing R13 or using another board would require separate physical validation and is outside the current supported setup.
 
 ## Controller-specific behavior
 

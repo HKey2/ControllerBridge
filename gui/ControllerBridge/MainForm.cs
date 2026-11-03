@@ -34,8 +34,8 @@ internal sealed partial class MainForm : Form
     private readonly CheckBox invertY = new() { Text = L.T("Y方向を反転", "Invert Y"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly BufferedTableLayoutPanel pointingTuning;
     private readonly ComboBox paddleAxis = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 88, Anchor = AnchorStyles.Left, AccessibleName = L.T("パドルの出力軸", "Paddle output axis") };
-    private readonly CheckBox trackballKeys = new() { Text = L.T("↑↓←→に変換", "Convert to ↑↓←→"), AutoSize = true, Anchor = AnchorStyles.Left };
-    private readonly CheckBox paddleKeys = new() { Text = L.T("変換を有効", "Enable conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox trackballKeys = new DarkCheckBox() { Text = L.T("↑↓←→に変換", "Convert to ↑↓←→"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox paddleKeys = new DarkCheckBox() { Text = L.T("変換を有効", "Enable conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertPaddle = new() { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton mouseButtons = new() { Text = L.T("マウス扱い", "Mouse"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton gamepadButtons = new() { Text = L.T("コントローラー扱い", "Controller"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -53,7 +53,7 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r2", new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r6", new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -118,13 +118,15 @@ internal sealed partial class MainForm : Form
         identity.Dock = outputStatus.Dock = live.Dock = DockStyle.Fill;
         identity.ForeColor = outputStatus.ForeColor = live.ForeColor = Ui.Muted;
         details.Controls.Add(outputTabs, 0, 0); details.Controls.Add(live, 0, 1); right.Controls.Add(details, 0, 1);
+        outputTabs.ShowToolTips = true;
         string[] titles = [L.T("ゲームパッド", "Gamepad"), L.T("USBマウス", "USB mouse"), L.T("マウス＋ゲームパッド", "Mouse + Gamepad")];
         for (int i = 0; i < 3; i++)
         {
             TabPage page = new(titles[i]) { BackColor = Ui.Surface, Padding = new(5) };
             BufferedTableLayoutPanel content = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
             content.ColumnStyles.Add(new(SizeType.Percent, 100));
-            content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.AutoSize)); content.RowStyles.Add(new(SizeType.Percent, 100));
+            for (int row = 0; row < 2; row++) content.RowStyles.Add(new(SizeType.AutoSize));
+            content.RowStyles.Add(new(SizeType.Percent, 100));
             tabContents[i] = content; page.Controls.Add(content); outputTabs.TabPages.Add(page);
         }
         timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new(10, 4, 8, 4) };
@@ -158,7 +160,7 @@ internal sealed partial class MainForm : Form
         mappingPages.Controls.Add(mouseEditor); mappingPages.Controls.Add(combinedEditor);
         combinedEditor.Visible = false;
         mouseContent.Controls.Add(mappingPages, 0, 0);
-        tabContents[1].Controls.Add(mouseContent, 0, 1);
+        tabContents[1].Controls.Add(mouseContent, 0, 2);
         body.Controls.Add(left, 0, 0); body.Controls.Add(right, 1, 0); root.Controls.Add(body, 0, 1);
         BufferedTableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(0, 12, 0, 0) };
         footer.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) footer.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -179,13 +181,14 @@ internal sealed partial class MainForm : Form
         outputTabs.Selecting += (_, e) =>
         {
             if (syncingOutput || loading) return;
-            e.Cancel = working || !profiles[selected].Enabled || caps?.SupportsProfileOutput != true;
+            // Reject the selection before controls move or the profile becomes dirty.
+            e.Cancel = OutputModeUnavailableReason() is not null;
         };
         outputTabs.SelectedIndexChanged += (_, _) =>
         {
             if (syncingOutput || loading || outputTabs.SelectedIndex < 0) return;
-            if (outputTabs.SelectedIndex == 1 && profiles[selected].Mouse.DirectionKeysEnabled) { outputTabs.SelectedIndex = 2; return; }
-            profiles[selected].OutputMode = (byte)outputTabs.SelectedIndex;
+            DeviceProfile profile = profiles[selected];
+            profile.OutputMode = (byte)outputTabs.SelectedIndex;
             AbortLearning(); MarkDirty(); BindSelected();
         };
         mouseGain.ValueChanged += (_, _) => MouseProfileChanged(); paddleGain.ValueChanged += (_, _) => MouseProfileChanged();
@@ -280,6 +283,7 @@ internal sealed partial class MainForm : Form
         bool online = bridge is not null, enabled = profiles[selected].Enabled, clean = !dirty.Any(x => x);
         body.Enabled = !working; connect.Enabled = !working; firmwareUpdate.Enabled = !working;
         reload.Enabled = online && !working; saveButton.Enabled = online && !working && (dirty[selected] || caps is { Persisted: false });
+        UpdateOutputAvailability();
         name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
         interval.Enabled = enabled && !working;
         delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration && fields.Any(f => f.Learnable && f.Valid)));
@@ -298,9 +302,11 @@ internal sealed partial class MainForm : Form
         trackballOn.Enabled = paddleOn.Enabled = enabled && !working;
         invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
         mouseGain.Enabled = invertX.Enabled;
-        invertPaddle.Enabled = paddleKeys.Enabled = enabled && !working && paddleOn.Checked;
+        invertPaddle.Enabled = enabled && !working && paddleOn.Checked;
         paddleGain.Enabled = invertPaddle.Enabled;
-        trackballKeys.Enabled = enabled && !working && trackballOn.Checked;
+        bool conversionAvailable = profiles[selected].OutputMode != 1;
+        trackballKeys.Enabled = enabled && !working && conversionAvailable && trackballOn.Checked;
+        paddleKeys.Enabled = enabled && !working && conversionAvailable && paddleOn.Checked;
         paddleAxis.Enabled = enabled && !working && paddleOn.Checked;
         paddleKeys.Text = L.T("変換を有効", "Enable conversion");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
@@ -451,7 +457,7 @@ internal sealed partial class MainForm : Form
         if (p.OutputMode != 0 || p.Mouse.DirectionKeysEnabled)
             text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",
                 $"  •  Pointer gain: ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}");
-        if (p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON（マウス UDLR設定）", "  •  Movement conversion ON (Mouse UDLR settings)");
+        if (p.OutputMode != 1 && p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON（マウス UDLR設定）", "  •  Movement conversion ON (Mouse UDLR settings)");
         SetText(outputStatus, p.Enabled ? text : "");
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)
@@ -576,6 +582,30 @@ internal sealed partial class MainForm : Form
         finally { working = false; UpdateEnabled(); }
     }
     private void AbortLearning(string? reason = null) { editor.AbortLearning(reason); mouseEditor.AbortLearning(reason); combinedEditor.AbortLearning(reason); }
+    private string? OutputModeUnavailableReason()
+    {
+        DeviceProfile profile = profiles[selected];
+        if (!profile.Enabled) return L.T("コントローラーを登録すると出力方式を選択できます。", "Register a controller to choose its output mode.");
+        if (working) return L.T("処理中は出力方式を変更できません。完了後に選択してください。", "Output modes cannot be changed while an operation is in progress. Wait for it to finish.");
+        if (caps is null) return L.T("出力方式を変更するには、本体のUSB-CをPCへ接続し、「接続 / 再接続」を押してください。", "To change the output mode, connect the bridge's USB-C port to this PC and choose Connect / Reconnect.");
+        if (!caps.SupportsProfileOutput) return L.T("この本体では出力方式を変更できません。「ファームウェア更新」から同梱ファームウェアへ更新してください。", "This firmware cannot change profile output modes. Install the bundled firmware using Firmware update.");
+        return null;
+    }
+    private void UpdateOutputAvailability()
+    {
+        string? reason = OutputModeUnavailableReason();
+        for (int i = 0; i < outputTabs.TabCount; i++)
+        {
+            outputTabs.SetTabMuted(i, reason is not null);
+            string description = reason ?? (i == 1
+                ? L.T("マウス専用の出力です。移動からゲームパッドへの変換設定は保持しますが、このモードでは変換せず、変換項目も変更できません。",
+                    "Mouse-only output. Movement-to-gamepad conversion settings are retained, but conversion is inactive and its controls are disabled in this mode.")
+                : "");
+            TabPage page = outputTabs.TabPages[i];
+            if (page.ToolTipText != description) page.ToolTipText = description;
+            if (page.AccessibleDescription != description) page.AccessibleDescription = description;
+        }
+    }
     private void SyncMousePage()
     {
         int index = Math.Max(0, outputTabs.SelectedIndex);
@@ -597,7 +627,6 @@ internal sealed partial class MainForm : Form
         if (loading) return;
         profiles[selected].Mouse = new() { TrackballEnabled = trackballOn.Checked, PaddleEnabled = paddleOn.Checked, TrackballGain = mouseGain.Value, PaddleGain = paddleGain.Value,
             InvertX = invertX.Checked, InvertY = invertY.Checked, InvertPaddle = invertPaddle.Checked, PaddleAxis = (PaddleOutputAxis)Math.Max(0, paddleAxis.SelectedIndex), TrackballToDpad = trackballKeys.Checked, PaddleToDpad = paddleKeys.Checked };
-        if (profiles[selected].OutputMode == 1 && profiles[selected].Mouse.DirectionKeysEnabled) profiles[selected].OutputMode = 2;
         SyncOutputControls(); MarkDirty();
     }
     private void SyncOutputControls()

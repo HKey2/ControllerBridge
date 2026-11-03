@@ -65,6 +65,6 @@ BOOT is not a normal GPIO input. `uc_bootsel_poll()` briefly releases QSPI CS an
 
 USB-A 5 V power comes from the board circuit. A GPIO-controlled power switch needs explicit initialization. Native USB VBUS detection is overridden; there is no VBUS-detect GPIO setting. Follow the target board's electrical design.
 
-The standard board retains R13. The firmware attempts Full Speed initialization and checks EP0 communication instead of relying solely on the electrical attachment level. This does not imply Low Speed support or require the manufacturer's generic host modification procedure.
+The standard board retains R13. The firmware attempts Full Speed initialization and checks EP0 communication instead of relying solely on the electrical attachment level. This does not imply Low Speed support or require the manufacturer's generic host modification procedure. With the tested Low Speed retro freak controller, retained R13 produces an invalid SE1 idle state; changing the PIO speed alone did not establish communication. See the [Low Speed limitation](compatibility.md#low-speed-and-the-unmodified-board).
 
 The final 48 KiB of Flash hold settings, measurements, and profiles. [`store.c`](../lib/controller_bridge/store.c) calculates addresses from `PICO_FLASH_SIZE_BYTES`. Changing capacity moves those addresses; use a GUI backup to transfer profiles to the new board. See the current [memory budget](../README.md#memory-budget).

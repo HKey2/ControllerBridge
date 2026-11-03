@@ -188,7 +188,20 @@ bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,
     return true;
 }
 bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
-    um_key_events ignored;return upr_pointing_input(e,false,x,y,&ignored);
+    // Mouse-only hot path: intentionally repeat the small relative-field decode
+    // so no direction/hold/rolling state is inspected or updated per report.
+    // Mode/profile/readiness transitions retain the common explicit reset.
+    *x=*y=0;
+    if(e->type!=UC_INPUT || !upr_ready())return false;
+    const up_mouse_options *options=&bank.profiles[active].mouse;
+    int32_t dx=0,dy=0,wheel=0;bool touched=false;
+    if((options->flags&UP_MOUSE_TRACKBALL) && mouse_field(mouse_x,e,&dx) && mouse_field(mouse_y,e,&dy))touched=true;
+    else dx=dy=0;
+    if((options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel))touched=true;
+    else wheel=0;
+    if(!touched)return false;
+    um_mix(&mouse_fraction,options,dx,dy,wheel,x,y);
+    return true;
 }
 void upr_init(void) {
     rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};hold_idle_us=20000u;

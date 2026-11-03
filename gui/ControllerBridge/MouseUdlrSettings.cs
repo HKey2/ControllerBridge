@@ -304,25 +304,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
         }
     }
-    private sealed class ModeCheckBox : CheckBox
-    {
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            if (Enabled) { base.OnPaint(e); return; }
-            // ButtonBase is Opaque: WinForms skips OnPaintBackground. Unlike
-            // the normal adapter, this disabled path must clear its own face
-            // before drawing into a reused buffer (including the first tab show).
-            using SolidBrush background = new(BackColor);
-            e.Graphics.FillRectangle(background, ClientRectangle);
-            var state = Checked ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedDisabled : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedDisabled;
-            Size glyph = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
-            Point location = new(Padding.Left, (Height - glyph.Height) / 2);
-            CheckBoxRenderer.DrawCheckBox(e.Graphics, location, state);
-            Rectangle text = Rectangle.FromLTRB(location.X + glyph.Width + LogicalToDeviceUnits(3), Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
-            TextRenderer.DrawText(e.Graphics, Text, Font, text, DisabledText,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
-        }
-    }
+    private sealed class ModeCheckBox : DarkCheckBox { }
     private void UpdateModeControls()
     {
         bool interactive = !saving;

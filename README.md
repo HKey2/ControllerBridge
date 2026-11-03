@@ -26,9 +26,13 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.20.16 - GUI r2 (firmware 0.20.16).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.20.19 - GUI r6 (firmware 0.20.19).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
-**GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
+**Firmware 0.20.18:** USB mouse uses a dedicated movement path, bypassing gamepad conversion state while preserving pointer gain, inversion, paddle axis, clicks and rapid fire. Gamepad and combined output retain their conversion behavior. See [implementation verification and memory](docs/verification.md).
+
+**0.20.19 / GUI r6:** Selecting USB mouse retains both movement-to-gamepad conversion flags and shows their ON/OFF values in grey. Conversion is inactive in this mode. Returning to Gamepad or Mouse + Gamepad restores the retained settings. Saving and reloading also preserves them; install the matching 0.20.19 firmware. Pointer settings remain editable.
+
+**Earlier GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
 
 Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle pointer gain **1.0–10.0× (default 1.0)**, in 0.1 steps. Saved values are unchanged. The **Pointer gain (×)** fields remain editable while conversion is enabled. In **Mouse + Gamepad**, conversion adds gamepad output (clicks, held controls or paddle Virtual Rolling) while both pointer sources continue moving the mouse. No physical D-pad input or assignment is required. The original trackball click mode is now named **Virtual Rolling**; the new **Hold** mode is described below. Button-click conversion uses separate, hidden device-wide parameters, initially **6.0× for the trackball and 1.5× for the paddle**, stored independently of profile pointer gain. Enable **Convert to ↑↓←→** for the trackball, or **Enable conversion** for the paddle. In its default **Button clicks** mode, the paddle follows its X/Y output axis. Each signed source sum emits one press/release pair at the configured threshold (initially ±64), then clears and discards excess. **Mouse UDLR settings**, immediately right of **Profile switching...**, edits the device-wide **Movement threshold** (default **64 pt**, range **1–256**), **Hold time** (default **30 ms**, range **1–512**) and **Wait time** (default **20 ms**, range **1–512**). The **Trackball** and **Paddle** tabs each provide four drop-down lists in a D-pad arrangement, selecting independent Switch-side outputs for their movement directions. Their defaults are **↑ / ↓ / ← / →** respectively. Choices include all four directions and 14 Switch buttons, with no analog axes or Unassigned entry. Choosing A for the upper list makes upward movement send A. **Reset to defaults** restores only the four assignments on the displayed tab, retaining the other tab and all numeric values. Existing shared assignments are copied to both sources when upgrading from 0.20.12. Save writes the shared numeric settings, both source maps, both source modes and their parameters together and verifies them by reading back; all profiles share them. Hold time controls the pressed phase, and the independent wait time controls the released interval before the next click. Each phase starts at its corresponding successful USB completion. The dialog shows units beside the spinners without range labels. Cursor gains remain hidden. These defaults apply to newly initialized settings. Valid saved durations, including 16/16 ms, are retained. See [movement conversion](docs/configurator-guide.md#movement-to-d-pad).
 
@@ -36,7 +40,7 @@ Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle point
 
 **Paddle Virtual Rolling** is available in **Mouse UDLR settings → Paddle → Mode**. It converts paddle movement into a full-strength left or right analog-stick direction in configurable **5°, 10°, 15°, 20°, 30°, 40°, 45°, 60° or 90° steps**. The default **30°** retains 12 positions; **5°** gives 72 positions and **90°** gives the four cardinal directions. All choices divide a full turn evenly. The initial internal direction is up; stopping centers the selected stick while retaining both angle and incomplete-step movement. Rotation sensitivity is **0.1–10.0° per input point** (default **1.0**), the default destination is **Right stick**, and rotation reversal is independent of pointer reversal. Changing the step aligns the retained angle to the nearest position of the new step and clears incomplete-step movement on the next nonzero paddle input. Ordinary stops retain both. Game restarts do not reset the angle; board startup does. Upgrading from 0.20.15 initializes only the new step to 30° and retains valid existing modes and parameters. Settings predating Virtual Rolling initialize Button clicks mode. See [Virtual Rolling setup and units](docs/configurator-guide.md#virtual-rolling).
 
-Paddle rotation can be assigned per profile to **X (horizontal)** or **Y (vertical)** using the **Output axis** list in the mouse settings. Existing profiles remain X. Gain and rotation reversal apply to the selected axis; trackball movement retains its own X/Y settings. Install the matching 0.20.16 firmware, choose the axis, then **Save profile to device**. Profile and bank sizes are unchanged. See the [paddle settings](docs/configurator-guide.md#paddle-output-axis).
+Paddle rotation can be assigned per profile to **X (horizontal)** or **Y (vertical)** using the **Output axis** list in the mouse settings. Existing profiles remain X. Gain and rotation reversal apply to the selected axis; trackball movement retains its own X/Y settings. Install the matching 0.20.19 firmware, choose the axis, then **Save profile to device**. Profile and bank sizes are unchanged. See the [paddle settings](docs/configurator-guide.md#paddle-output-axis).
 
 Rapid fire supports **1–60 press/release cycles per second**, with **20** as the starting value when enabling an output that was Off. Existing saved rates remain unchanged, and Off remains Off until enabled. The bundled firmware also supports this range. Profile and backup formats are unchanged.
 
@@ -125,13 +129,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 109,040; persistent storage 49,152 | 1,938,960 |
-| SRAM, 532,480 bytes | Static data 153,736; two stacks 8,192 | 370,552 |
+| Flash, 2,097,152 bytes | Code/initial values 109,720; persistent storage 49,152 | 1,938,280 |
+| SRAM, 532,480 bytes | Static data 154,040; two stacks 8,192 | 370,248 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 144 | 3,888 |
 
-Static SRAM consists of vector table 272, initialized data 36,032, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 218,112 bytes.
+Static SRAM consists of vector table 272, initialized data 36,336, and BSS 117,432 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 219,648 bytes.
 
 ## Repository contents and license
 

@@ -47,9 +47,8 @@ bool up_profile_valid(const up_profile *p) {
     unsigned gain=up_mouse_trackball_gain10(m);
     if(gain<10 || gain>2560u || m->paddle_gain10<10 || m->paddle_gain10>100)return false;
     if((m->output_mode&~7u)!=0 || (m->output_mode&3u)==3u)return false;
-    bool keys=((m->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) ||
-        ((m->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS));
-    if(keys && (m->output_mode&3u)==UP_OUTPUT_MOUSE)return false;
+    // Conversion flags are retained preferences in mouse-only mode; its
+    // dedicated input/output route does not execute gamepad conversion.
     if(!(p->flags&UP_LED_CUSTOM))
         for(unsigned i=0;i<sizeof(m->led_rgb);++i)if(m->led_rgb[i])return false;
     if((p->flags&UP_ENABLED) && (!p->vid || !p->name[0]))return false;

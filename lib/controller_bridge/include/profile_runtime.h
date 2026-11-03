@@ -39,7 +39,9 @@ void upr_mouse_reset(void);
 // Apply after ordinary mouse/gamepad routing, including repeats and stop timeout.
 bool upr_rolling_overlay(uint32_t now_us,sw_report *report);
 uint8_t upr_hold_directions(uint32_t now_us);
-// Decode this packet, including repeated identical deltas; never use GUI events.
+// Mouse-only relative decode; never touches direction/hold/rolling state.
+// The caller resets output state at mode/profile/readiness boundaries.
+// Decode repeated identical deltas too; never use GUI events.
 bool upr_mouse_delta(const uc_event *event,int32_t *x,int32_t *y);
 bool upr_pointing_input(const uc_event *event,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys);
 bool upr_direction_enabled(void);

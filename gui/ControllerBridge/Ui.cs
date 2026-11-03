@@ -140,6 +140,29 @@ internal class DarkButton : Button
     }
 }
 
+// Preserve the established disabled checkbox painter across profile and mode controls.
+internal class DarkCheckBox : CheckBox
+{
+    private static readonly Color DisabledText = Color.FromArgb(0xad, 0xad, 0xad);
+    private const TextFormatFlags DisabledGraphicsFlags = TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform;
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Enabled) { base.OnPaint(e); return; }
+        // ButtonBase is Opaque: WinForms skips OnPaintBackground. Unlike
+        // the normal adapter, this disabled path must clear its own face
+        // before drawing into a reused buffer (including the first tab show).
+        using SolidBrush background = new(BackColor);
+        e.Graphics.FillRectangle(background, ClientRectangle);
+        var state = Checked ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedDisabled : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedDisabled;
+        Size glyph = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
+        Point location = new(Padding.Left, (Height - glyph.Height) / 2);
+        CheckBoxRenderer.DrawCheckBox(e.Graphics, location, state);
+        Rectangle text = Rectangle.FromLTRB(location.X + glyph.Width + LogicalToDeviceUnits(3), Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
+        TextRenderer.DrawText(e.Graphics, Text, Font, text, DisabledText,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
+    }
+}
+
 internal class BufferedTableLayoutPanel : TableLayoutPanel
 {
     public BufferedTableLayoutPanel() => SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
@@ -165,7 +188,33 @@ internal sealed class RaisedTableLayoutPanel : BufferedTableLayoutPanel
 // painting the entire strip, including the unused area, in the app palette.
 internal sealed class DarkTabControl : TabControl
 {
+    private readonly HashSet<int> mutedTabs = [];
+    // Selection policy belongs to the owning form; this only changes the tab
+    // header so an unavailable output does not disable the current editor.
+    public void SetTabMuted(int index, bool muted)
+    {
+        bool changed = muted ? mutedTabs.Add(index) : mutedTabs.Remove(index);
+        if (changed && IsHandleCreated && index >= 0 && index < TabCount) Invalidate(GetTabRect(index));
+    }
     public DarkTabControl() => SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (mutedTabs.Count != 0 && TabCount > 0)
+        {
+            int direction = keyData == (Keys.Control | Keys.Tab) || keyData == (Keys.Control | Keys.PageDown) || Focused && keyData == Keys.Right ? 1 :
+                keyData == (Keys.Control | Keys.Shift | Keys.Tab) || keyData == (Keys.Control | Keys.PageUp) || Focused && keyData == Keys.Left ? -1 : 0;
+            if (direction != 0)
+            {
+                for (int step = 1; step <= TabCount; step++)
+                {
+                    int next = (Math.Max(0, SelectedIndex) + direction * step + TabCount) % TabCount;
+                    if (!mutedTabs.Contains(next)) { SelectedIndex = next; break; }
+                }
+                return true;
+            }
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.Clear(Ui.Surface);
@@ -182,7 +231,7 @@ internal sealed class DarkTabControl : TabControl
             e.Graphics.DrawLine(light, bounds.Left, bounds.Bottom - 1, bounds.Left, bounds.Top);
             e.Graphics.DrawLine(light, bounds.Left, bounds.Top, bounds.Right - 2, bounds.Top);
             e.Graphics.DrawLine(shadow, bounds.Right - 1, bounds.Top + 1, bounds.Right - 1, bounds.Bottom - 1);
-            TextRenderer.DrawText(e.Graphics, TabPages[i].Text, Font, bounds, Ui.Ink, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(e.Graphics, TabPages[i].Text, Font, bounds, mutedTabs.Contains(i) ? Color.FromArgb(146, 146, 146) : Ui.Ink, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             if (active)
             {
                 using Pen line = new(Focused && ShowFocusCues ? Color.FromArgb(150, 210, 255) : Ui.Focus, LogicalToDeviceUnits(3));

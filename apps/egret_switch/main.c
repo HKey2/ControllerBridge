@@ -392,6 +392,22 @@ static void __not_in_flash_func(boot_button_task)(uint32_t now) {
         if(!success) { selection_save_failures++;status_led_saved(false); }
     }
 }
+// Dedicated mouse-only route. Its short delivery sequence intentionally mirrors
+// the combined route below, without gamepad events or per-report mode checks.
+static void handle_mouse_only_input(const uc_event *e,bool mapped,ub_frame *frame) {
+    int32_t x=0,y=0;
+    bool relative=upr_mouse_delta(e,&x,&y);
+    if(!input_ready || (!mapped && !relative))return;
+    if(relative && !mapped)upr_tick(time_us_32(),ud_ready(),&frame->report);
+    uint8_t buttons=um_route_buttons(active_output_options,&frame->report);
+    memset(last_raw,0,sizeof(last_raw));memcpy(last_raw,e->data,e->length<4?e->length:4);
+    if(mouse_output_ready()) {
+        if(measuring() && (x || y || buttons!=mouse_queue.buttons))measurement.counts.input_changes++;
+        record_mouse_buttons(mouse_queue.buttons,buttons,false,x||y);
+        um_push(&mouse_queue,x,y,buttons,e->time_us,frame->sequence,true);
+        if(in_window(e->time_us))ub_hist_add(&measurement.mapping,time_us_32()-e->time_us);
+    } else { um_flush(&mouse_queue,buttons);upr_mouse_reset(); }
+}
 static void handle_host_event(const uc_event *e) {
     if(e->type!=UC_INPUT && upr_event(e)) { config.input_interval_ms=upr_input_interval();reset_output(e->time_us); }
     input_ready=upr_ready();
@@ -405,8 +421,11 @@ static void handle_host_event(const uc_event *e) {
             return;
         }
         bool mapped=upr_apply(e,time_us_32(),ud_ready(),&frame.report);
+        if(mouse_mode() && !combined_mode()) {
+            handle_mouse_only_input(e,mapped,&frame);return;
+        }
         int32_t x=0,y=0;um_key_events keys={0};
-        bool keys_ready=ud_ready() && (!mouse_mode() || combined_mode()) && !output_disconnected;
+        bool keys_ready=ud_ready() && !output_disconnected;
         bool relative=upr_pointing_input(e,keys_ready,&x,&y,&keys);
         frame.hold_directions=upr_hold_directions(e->time_us);
         if(relative && !mapped)upr_tick(time_us_32(),ud_ready(),&frame.report);
@@ -419,16 +438,12 @@ static void handle_host_event(const uc_event *e) {
             memset(last_raw,0,sizeof(last_raw));memcpy(last_raw,e->data,e->length<4?e->length:4);
             if(mouse_output_ready()) {
                 if(measuring()) {
-                    if(combined_mode()) {
-                        measurement.dual.mouse_buttons_seen|=buttons;
-                        if(x || y || buttons!=mouse_queue.buttons)measurement.dual.mouse_changes++;
-                    } else if(x || y || buttons!=mouse_queue.buttons)measurement.counts.input_changes++;
+                    measurement.dual.mouse_buttons_seen|=buttons;
+                    if(x || y || buttons!=mouse_queue.buttons)measurement.dual.mouse_changes++;
                 }
                 record_mouse_buttons(mouse_queue.buttons,buttons,false,x||y);
                 um_push(&mouse_queue,x,y,buttons,e->time_us,frame.sequence,true);
-                if(!combined_mode()&&in_window(e->time_us))ub_hist_add(&measurement.mapping,time_us_32()-e->time_us);
             } else { um_flush(&mouse_queue,buttons);upr_mouse_reset(); }
-            if(!combined_mode())return;
         }
         if(!mapped && !relative) {
             if(input_ready && measuring())measurement.counts.bad_reports++;
@@ -654,8 +669,12 @@ static void start_usb_output(uint8_t options) {
     if(combined_mode() && !(active_output_options&UM_GAMEPAD_BUTTONS))sw_navigation(&initial,&initial);
     memcpy(last_mouse_output,initial_mouse,sizeof(initial_mouse));
     um_flush(&mouse_queue,initial_mouse[0]);
-    ub_frame current={.report=initial,.received_us=time_us_32(),.sequence=++input_sequence,.hold_directions=upr_hold_directions(time_us_32())};
-    ub_queue_push(&outgoing,&current);
+    // The mouse queue already has its initial buttons; only gamepad output
+    // needs an initial pad frame or direction-hold snapshot.
+    if(!mouse_mode() || combined_mode()) {
+        ub_frame current={.report=initial,.received_us=time_us_32(),.sequence=++input_sequence,.hold_directions=upr_hold_directions(time_us_32())};
+        ub_queue_push(&outgoing,&current);
+    }
     memcpy(output_configuration,combined_mode()?um_combined_configuration_descriptor:mouse_mode()?um_configuration_descriptor:sw_configuration_descriptor,
         mouse_mode()?sizeof(um_configuration_descriptor):sizeof(sw_configuration_descriptor));
     // Match the interrupt endpoint reservation to the actual 8-byte input.
@@ -743,7 +762,7 @@ int __not_in_flash_func(main)(void) {
         // physical changes. They use the same ordered transition queue as input.
         uint32_t rapid_now=time_us_32();sw_report rapid_report;
         if(upr_tick(rapid_now,ud_ready(),&rapid_report)) {
-            ub_frame frame={.report=rapid_report,.received_us=rapid_now,.sequence=++input_sequence,.hold_directions=upr_hold_directions(rapid_now)};
+            ub_frame frame={.report=rapid_report,.received_us=rapid_now,.sequence=++input_sequence};
             if(measuring()&&!combined_mode())measurement.counts.input_changes++;
             if(mouse_mode()) {
                 if(input_ready && mouse_output_ready()) {
@@ -754,6 +773,7 @@ int __not_in_flash_func(main)(void) {
                 }
             }
             if(!mouse_mode()||combined_mode()) {
+                frame.hold_directions=upr_hold_directions(rapid_now);
                 if(combined_mode()) {
                     if(!(active_output_options&UM_GAMEPAD_BUTTONS))sw_navigation(&frame.report,&frame.report);
                     if(measuring()) {

@@ -180,7 +180,6 @@ public sealed class DeviceProfile
     public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 }) || Shift.Buttons.Where((b, i) => (Shift.Overrides & (1u << i)) != 0).Any(b => b.RapidHz > 0);
     public byte[] Encode()
     {
-        if (OutputMode == 1 && Mouse.DirectionKeysEnabled) throw new InvalidDataException(L.T("十字キー変換にはゲームパッドまたはマウス＋ゲームパッド出力を選択してください。", "Choose Gamepad or Mouse + Gamepad for D-pad conversion."));
         if (Version != 6 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
             (Enabled && (Vid == 0 || string.IsNullOrWhiteSpace(Name))) || Buttons is null || Buttons.Length != 18 || Axes is null || Axes.Length != 4)
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));

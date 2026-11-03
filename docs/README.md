@@ -1,6 +1,6 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator v0.20.16 - GUI r2 and normal firmware 0.20.16. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator v0.20.19 - GUI r6 and normal firmware 0.20.19. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
 | Document | Contents |
 |---|---|
