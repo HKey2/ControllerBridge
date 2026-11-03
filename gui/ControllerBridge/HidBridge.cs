@@ -46,7 +46,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
             throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。本体を更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
     }
     public bool SelectionUnsaved => (Flags & 16) != 0;
-    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", _ => "HID" };
+    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
         if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & 4096) == 0)

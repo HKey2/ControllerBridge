@@ -1,0 +1,11 @@
+# MS-GIPUSB controller input
+
+ControllerBridge 0.20.20 adds MS-GIPUSB input for wired Xbox One-family controllers. Connect the controller directly to the board's USB-A port with a data-capable cable. The configurator displays **MS-GIPUSB** after initialization. Choose **Add controller**, learn the desired buttons and analog axes, and save the new profile. Existing profiles are preserved. On Elite Series 2, initialization may take several seconds after restarting or updating the bridge; wait for **MS-GIPUSB** before registering.
+
+The implemented fields are ABXY, Menu/View, D-pad, LB/RB, L3/R3, two 10-bit triggers, four signed 16-bit stick axes, the separately reported Xbox/Guide button and supported Elite paddle layouts. Main input, Guide and paddle packets update independent fields so receiving one does not clear the others. Elite firmware or on-controller remapping may affect whether a paddle produces a distinct field; use the input log to inspect the actual controller.
+
+The physical reference device is a genuine Microsoft Elite Series 2 (`045E:0B00`, USB revision `050F`). Its normal input and recovery after bridge restart/firmware update were checked. Other Xbox One/S/Series/Elite revisions and compatible third-party pads have parser or initialization support but have not been physically verified. Share is not exposed as a separate field. Headset audio, controller firmware updates, runtime vibration, Xbox-console authentication, Bluetooth and wireless adapters are outside this implementation. Xbox compatibility here means the **input controller**; it does not add Xbox-console output support.
+
+ACK responses continue for every requested GIP message during operation. Fragmented reliable transfers use cumulative acknowledgements and bounded retransmission. There is no requirement to send an arbitrary heartbeat when the controller has requested no ACK. The recovery paths for Elite Series 2 are limited to initial connection and do not add reset or resume operations to active input.
+
+Physical Switch/game output was not checked with this controller, and no Xbox profile was automatically added to the saved bank. Mapping and independent report state passed host-side tests. See [verification](verification.md) for the exact input coverage, recovery evidence and current memory figures.

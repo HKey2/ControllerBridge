@@ -111,6 +111,49 @@ void ut_reset(void) {
     ut_delay_ms(10);
 }
 
+// Only used during failed Elite 2 enumeration, never during active input.
+// USB 2.0 7.1.7.7: >=20 ms K, low-speed EOP, 10 ms recovery with SOF only.
+void ut_resume_fullspeed(void) {
+    ut_close_device(0);ut_close_device(1);
+    root_port_t *root=PIO_USB_ROOT_PORT(0);
+    pio_port_t *pp=PIO_USB_PIO_PORT(0);
+    root->suspended=true;
+    ut_delay_ms(10);
+    gpio_set_outover(root->pin_dp,GPIO_OVERRIDE_LOW);
+    gpio_set_outover(root->pin_dm,GPIO_OVERRIDE_HIGH);
+    gpio_set_oeover(root->pin_dp,GPIO_OVERRIDE_HIGH);
+    gpio_set_oeover(root->pin_dm,GPIO_OVERRIDE_HIGH);
+    ut_delay_ms(20);
+    // Borrow the idle TX state machine for an exact 8+4 cycles at 6 MHz.
+    // Restore its four instructions before SOF or any normal transaction.
+    PIO pio=pp->pio_usb_tx;uint sm=pp->sm_tx,offset=pp->offset_tx;
+    uint16_t saved[4];uint32_t divider=pio->sm[sm].clkdiv;
+    uint j=root->pin_dp<root->pin_dm?1:2,k=j^3;
+    pio_sm_set_enabled(pio,sm,false);
+    for(unsigned i=0;i<4;++i)saved[i]=(uint16_t)pio->instr_mem[offset+i];
+    pio->instr_mem[offset]=pio_encode_set(pio_pindirs,3)|pio_encode_sideset(2,0)|pio_encode_delay(7);
+    pio->instr_mem[offset+1]=pio_encode_nop()|pio_encode_sideset(2,j)|pio_encode_delay(3);
+    pio->instr_mem[offset+2]=pio_encode_set(pio_pindirs,0)|pio_encode_sideset(2,j);
+    pio->instr_mem[offset+3]=pio_encode_jmp(offset+3)|pio_encode_sideset(2,j);
+    SM_SET_CLKDIV(pio,sm,pp->clk_div_ls_tx);
+    pio_sm_clkdiv_restart(pio,sm);
+    pio_sm_exec(pio,sm,pio_encode_set(pio_pindirs,3)|pio_encode_sideset(2,k));
+    pio_sm_exec(pio,sm,pio_encode_jmp(offset)|pio_encode_sideset(2,k));
+    gpio_set_outover(root->pin_dp,GPIO_OVERRIDE_NORMAL);
+    gpio_set_outover(root->pin_dm,GPIO_OVERRIDE_NORMAL);
+    gpio_set_oeover(root->pin_dp,GPIO_OVERRIDE_NORMAL);
+    gpio_set_oeover(root->pin_dm,GPIO_OVERRIDE_NORMAL);
+    pio_sm_set_enabled(pio,sm,true);
+    busy_wait_us(3);
+    pio_sm_set_enabled(pio,sm,false);
+    for(unsigned i=0;i<4;++i)pio->instr_mem[offset+i]=saved[i];
+    pio->sm[sm].clkdiv=divider;
+    pio_sm_exec(pio,sm,pp->tx_reset_instr);
+    pio_sm_set_enabled(pio,sm,true);
+    root->connected=true;root->is_fullspeed=true;root->suspended=false;
+    next_frame=time_us_32();ut_delay_ms(10);
+}
+
 bool ut_open(uint8_t address, const uint8_t descriptor[7]) {
     bool ok = pio_usb_host_endpoint_open(0, address, descriptor, false);
     int i = find_ep(address, descriptor[2]);

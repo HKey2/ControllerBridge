@@ -289,9 +289,10 @@ bool upr_event(const uc_event *e) {
             input_protocol=(uint8_t)e->sequence;
             // A synthetic schema alone cannot distinguish Xbox-compatible pads.
             // Include their actual USB identity/layout; use the HID descriptor hash for standard devices.
-            if(input_protocol&(UC_PROTOCOL_XBOX360|UC_PROTOCOL_SWITCH_PRO)) {
+            if(input_protocol&(UC_PROTOCOL_XBOX360|UC_PROTOCOL_SWITCH_PRO|UC_PROTOCOL_XBOX_ONE)) {
                 uint8_t tag[]={'X','3','6','0',1};
                 if(input_protocol&UC_PROTOCOL_SWITCH_PRO)memcpy(tag,"SWP1",4);
+                if(input_protocol&UC_PROTOCOL_XBOX_ONE)memcpy(tag,"XONE",4);
                 crc_add(tag,sizeof(tag));crc_add(device_descriptor,device_descriptor_size);
                 crc_add(configuration_descriptor,configuration_descriptor_size);
             }

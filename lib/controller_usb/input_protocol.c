@@ -13,7 +13,8 @@ bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configurat
             if(d[0]<9)return false;
             current=NULL;
             uint8_t protocol=d[5]==3?UC_PROTOCOL_HID:
-                d[5]==0xff && d[6]==0x5d && d[7]==1?UC_PROTOCOL_XBOX360:0;
+                d[5]==0xff && d[6]==0x5d && d[7]==1?UC_PROTOCOL_XBOX360:
+                d[2]==0 && d[5]==0xff && d[6]==0x47 && d[7]==0xd0?UC_PROTOCOL_XBOX_ONE:0;
             if(!d[3] && protocol) {
                 if(out->interface_count==UC_MAX_INTERFACES)return false;
                 for(unsigned i=0;i<out->interface_count;++i)if(out->interfaces[i].number==d[2])return false;
@@ -32,12 +33,14 @@ bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configurat
             if((d[2]&0x80) && (d[3]&3)==3) {
                 if(out->endpoint_count==UC_MAX_ENDPOINTS || !(d[2]&15) || (d[2]&0x70) ||
                    !le16(d+4) || le16(d+4)>64 || !d[6] ||
-                   (current->protocol==UC_PROTOCOL_XBOX360 && le16(d+4)<20))return false;
+                   (current->protocol==UC_PROTOCOL_XBOX360 && le16(d+4)<20) ||
+                   (current->protocol==UC_PROTOCOL_XBOX_ONE && le16(d+4)<18))return false;
                 for(unsigned i=0;i<out->endpoint_count;++i)if(out->endpoints[i].descriptor[2]==d[2])return false;
                 uc_input_endpoint *ep=&out->endpoints[out->endpoint_count++];
                 memcpy(ep->descriptor,d,7);ep->interface_number=current->number;ep->protocol=current->protocol;
-            } else if(current->protocol==UC_PROTOCOL_XBOX360 && !(d[2]&0x80) && (d[3]&3)==3) {
-                if(!(d[2]&15) || (d[2]&0x70) || le16(d+4)<3 || le16(d+4)>64 || !d[6] || current->output_descriptor[0])return false;
+            } else if((current->protocol==UC_PROTOCOL_XBOX360 || current->protocol==UC_PROTOCOL_XBOX_ONE) && !(d[2]&0x80) && (d[3]&3)==3) {
+                if(!(d[2]&15) || (d[2]&0x70) || le16(d+4)<3 || le16(d+4)>64 || !d[6] || current->output_descriptor[0] ||
+                   (current->protocol==UC_PROTOCOL_XBOX_ONE && le16(d+4)<13))return false;
                 memcpy(current->output_descriptor,d,7);
             } else if(current->protocol==UC_PROTOCOL_HID && !(d[2]&0x80) && (d[3]&3)==3 &&
                       (d[2]&15) && !(d[2]&0x70) && le16(d+4)>0 && le16(d+4)<=64 && d[6] && !current->output_descriptor[0]) {
@@ -47,6 +50,9 @@ bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configurat
         offset+=d[0];
     }
     if(!out->interface_count || !out->endpoint_count)return false;
+    // One GIP gamepad on interface zero. Audio/accessory interfaces are not input.
+    if((out->protocols&UC_PROTOCOL_XBOX_ONE) && (out->interface_count!=1 || out->endpoint_count!=1 ||
+       !out->interfaces[0].output_descriptor[0]))return false;
     for(unsigned i=0;i<out->interface_count;++i) {
         if(out->interfaces[i].protocol==UC_PROTOCOL_HID && !out->interfaces[i].report_length)return false;
         bool found=false;

@@ -12,6 +12,7 @@ void ut_pump(void);
 uint32_t ut_idle_budget_us(void);
 void ut_delay_ms(uint32_t ms);
 void ut_reset(void);
+void ut_resume_fullspeed(void);
 bool ut_open(uint8_t address, const uint8_t descriptor[7]);
 void ut_close_device(uint8_t address);
 void ut_ep0(uint8_t address, uint8_t packet_size);

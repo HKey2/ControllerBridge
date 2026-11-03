@@ -16,6 +16,7 @@ add_library(controller_usb STATIC
     lib/controller_usb/bootsel.c
     lib/controller_usb/transport_pio.c
     lib/controller_usb/input_protocol.c
+    lib/controller_usb/xbox_one.c
     lib/controller_usb/hid_layout.c)
 target_include_directories(controller_usb PUBLIC lib/controller_usb/include PRIVATE lib/controller_usb)
 target_link_libraries(controller_usb PUBLIC pico_stdlib PRIVATE pico_pio_usb)

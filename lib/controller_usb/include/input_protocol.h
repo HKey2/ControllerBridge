@@ -2,7 +2,7 @@
 #define UC_INPUT_PROTOCOL_H
 #include "controller_usb.h"
 
-enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4 };
+enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4, UC_PROTOCOL_XBOX_ONE=8 };
 typedef struct {
     uint8_t number,protocol;
     uint16_t report_length;
@@ -18,7 +18,7 @@ typedef struct {
     uint8_t protocols;
 } uc_input_configuration;
 
-// Full-speed, alternate setting zero, HID or wired Xbox 360 gamepad only.
+// Full-speed, alternate setting zero: HID, wired Xbox 360 or Xbox One gamepad.
 bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configuration *out);
 bool uc_input_config_identify(uc_input_configuration *out,uint16_t vid,uint16_t pid);
 // Internal bit-field schema, not a descriptor obtained from the Xbox device.

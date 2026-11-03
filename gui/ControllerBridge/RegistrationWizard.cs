@@ -22,7 +22,7 @@ internal sealed partial class RegistrationWizard : Form
     {
         this.caps = caps; this.save = save; this.fields = fields;
         profile = new() { Flags = 3, Vid = caps.Vid, Pid = caps.Pid, Revision = caps.Revision, DescriptorHash = caps.DescriptorHash,
-            Name = $"{(caps.InputProtocol == 2 ? "XInput" : caps.InputProtocol == 4 ? "Switch" : "HID")} {caps.Vid:X4}:{caps.Pid:X4}", InputInterval = 0 };
+            Name = $"{(caps.InputProtocol == 2 ? "XInput" : caps.InputProtocol == 4 ? "Switch" : caps.InputProtocol == 8 ? "MS-GIPUSB" : "HID")} {caps.Vid:X4}:{caps.Pid:X4}", InputInterval = 0 };
         using IDisposable formLayout = Ui.Form(this, L.T("コントローラーを追加", "Add controller"), new(1000, 680));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(22), RowCount = 4, ColumnCount = 1 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
