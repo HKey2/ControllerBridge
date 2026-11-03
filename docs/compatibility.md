@@ -13,7 +13,7 @@ The standard hardware is an unmodified Waveshare RP2350-USB-A. Connect one input
 | XE1AJ-USB / Cyber Stick (`17A7:0005`) | Full Speed input, buttons, stick X/Y, and throttle Rz observed; a reference profile was saved, but game-specific analog play remains unverified |
 | Generic variable HID input | Buttons, report IDs, absolute axes, and four/eight-direction hats supported within resource limits; this does not guarantee every product |
 | Wired Xbox 360-format input | Backend implemented; physical input remains unverified |
-| Microsoft Xbox Elite Series 2, wired (`045E:0B00`, revision `050F`) | MS-GIPUSB input, separate Guide/paddle fields and recovery after bridge restart/update verified; physical Switch/game output not verified. [Details](xbox-one-input.md) |
+| Microsoft Xbox Elite Series 2, wired (`045E:0B00`, revision `050F`) | MS-GIPUSB input and Guide/paddle fields verified on 0.20.20. Version 0.20.21 adds a bounded extra startup recovery. The user confirmed that the previously failing connected-controller GUI update flow now recovers through red/cyan blinking to steady dim blue after input, and accepted the fix. User reports successful Switch operation; instrumented game/output capture remains pending. [Details](xbox-one-input.md) |
 | Other MS-GIPUSB controllers (wired Xbox One family) | Backend implemented; other models/firmware and Share remain unverified or unsupported. [Details](xbox-one-input.md) |
 | retro freak standard controller (`1345:1030`) | Low Speed (1.5 Mbit/s); unsupported on the unmodified standard board. See the electrical limitation below |
 

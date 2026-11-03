@@ -5,7 +5,7 @@ The standard Waveshare RP2350-USB-A board has one WS2812B on GPIO16. The default
 | Display | Meaning |
 |---|---|
 | Blue, 1 second on / 1 second off | Waiting for an input device, or for the output host when a registered input is ready |
-| Cyan, 250 ms on / 250 ms off | Detected device is initializing |
+| Cyan, 250 ms on / 250 ms off | Detected device is initializing, or configured and waiting for its first accepted input |
 | Steady yellow | Input received, but no matching profile is registered |
 | Steady profile color (default dim blue) | Input received, profile applied, output ready |
 | Red, 250 ms on / 250 ms off | Detected-device initialization failure or repeated input errors |
@@ -13,7 +13,7 @@ The standard Waveshare RP2350-USB-A board has one WS2812B on GPIO16. The default
 | Purple for about 1 second | Profile or settings save succeeded |
 | Short purple flashes, 1-16 | Selected profile's ordinal among matching profiles |
 
-The save indication takes priority for its one-second duration. Brief initialization states may finish between display updates. Repeated failures for the same device do not restart the red blink phase. Green remains available for diagnostics but is not a normal operating state.
+The save indication takes priority for its one-second duration. Brief initialization states may finish between display updates. Repeated failures for the same device do not restart the red blink phase. In 0.20.21, successful configuration clears an earlier initialization fault to cyan; accepted input then selects the normal ready color. Waiting without input has no timeout and does not turn cyan into red. Green remains available for diagnostics but is not a normal operating state.
 
 The numbered sequence starts with 250 ms off, then repeats 150 ms on and 200 ms off, with 350 ms off after its last pulse. BOOT monitoring pauses during that sequence. A valid controller shortcut may select another profile and restart the indication for the new number.
 
@@ -41,7 +41,7 @@ The single preview uses a fixed internal gamma of **4.0**, selected after the us
 | 128 | 215 |
 | 255 | 255 |
 
-This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current 0.20.16 allocation figures, including button shift, are in [verification](verification.md#current-normal-build-memory).
+This is an empirical relative appearance approximation, not optical calibration. Channel efficiencies, spectrum, absolute luminance, point-source glare, monitor settings and ambient lighting are not modeled. The RGB code, stored profile bytes and firmware output remain unchanged by the display curve. The display curve allocates no board memory. Current normal-build allocation figures are in [verification](verification.md#current-normal-build-memory).
 
 ## Wire order and physical observation
 

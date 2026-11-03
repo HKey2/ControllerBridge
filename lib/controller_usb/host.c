@@ -43,9 +43,11 @@ static xbox_rx_stream xbox_rx[8];
 static uint32_t xbox_ack_tick;
 static bool xbox_primary_metadata_complete;
 static bool xbox_ack_retry(unsigned index,uint8_t ack[13],uint32_t now);
-// Retain this across enumeration retries while the controller restarts.
-// One reset per bridge boot prevents repeated resets from interrupting it.
+// Retain these across enumeration retries while the controller restarts.
+// A timed-out Elite 2 startup can reopen the recovery allowance once. Only
+// accepted input ends that failure episode; enumeration alone cannot rearm it.
 static bool xbox_reset_attempted,xbox_resume_attempted;
+static bool xbox_retry_pending,xbox_retry_used;
 static bool xbox_bus_active;
 static atomic_uint request_dump;
 static atomic_uint request_interval; // bit 8 marks a pending request
@@ -312,6 +314,7 @@ static ut_result xbox_handshake(input_endpoint *ep,uint8_t *sequence,bool *prima
 }
 // This separate path leaves legacy HID/XUSB/Switch report handling unchanged.
 static bool xbox_input(input_endpoint *ep,uint16_t actual) {
+    bool received_input=false;
     for(unsigned offset=0;offset<actual;) {
         uc_gip_message m;if(!uc_gip_parse(ep->buffer+offset,actual-offset,&m))return false;
         uint8_t ack[13];bool send_ack;
@@ -326,13 +329,32 @@ static bool xbox_input(input_endpoint *ep,uint16_t actual) {
             if(uc_xbox_one_input(&xbox_one,event.data,event.length)) {
                 event.sequence=++stats.reports;event.time_us=ut_received_us(1,ep->descriptor[2]);
                 options.event(&event,options.context);
+                received_input=true;
             }
         }
         offset+=m.consumed;
     }
+    // Status/ACK traffic and an idle, configured device do not replenish the
+    // extra recovery. Validate the entire packet before accepting a recovery.
+    if(received_input)xbox_retry_pending=xbox_retry_used=false;
     return true;
 }
 static bool xbox_elite2(void) { return xbox_one.vid==0x045e && xbox_one.pid==0x0b00; }
+static ut_result xbox_initialize(input_endpoint *ep,uint8_t *sequence,uint8_t *step,bool *primary_seen) {
+    *step=0;
+    ut_result result=xbox_handshake(ep,sequence,primary_seen);
+    if(result!=UT_OK)return result;
+    for(unsigned i=1;i<UC_XBOX_ONE_INIT_STAGES;++i) {
+        // Security and vendor messages each use their own sequence pool.
+        uint8_t serial=i==3 || i==5?1:i>=6?(uint8_t)(i-5):*sequence;
+        uint8_t n=uc_xbox_one_init(&xbox_one,i,serial,xbox_out.buffer);
+        if(!n)continue;
+        *step=(uint8_t)(i+1);if(i==1 || i==2 || i==4)(*sequence)++;
+        result=ut_submit(1,xbox_out.endpoint,xbox_out.buffer,n)?ut_transfer_wait(1,xbox_out.endpoint):UT_ERROR;
+        if(result!=UT_OK)return result;
+    }
+    return UT_OK;
+}
 static bool xbox_start(hid_interface *iface) {
     // GIP reserves sequence zero. Initialization sends at most eight packets.
     uint8_t sequence=1,step=0;
@@ -352,31 +374,30 @@ static bool xbox_start(hid_interface *iface) {
             break;
         }
     }
+    // The failed enumeration has already passed through the host loop's
+    // 750 ms retry delay. Never reopen these guards within the failing call.
+    if(xbox_elite2() && xbox_retry_pending) {
+        xbox_retry_pending=false;xbox_retry_used=true;
+        xbox_reset_attempted=xbox_resume_attempted=false;
+    }
     bool primary_seen=false;
-    result=xbox_handshake(&endpoints[0],&sequence,&primary_seen);
+    result=xbox_initialize(&endpoints[0],&sequence,&step,&primary_seen);
     if(result==UT_TIMEOUT && !primary_seen && xbox_elite2() && !xbox_bus_active && !xbox_resume_attempted) {
         // A long host outage (e.g. BOOTSEL) can leave the controller silent.
         // Resume USB, then enumerate again after the recovery interval.
         xbox_resume_attempted=true;ut_resume_fullspeed();goto done;
     }
-    if(result==UT_TIMEOUT && !primary_seen && xbox_elite2() && !xbox_reset_attempted) {
+    if(result==UT_TIMEOUT && (!primary_seen || xbox_retry_used) && xbox_elite2() && !xbox_reset_attempted) {
         xbox_reset_attempted=true;
         const uint8_t reset[]={5,0x20,sequence++,1,7};
         result=xbox_send(reset,sizeof(reset));
-        if(result==UT_OK)result=xbox_handshake(&endpoints[0],&sequence,&primary_seen);
+        if(result==UT_OK)result=xbox_initialize(&endpoints[0],&sequence,&step,&primary_seen);
         // The controller may detach while resetting. Normal enumeration then
-        // resumes; the guard above remains set until the bridge itself boots.
+        // resumes; neither that detach nor re-enumeration replenishes a retry.
     }
-    if(result!=UT_OK)goto done;
-    for(unsigned i=1;i<UC_XBOX_ONE_INIT_STAGES;++i) {
-        // Security and vendor messages each use their own sequence pool.
-        uint8_t serial=i==3 || i==5?1:i>=6?(uint8_t)(i-5):sequence;
-        uint8_t n=uc_xbox_one_init(&xbox_one,i,serial,xbox_out.buffer);
-        if(!n)continue;
-        step=(uint8_t)(i+1);if(i==1 || i==2 || i==4)sequence++;
-        result=ut_submit(1,xbox_out.endpoint,xbox_out.buffer,n)?ut_transfer_wait(1,xbox_out.endpoint):UT_ERROR;
-        if(result!=UT_OK)goto done;
-    }
+    // A resume above deliberately returns for re-enumeration and skips this
+    // scheduling point. Complete the ordinary recovery before adding one more.
+    if(result==UT_TIMEOUT && xbox_elite2() && !xbox_retry_used)xbox_retry_pending=true;
 done:
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
     xbox_out.active=result==UT_OK;

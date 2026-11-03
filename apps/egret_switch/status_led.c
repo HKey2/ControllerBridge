@@ -87,6 +87,11 @@ void status_led_event(const uc_event *e) {
         if(input_state!=FAULT || identity!=e->sequence)input_state=INITIALIZING;
         identity=e->sequence;break;
     case UC_PROBE_FAILED: input_state=WAITING;identity=0;break;
+    case UC_CONFIGURED:
+        // Recovery succeeded. Keep waiting for the first input, but do not
+        // retain the preceding initialization failure's red indication.
+        if(input_state!=RECEIVING)input_state=INITIALIZING;
+        consecutive_errors=0;break;
     case UC_ENUM_FAILED: input_state=probe_found?FAULT:WAITING;break;
     case UC_REJECTED: case UC_REPORT_DESCRIPTOR_FAILED: input_state=FAULT;break;
     case UC_DISCONNECTED: input_state=WAITING;identity=0;consecutive_errors=0;break;

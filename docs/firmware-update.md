@@ -1,6 +1,6 @@
 # Firmware update
 
-ControllerBridge 0.20.20 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.20.21 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
 
 Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferences. Before returning to firmware through 0.20.18, save those profiles in a gamepad mode or clear their conversion flags using 0.20.19; the older validator rejects that combination.
 
@@ -76,3 +76,7 @@ Feature command **47** returns a 56-byte payload: `CBV1` at offset 0, schema 1 a
 The firmware and connection UI checks use simulated devices and render dialogs. The startup read-only check also handles an attached factory-state board: it verifies unsupported status, automatically cancels the real BOOT wait, and observes stable retries. It then simulates only the prior absent state and lets the normal timer rediscover the attached real USB device, exercising the connection-time path without physically disconnecting or modifying the board. The inspection command reads version/USB identity and detects BOOT disks. No serial reset, reboot, or programming is performed by these checks. See [verification](verification.md) for results and remaining hardware validation.
 
 The device-selection design follows the [Raspberry Pi USB PID allocation](https://github.com/raspberrypi/usb-pid), [RP2350 boot ROM disk implementation](https://github.com/raspberrypi/pico-bootrom-rp2350/blob/master/src/nsboot/usb_virtual_disk.c), and Microsoft's [USB device interface class](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/guid-devinterface-usb-device), [USB location property](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-locationpaths), and [storage device-number query](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-ioctl_storage_get_device_number).
+
+## Elite Series 2 after an update
+
+Firmware 0.20.21 adds one extra automatic recovery cycle when this controller's GIP startup times out. Allow initialization to finish before registering or using it. A cyan blink can continue after connection until a button or stick produces the first accepted input; this idle wait has no timeout. A successful recovery clears an earlier red initialization indication to cyan. See [MS-GIPUSB input](xbox-one-input.md) for the recovery limit and LED meanings.

@@ -26,13 +26,15 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.20.20 - GUI r6 (firmware 0.20.20).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.20.21 - GUI r6 (firmware 0.20.21).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
 **Firmware 0.20.18:** USB mouse uses a dedicated movement path, bypassing gamepad conversion state while preserving pointer gain, inversion, paddle axis, clicks and rapid fire. Gamepad and combined output retain their conversion behavior. See [implementation verification and memory](docs/verification.md).
 
+**0.20.21:** Elite Series 2 gets one additional automatic recovery cycle if GIP startup times out. Successful initialization returns the LED to cyan while waiting for the first input; leaving the controller untouched does not trigger a reconnect. Existing profiles and settings are retained. See [MS-GIPUSB startup and LED states](docs/xbox-one-input.md).
+
 **0.20.20:** MS-GIPUSB input for wired Xbox One-family controllers is available, including the separate Xbox button and Elite paddle fields. Elite Series 2 input and reconnection after bridge restart/firmware update were verified. Connect by USB and choose **Add controller** to create its mappings. Existing mouse-mode conversion preferences remain preserved. Other models and physical Switch/game output still need verification. See [MS-GIPUSB input](docs/xbox-one-input.md).
 
-**0.20.19 / GUI r6:** Selecting USB mouse retains both movement-to-gamepad conversion flags and shows their ON/OFF values in grey. Conversion is inactive in this mode. Returning to Gamepad or Mouse + Gamepad restores the retained settings. Saving and reloading also preserves them; install the matching 0.20.20 firmware. Pointer settings remain editable.
+**0.20.19 / GUI r6:** Selecting USB mouse retains both movement-to-gamepad conversion flags and shows their ON/OFF values in grey. Conversion is inactive in this mode. Returning to Gamepad or Mouse + Gamepad restores the retained settings. Saving and reloading also preserves them; install the matching 0.20.21 firmware. Pointer settings remain editable.
 
 **Earlier GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
 
@@ -42,7 +44,7 @@ Trackball pointer gain remains **1.0–256.0× (default 16.0)** and paddle point
 
 **Paddle Virtual Rolling** is available in **Mouse UDLR settings → Paddle → Mode**. It converts paddle movement into a full-strength left or right analog-stick direction in configurable **5°, 10°, 15°, 20°, 30°, 40°, 45°, 60° or 90° steps**. The default **30°** retains 12 positions; **5°** gives 72 positions and **90°** gives the four cardinal directions. All choices divide a full turn evenly. The initial internal direction is up; stopping centers the selected stick while retaining both angle and incomplete-step movement. Rotation sensitivity is **0.1–10.0° per input point** (default **1.0**), the default destination is **Right stick**, and rotation reversal is independent of pointer reversal. Changing the step aligns the retained angle to the nearest position of the new step and clears incomplete-step movement on the next nonzero paddle input. Ordinary stops retain both. Game restarts do not reset the angle; board startup does. Upgrading from 0.20.15 initializes only the new step to 30° and retains valid existing modes and parameters. Settings predating Virtual Rolling initialize Button clicks mode. See [Virtual Rolling setup and units](docs/configurator-guide.md#virtual-rolling).
 
-Paddle rotation can be assigned per profile to **X (horizontal)** or **Y (vertical)** using the **Output axis** list in the mouse settings. Existing profiles remain X. Gain and rotation reversal apply to the selected axis; trackball movement retains its own X/Y settings. Install the matching 0.20.20 firmware, choose the axis, then **Save profile to device**. Profile and bank sizes are unchanged. See the [paddle settings](docs/configurator-guide.md#paddle-output-axis).
+Paddle rotation can be assigned per profile to **X (horizontal)** or **Y (vertical)** using the **Output axis** list in the mouse settings. Existing profiles remain X. Gain and rotation reversal apply to the selected axis; trackball movement retains its own X/Y settings. Install the matching 0.20.21 firmware, choose the axis, then **Save profile to device**. Profile and bank sizes are unchanged. See the [paddle settings](docs/configurator-guide.md#paddle-output-axis).
 
 Rapid fire supports **1–60 press/release cycles per second**, with **20** as the starting value when enabling an output that was Off. Existing saved rates remain unchanged, and Off remains Off until enabled. The bundled firmware also supports this range. Profile and backup formats are unchanged.
 
@@ -131,13 +133,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 115,824; persistent storage 49,152 | 1,932,176 |
-| SRAM, 532,480 bytes | Static data 156,048; two stacks 8,192 | 368,240 |
+| Flash, 2,097,152 bytes | Code/initial values 116,064; persistent storage 49,152 | 1,931,936 |
+| SRAM, 532,480 bytes | Static data 156,124; two stacks 8,192 | 368,164 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 144 | 3,888 |
 
-Static SRAM consists of vector table 272, initialized data 37,872, and BSS 117,904 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 231,936 bytes.
+Static SRAM consists of vector table 272, initialized data 37,944, and BSS 117,908 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 232,448 bytes.
 
 ## Repository contents and license
 
