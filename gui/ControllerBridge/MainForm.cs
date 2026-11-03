@@ -53,7 +53,7 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r6", new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;

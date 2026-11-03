@@ -26,7 +26,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.20.21 - GUI r6 (firmware 0.20.21).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.20.21 (firmware 0.20.21).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
 **Firmware 0.20.18:** USB mouse uses a dedicated movement path, bypassing gamepad conversion state while preserving pointer gain, inversion, paddle axis, clicks and rapid fire. Gamepad and combined output retain their conversion behavior. See [implementation verification and memory](docs/verification.md).
 
@@ -34,7 +34,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 **0.20.20:** MS-GIPUSB input for wired Xbox One-family controllers is available, including the separate Xbox button and Elite paddle fields. Elite Series 2 input and reconnection after bridge restart/firmware update were verified. Connect by USB and choose **Add controller** to create its mappings. Existing mouse-mode conversion preferences remain preserved. Other models and physical Switch/game output still need verification. See [MS-GIPUSB input](docs/xbox-one-input.md).
 
-**0.20.19 / GUI r6:** Selecting USB mouse retains both movement-to-gamepad conversion flags and shows their ON/OFF values in grey. Conversion is inactive in this mode. Returning to Gamepad or Mouse + Gamepad restores the retained settings. Saving and reloading also preserves them; install the matching 0.20.21 firmware. Pointer settings remain editable.
+**0.20.19:** Selecting USB mouse retains both movement-to-gamepad conversion flags and shows their ON/OFF values in grey. Conversion is inactive in this mode. Returning to Gamepad or Mouse + Gamepad restores the retained settings. Saving and reloading also preserves them; install the matching 0.20.21 firmware. Pointer settings remain editable.
 
 **Earlier GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
 
