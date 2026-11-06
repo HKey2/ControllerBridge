@@ -51,7 +51,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             group.RowStyles.Add(new(SizeType.AutoSize)); group.Controls.Add(note, 0, group.RowCount++); group.SetColumnSpan(note, 3);
         }
         TableLayoutPanel clicks = Group(L.T("クリック変換", "Click conversion"), 0);
-        Note(clicks, L.T("Trackball: Virtual Rolling ／ Paddle: ボタンクリック", "Trackball: Virtual Rolling / Paddle: Button clicks"));
+        Note(clicks, L.T("Trackball: Virtual Cursor ／ Paddle: ボタンクリック", "Trackball: Virtual Cursor / Paddle: Button clicks"));
         Row(clicks, L.T("クリックの移動しきい値", "Click movement threshold"), threshold, "pt");
         Row(clicks, L.T("クリックのホールド時間", "Click hold time"), hold, "ms");
         Row(clicks, L.T("クリックのウェイト時間", "Click wait time"), wait, "ms");
@@ -73,11 +73,11 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         if (threshold.Value != current.Threshold || hold.Value != current.HoldMs || wait.Value != current.WaitMs)
         {
             status.Visible = true;
-            status.Text = L.T("旧設定が編集範囲を超えているため、表示値を編集範囲へ収めています。本体への変更は保存時に行います。", "Older values exceed the editing range. Displayed values are clamped; the device changes only when you save.");
+            status.Text = L.T("旧設定が編集範囲を超えているため、表示値を編集範囲へ収めています。デバイスへの変更は保存時に行います。", "Older values exceed the editing range. Displayed values are clamped; the device changes only when you save.");
         }
         root.Controls.Add(values, 0, 1); root.Controls.Add(status, 0, 2);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
-        save = Ui.Button(L.T("本体に保存", "Save to device"), async (_, _) => await SaveSettings(), true);
+        save = Ui.Button(L.T("デバイスに保存", "Save to device"), async (_, _) => await SaveSettings(), true);
         cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
         footer.Controls.Add(save); footer.Controls.Add(cancel); root.Controls.Add(footer, 0, 3); AcceptButton = save; CancelButton = cancel;
         editors = [threshold, hold, wait, holdThreshold, inertiaThreshold, inertiaDecay, inertiaInterval, rollingGain];

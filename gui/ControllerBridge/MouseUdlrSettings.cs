@@ -73,12 +73,12 @@ public sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs,
     internal static MouseUdlrSettings Read(byte[] data)
     {
         if (data.Length != 56 || !data.AsSpan(0, 4).SequenceEqual("UDS9"u8) || Wire.U32(data, 4) != 9)
-            throw new InvalidDataException(L.T("共通設定を読み込めません。本体のファームウェアを更新してください。", "Cannot read shared settings. Update the device firmware."));
+            throw new InvalidDataException(L.T("共通設定を読み込めません。デバイスのファームウェアを更新してください。", "Cannot read shared settings. Update the device firmware."));
         uint threshold = Wire.U32(data, 8), hold = Wire.U32(data, 12), wait = Wire.U32(data, 16), flags = Wire.U32(data, 20);
         uint buttonMap = Wire.U32(data, 24), paddleButtonMap = Wire.U32(data, 28); ValidateTargets(buttonMap); ValidateTargets(paddleButtonMap);
         if (threshold is < 1 or > 65535 || hold is < 1 or > 1000 || wait is < 1 or > 1000 || flags > 1 || Wire.U32(data, 36) != 0 ||
             (Wire.U32(data, 40) & 0xFF000000u) != 0 || Wire.U32(data, 48) != 0 || Wire.U32(data, 52) != 0)
-            throw new InvalidDataException(L.T("本体から受信した共通設定が不正です。", "The device returned invalid shared settings."));
+            throw new InvalidDataException(L.T("デバイスから受信した共通設定が不正です。", "The device returned invalid shared settings."));
         uint start = Wire.U32(data, 40) & 65535, decay = (Wire.U32(data, 40) >> 16) & 255, interval = Wire.U32(data, 44);
         ValidateInertia(start, decay, interval);
         return new MouseUdlrSettings(threshold, hold, wait, flags == 1, buttonMap, paddleButtonMap,
@@ -108,6 +108,6 @@ internal sealed class MouseUdlrSettingsClient(Func<byte, byte[]?, Task<byte[]>> 
     private static void Verify(MouseUdlrSettings actual, MouseUdlrSettings expected)
     {
         if (actual != expected with { Persisted = true })
-            throw new IOException(L.T("本体への保存結果を確認できませんでした。値を読み直して確認してください。", "Could not verify the saved settings. Read the values from the device again."));
+            throw new IOException(L.T("デバイスへの保存結果を確認できませんでした。値を読み直して確認してください。", "Could not verify the saved settings. Read the values from the device again."));
     }
 }

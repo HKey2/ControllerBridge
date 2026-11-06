@@ -26,9 +26,11 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.22.0 (firmware 0.22.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.22.0 - GUI r2 (firmware 0.22.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
-**0.22.0 settings UI:** Shared settings groups click conversion, Trackball Hold and Paddle Virtual Rolling, with pseudo-inertia inside Hold. Conversion mapping omits the redundant profile-only notice. Save to device and Apply to draft are disabled until settings differ from their opening values; reverting all edits disables the action again.
+**GUI r2:** Trackball's click-conversion mode is now named **Virtual Cursor** in Conversion mapping and Shared settings. Paddle retains **Virtual Rolling**. This is a display-name change; behavior and saved settings are unchanged.
+
+**0.22.0 settings UI:** Shared settings groups click conversion, Trackball Hold and Paddle Virtual Rolling, with pseudo-inertia inside Hold. Conversion mapping omits the redundant profile-only notice. Save to device and Apply to draft are disabled until settings differ from their opening values; reverting all edits disables the action again. Conversion mapping is aligned with the right-hand profile actions. The deletion confirmation explains that dragging remains disabled until all pending edits are saved to the device. Japanese board references consistently use 「デバイス」. The main profile editor now groups Trackball and Paddle in separate raised panels, enclosing each source's enable switch, gain, inversion and conversion controls.
 
 **Firmware 0.20.18:** USB mouse uses a dedicated movement path, bypassing gamepad conversion state while preserving pointer gain, inversion, paddle axis, clicks and rapid fire. Gamepad and combined output retain their conversion behavior. See [implementation verification and memory](docs/verification.md).
 

@@ -51,7 +51,7 @@ internal static class FirmwareWorkflow
         FirmwareInfo installed = await device.VerifyAsync();
         report(FirmwareStage.Verifying, 0);
         if (installed.Version != package.Version)
-            throw new IOException(L.F("書き込み後のバージョンが一致しません。同梱: v{0} / 本体: v{1}", "The version after writing does not match. Bundled: v{0} / Device: v{1}", package.Version, installed.Version));
+            throw new IOException(L.F("書き込み後のバージョンが一致しません。同梱: v{0} / デバイス: v{1}", "The version after writing does not match. Bundled: v{0} / Device: v{1}", package.Version, installed.Version));
         report(FirmwareStage.Complete, 100);
         return FirmwareResult.Updated;
     }
@@ -74,7 +74,7 @@ internal static class FirmwareWorkflow
         FirmwareStage.EnteringBootsel => L.T("更新中です… 書き込みモードに切り替えています。", "Updating… Switching to programming mode."),
         FirmwareStage.WaitingForBootsel => L.T("BOOTボタンを押しながらの再接続を待っています…", "Waiting for reconnection with BOOT held…"),
         FirmwareStage.Writing => L.F("更新中です… 書き込み {0}%", "Updating… Writing {0}%", percent),
-        FirmwareStage.Reconnecting => L.T("更新中です… 本体の再起動・再接続を待っています。", "Updating… Waiting for the device to restart and reconnect."),
+        FirmwareStage.Reconnecting => L.T("更新中です… デバイスの再起動・再接続を待っています。", "Updating… Waiting for the device to restart and reconnect."),
         FirmwareStage.Verifying => L.T("更新中です… 書き込み後のバージョンを確認しています。", "Updating… Checking the installed firmware version."),
         _ => L.T("更新が完了しました。", "Update complete.")
     };

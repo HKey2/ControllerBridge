@@ -1,6 +1,50 @@
 # Verification record
 
-Applies to configurator **0.22.0** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+Applies to configurator **0.22.0 - GUI r2** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+
+## 2026-11-06 — Retain GUI r2 for the uncommitted change set
+
+The full uncommitted GUI change set, including Virtual Cursor terminology and the raised pointing groups, retains **v0.22.0 - GUI r2**. Additional edits and local builds do not create another GUI revision. CONTRIBUTING.md now states this rule. The earlier provisional r3 caption was corrected before commit; all current labels, documentation and build metadata use r2.
+
+Only the title changes in this step. The prior 3,258 Japanese/English terminology and layout checks remain applicable. Fresh output-layout captures pass 128 checks per language (256 total), and every layout record identifies the r2 title. Product verification confirms 212 types without development entry points and unchanged embedded firmware/manifest/icon with existing .NET SDK 9.0.319. The current metadata records `guiRevision: 2` and `displayVersion: v0.22.0 - GUI r2`.
+
+Firmware remains 0.22.0. Memory remains Flash 119,788 plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 stacks (367,992 remaining), and common settings 228 (3,868 free). No physical device was opened or written, and no Git commit was created. The existing release ZIP is retained. Evidence: `test/development/results/gui-r2-uncommitted-20261106`.
+
+## 2026-11-06 — Trackball Virtual Cursor terminology (0.22.0 - GUI r2)
+
+Trackball mode 0 is displayed as **Virtual Cursor** in Conversion mapping and the Shared settings click-conversion note, in both interface languages. Paddle's **Virtual Rolling** and Trackball **Hold** remain unchanged. Only UI strings and the GUI revision label change in product code; mode indices, handlers, serialization, profile formats and firmware are unchanged. Current guides and screenshots use the same terminology.
+
+The existing Japanese/English shared/conversion and output-tab suites pass **1,629 checks per language, 3,258 total**, including simulated 96/144/192 DPI dialog layouts. The Japanese Trackball, Paddle rolling and shared-default screenshots were visually inspected to verify the two distinct names. No new test suite was added for this text change.
+
+Normal Release verification confirms v0.22.0 - GUI r2, 212 product types without development entry points, and unchanged embedded firmware/manifest/icon using existing .NET SDK 9.0.319. Firmware remains 0.22.0. Memory remains Flash 119,788 plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 stacks (367,992 remaining), and common settings 228 (3,868 free). No physical device was opened or written. The standalone EXE is updated; the existing release ZIP is retained. Behavioral evidence: `test/development/results/virtual-cursor-20261106`; final r2 caption/build evidence: `test/development/results/gui-r2-uncommitted-20261106`.
+
+## 2026-11-06 — GUI-only release label, checked against committed history
+
+The current tool is **v0.22.0 - GUI r2**, bundling the unchanged **0.22.0** firmware. The committed v0.19.0 change `0f3e9a4aad2f4481e2a01f20eb353677736204e2` (2026-10-31) changed an unsuffixed title directly to `GUI r2`. The v0.20.16 correction `cc1aa83e9bdfe51102ddee0417bd0bc7ca073dc1` (2026-11-03) did the same in the title and both READMEs. Their r2 ZIPs are retained in dist. Accordingly, the base edition has no visible suffix, and the first suffixed GUI-only release is r2. CONTRIBUTING.md now makes this explicit. Intermediate dated r1 labels below are retained as records of their actual artifacts.
+
+This r2 groups the GUI refinements made after the clean 0.22.0 release: right-column conversion action, deletion/drag guidance, consistent Japanese device wording, and raised Trackball/Paddle panels. Only the title changes in this label step. The completed pointing-group verification (3,470 checks) remains applicable. Fresh Japanese/English output-layout captures pass 128 checks each (256 total) and identify every captured title as `ControllerBridge v0.22.0 - GUI r2`.
+
+The normal Release build uses existing .NET SDK 9.0.319 and retains 212 product types with no development entry points. The embedded UF2, manifest and icon retain their exact hashes. Board memory remains Flash 119,788 plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 stacks (367,992 remaining), and common settings 228 (3,868 free). No physical device was opened or written. Current build metadata records `guiRevision: 2` and `displayVersion: v0.22.0 - GUI r2`; the existing unsuffixed release ZIP is retained. Evidence: `test/development/results/gui-revision-0220-r2-20261106`.
+
+## 2026-11-06 — Raised Trackball and Paddle groups (0.22.0)
+
+The main profile editor encloses Trackball and Paddle settings in separate raised panels using the existing light/shadow border painter. Each source switch and its gain, inversion and conversion controls share a panel; Paddle's output-axis selector stays in that panel. Compact padding and a gap distinguish the groups without adding redundant headings. The combined-mode Button behavior row stays outside them. Mapping, persistence, tooltips and enabled-state behavior are unchanged.
+
+Four existing suites pass **1,735 checks per language, 3,470 total**: output tabs 128, direction controls 67, paddle axis 39 and shared/conversion settings 1,501. All four default-size output layouts have no editor/window scrollbars in Japanese and English. The Japanese combined-controller editor retains 485 pixels for 471 pixels of content. Both language captures were visually inspected. The shared/conversion suite also exercises existing 96/144/192 DPI transitions. No new test suite was added.
+
+The direction and paddle fixtures had legacy capability masks that predated mandatory per-profile conversion support. Local-only preview capabilities now include the current format bits, and those capability scenarios clear only the specific gain/direction/axis bit under examination, retaining all prerequisite bits. Their existing rejection checks and accepted controls now pass against the current product validator. The product validator is unchanged.
+
+Product Release verification retains unsuffixed v0.22.0, 212 product types, no development entry points and exact embedded firmware/manifest/icon hashes using existing .NET SDK 9.0.319. Firmware and memory remain unchanged: Flash 119,788 plus 49,152 reserved (1,928,212 free); static SRAM 156,296 plus 8,192 stacks (367,992 remaining); common settings 228 (3,868 free). No physical device was opened or written. The current standalone EXE is updated; the previous release ZIP is retained. Evidence: `test/development/results/pointing-groups-20261106`.
+
+## 2026-11-06 — Profile action alignment and device wording (0.22.0)
+
+Conversion mapping now occupies the fourth row of the right-hand profile action column, below LED RGB settings. All four actions use equal compact sizing. The initial full-height variant exposed vertical scrolling in the combined-controller view; reducing only these buttons' vertical padding and margins restores the existing default-size layout. The final Japanese combined editor has 509 pixels for 471 pixels of content. All four default-size output layouts pass without editor/window scrollbars in both languages.
+
+The Delete profile Yes/No prompt explicitly states that all unsaved changes must be saved to the device before dragging can reorder profiles. The existing save/reorder behavior is unchanged. Japanese interface messages, buttons, notices, errors and README board references consistently use 「デバイス」.
+
+The six existing suites pass **2,057 checks per language, 4,114 total**: shared/conversion settings 1,501, output tabs 128, connection UI 46, firmware workflow 183, LED settings 166 and input log 33. The shared/conversion suite includes simulated 96/144/192 DPI layouts. Japanese/English main-window and Japanese 192-DPI shared-settings captures were visually inspected. No new test suite was added for this UI change.
+
+The normal Release EXE uses existing .NET SDK 9.0.319, remains v0.22.0 without a GUI revision suffix, and contains 212 product types with no development entry points. Its embedded firmware, manifest and original icon match their existing hashes. Firmware remains unchanged: Flash 119,788 bytes plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 for stacks (367,992 remaining), and common settings 228 bytes (3,868 free). No physical device was opened or written. The existing release ZIP is retained; the current standalone EXE and source are updated. Evidence: `test/development/results/ui-consistency-20261106`.
 
 ## 2026-11-06 — Unified 0.22.0 release label
 
@@ -599,7 +643,7 @@ Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`
 
 Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.21.0. Device settings and firmware were not written during this work.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.22.0. Device settings and firmware were not written during this work.
 
 ## Current normal-build memory
 

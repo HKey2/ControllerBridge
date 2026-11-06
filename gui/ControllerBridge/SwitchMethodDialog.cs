@@ -48,7 +48,7 @@ internal sealed class SwitchMethodDialog : Form
         Label notice = Ui.Label(L.T("出力ボタン名で選びます。各設定で対応する実ボタンを押してください。\nホットキーは2つ以上。余分なボタンを含む組み合わせでは切り替えません。\n組み合わせの入力はゲームにも通常どおり送信されます。連射ONでも判定は押下状態を使います。\nホットキー方式ではBOOT監視を停止します。切替番号は紫の点滅回数で表示します。", "Select output button names and press the corresponding physical buttons.\nUse at least two buttons. Extra buttons prevent switching.\nThe shortcut inputs also reach the game. Rapid fire does not affect shortcut detection.\nShortcut mode disables BOOT switching. Purple flashes indicate the profile number."), 9);
         notice.Dock = DockStyle.Fill; notice.ForeColor = Ui.Muted; root.Controls.Add(notice, 0, 4);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new(0, 8, 0, 0) };
-        Button save = Ui.Button(L.T("本体に保存", "Save to device"), (_, _) =>
+        Button save = Ui.Button(L.T("デバイスに保存", "Save to device"), (_, _) =>
         {
             try {
                 uint mask = 0; if (chord.Checked) { for (int i = 0; i < keys.Length; i++) if (keys[i].Checked && (bool)keys[i].Tag!) mask |= 1u << i; Validate(mask); }

@@ -55,7 +55,7 @@ internal sealed partial class RegistrationWizard : Form
         // the tree, including the mapping editor, across monitor changes.
         intro.Controls.Add(Ui.Label(L.T("USB-Aのコントローラーを登録", "Register the USB-A controller"), 21, true));
         intro.Controls.Add(Ui.Label(L.T($"VID {caps.Vid:X4}   /   PID {caps.Pid:X4}   /   {caps.ProtocolLabel} {caps.FieldCount}項目", $"VID {caps.Vid:X4}   /   PID {caps.Pid:X4}   /   {caps.ProtocolLabel}, {caps.FieldCount} fields"), 13));
-        intro.Controls.Add(Ui.Label(L.T($"本体のスロット {(int)Tag! + 1} を使用します。保存後はPCなしで自動選択されます。", $"Uses slot {(int)Tag! + 1} on the device. After saving, the profile is selected automatically without a PC."), 11));
+        intro.Controls.Add(Ui.Label(L.T($"デバイスのスロット {(int)Tag! + 1} を使用します。保存後はPCなしで自動選択されます。", $"Uses slot {(int)Tag! + 1} on the device. After saving, the profile is selected automatically without a PC."), 11));
         intro.Controls.Add(Ui.Label(L.T("表示名", "Display name"), 11, true)); intro.Controls.Add(name);
         intro.Controls.Add(Ui.Label(L.T("次の画面でSwitchのボタンを選び、実際の入力を押します。\r\n使わないボタン・軸は未割り当てのままで構いません。", "On the next page, select a Switch button, then press the physical input.\r\nYou can leave unused buttons and axes unassigned."), 11));
         if (caps.Partial) intro.Controls.Add(Ui.Label(L.T("一部の入力形式は未対応です。検出できた絶対値入力だけを登録できます。", "Some input formats are not supported. Only detected absolute inputs can be mapped."), 11));
@@ -67,7 +67,7 @@ internal sealed partial class RegistrationWizard : Form
         back.Enabled = step > 0; logButton.Visible = step == 1;
         intro.Visible = step == 0; editor.Visible = step == 1; review.Visible = step == 2;
         (step == 0 ? (Control)intro : step == 1 ? editor : review).BringToFront();
-        next.Text = step == 2 ? L.T("本体に保存して完了", "Save to device and finish") : L.T("次へ", "Next");
+        next.Text = step == 2 ? L.T("デバイスに保存して完了", "Save to device and finish") : L.T("次へ", "Next");
         steps.Text = (step == 0 ? "●" : "✓") + L.T(" 1 機器を確認   →   ", " 1 Check device   →   ") + (step == 1 ? "●" : step > 1 ? "✓" : "○") + L.T(" 2 入力を割り当て   →   ", " 2 Map inputs   →   ") + (step == 2 ? "●" : "○") + L.T(" 3 保存", " 3 Save");
         editor.AbortLearning();
         if (step == 0)
@@ -89,7 +89,7 @@ internal sealed partial class RegistrationWizard : Form
                 for (int i = 0; i < 18; i++) if ((profile.Shift.Overrides & (1u << i)) != 0)
                     review.Items.Add(new ListViewItem([L.T("裏：", "Shift: ") + DeviceProfile.Targets[i], profile.Shift.Buttons[i].ToString()]));
             }
-            hint.Text = L.T($"「{profile.Name}」を本体のスロット {(int)Tag! + 1} に保存します。保存完了後、SwitchへUSB-Cを差し替えて使用できます。", $"Save “{profile.Name}” to device slot {(int)Tag! + 1}. After saving, reconnect USB-C to the Switch to use it.");
+            hint.Text = L.T($"「{profile.Name}」をデバイスのスロット {(int)Tag! + 1} に保存します。保存完了後、SwitchへUSB-Cを差し替えて使用できます。", $"Save “{profile.Name}” to device slot {(int)Tag! + 1}. After saving, reconnect USB-C to the Switch to use it.");
         }
         Ui.ThemeInputs(page);
     }
@@ -102,7 +102,7 @@ internal sealed partial class RegistrationWizard : Form
             if (!profile.Buttons.Any(b => b.Mode != 0) && !profile.Axes.Any(a => a.Mode != 0) &&
                 !(profile.Shift.Keys.Count != 0 && profile.Shift.Buttons.Where((b, i) => (profile.Shift.Overrides & (1u << i)) != 0).Any(b => b.Mode != 0)))
                 throw new InvalidDataException(L.T("少なくとも1つのボタンまたは軸を割り当ててください。", "Assign at least one button or axis."));
-            saving = true; next.Enabled = back.Enabled = page.Enabled = false; hint.Text = L.T("本体に保存し、読み戻して照合しています…", "Saving to the device and reading back to verify…");
+            saving = true; next.Enabled = back.Enabled = page.Enabled = false; hint.Text = L.T("デバイスに保存し、読み戻して照合しています…", "Saving to the device and reading back to verify…");
             await save(profile.Clone()); saving = false; DialogResult = DialogResult.OK; Close();
         }
         catch (Exception ex) { saving = false; next.Enabled = page.Enabled = true; back.Enabled = step > 0; Ui.Error(this, ex); hint.Text = L.T("保存できませんでした。内容はこの画面に保持されています。", "Could not save. Your edits remain on this page."); }

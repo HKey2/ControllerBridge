@@ -93,7 +93,7 @@ internal sealed partial class InputLogForm : Form
     private readonly CheckBox pause = new() { Text = L.T("記録を一時停止", "Pause recording"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox follow = new() { Text = L.T("末尾に追従", "Follow latest"), Checked = true, AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly Label status = Ui.Label("", 9);
-    private readonly string[] headings = [L.T("PC時刻", "PC time"), L.T("本体 µs", "Device µs"), L.T("種別", "Event"), "Index",
+    private readonly string[] headings = [L.T("PC時刻", "PC time"), L.T("デバイス µs", "Device µs"), L.T("種別", "Event"), "Index",
         L.T("入力名", "Input"), "IF", "ID", "bit", "bits", "Usage", L.T("生値", "Raw"), "Hex", L.T("状態 / 範囲", "State / range")];
     private long displayedRevision = -1, displayedReset = -1, displayedEvicted = -1, skipped;
     private bool finished;
@@ -148,7 +148,7 @@ internal sealed partial class InputLogForm : Form
         if (finished || IsDisposed) return;
         if (change.Lost) buffer.Note(L.T("入力イベントの欠落を検出しました。これ以前の履歴は完全ではありません。", "Input events were lost. Earlier history is incomplete."));
         if (pause.Checked) { skipped++; return; }
-        if (field is null) buffer.Note(L.F("不明なフィールド {0}: 生値 {1}、本体時刻 {2} µs", "Unknown field {0}: raw {1}, device time {2} µs", change.Index, change.Value, change.Time));
+        if (field is null) buffer.Note(L.F("不明なフィールド {0}: 生値 {1}、デバイス時刻 {2} µs", "Unknown field {0}: raw {1}, device time {2} µs", change.Index, change.Value, change.Time));
         else buffer.Field(field, change.Value, true, change.Time, false);
     }
     internal void Finish(string reason)
@@ -180,7 +180,7 @@ internal sealed partial class InputLogForm : Form
         }
         if (follow.Checked) view.FollowLatest();
         string mode = finished ? L.T("記録終了", "Finished") : pause.Checked ? L.T("一時停止中", "Paused") : L.T("記録中", "Recording");
-        string text = L.F("{0}  •  {1} / {2} 行  •  古い行の破棄: {3}  •  本体時刻は32bit µs（周回あり）", "{0}  •  {1} / {2} rows  •  Older rows discarded: {3}  •  Device time: 32-bit µs (wraps)", mode, buffer.Count, buffer.Capacity, buffer.Evicted);
+        string text = L.F("{0}  •  {1} / {2} 行  •  古い行の破棄: {3}  •  デバイス時刻は32bit µs（周回あり）", "{0}  •  {1} / {2} rows  •  Older rows discarded: {3}  •  Device time: 32-bit µs (wraps)", mode, buffer.Count, buffer.Capacity, buffer.Evicted);
         if (buffer.LastNotice.Length > 0) text += "\n" + buffer.LastNotice;
         if (status.Text != text) status.Text = text;
     }

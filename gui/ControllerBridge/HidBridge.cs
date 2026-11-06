@@ -45,14 +45,14 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
         if ((profile.Mouse.TrackballToDpad || profile.Mouse.PaddleToDpad) && !SupportsDirectionKeys)
             throw new InvalidDataException(L.T("移動の十字キー変換にはファームウェア0.20.3以降が必要です。", "Movement-to-D-pad conversion requires firmware 0.20.3 or later."));
         if (profile.Mouse.PaddleAxis == PaddleOutputAxis.Y && !SupportsPaddleAxis)
-            throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。本体を更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
+            throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。デバイスを更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
     }
     public bool SelectionUnsaved => (Flags & 16) != 0;
     public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
         if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & (4096 | 16777216 | 33554432)) != (4096 | 16777216 | 33554432))
-            throw new InvalidDataException(L.T("この本体は未対応の設定形式です。GUI付属のControllerBridge.uf2へ更新してください。", "This device uses an unsupported settings format. Update it with the included ControllerBridge.uf2."));
+            throw new InvalidDataException(L.T("このデバイスは未対応の設定形式です。GUI付属のControllerBridge.uf2へ更新してください。", "This device uses an unsupported settings format. Update it with the included ControllerBridge.uf2."));
         return new(b[9], Wire.U16(b, 10), Wire.U16(b, 12), Wire.U16(b, 14), Wire.U16(b, 16), Wire.U16(b, 18),
             Wire.U32(b, 20), Wire.U32(b, 24), Wire.U32(b, 28), Wire.U32(b, 32), b[36], b[37], b[38], Wire.U32(b, 44), b[50], b[51], Wire.U32(b, 52));
     }
@@ -123,7 +123,7 @@ internal sealed class HidBridge : IDisposable
     private static byte[] Feature(SafeFileHandle handle)
     {
         byte[] b = new byte[65];
-        if (!HidD_GetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("本体のUSB通信が切れました。USB-Cの接続を確認してください。", "USB communication was interrupted. Check the USB-C connection."));
+        if (!HidD_GetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスのUSB通信が切れました。USB-Cの接続を確認してください。", "USB communication was interrupted. Check the USB-C connection."));
         return b[1..];
     }
     public static Task<HidBridge> ConnectAsync() => Task.Run(() =>
@@ -164,7 +164,7 @@ internal sealed class HidBridge : IDisposable
                 }
                 finally { Marshal.FreeHGlobal(detail); }
             }
-            if (matches.Count != 1) throw new BridgeDiscoveryException(matches.Count, matches.Count == 0 ? L.T("変換本体が見つかりません。USB-CをPCへ接続し、再接続を押してください。", "No bridge was found. Connect USB-C to this PC and choose Reconnect.") : L.T("変換本体が複数あります。設定する本体を1台だけ接続してください。", "Multiple bridges were found. Connect only the bridge you want to configure."));
+            if (matches.Count != 1) throw new BridgeDiscoveryException(matches.Count, matches.Count == 0 ? L.T("変換デバイスが見つかりません。USB-CをPCへ接続し、再接続を押してください。", "No bridge was found. Connect USB-C to this PC and choose Reconnect.") : L.T("変換デバイスが複数あります。設定するデバイスを1台だけ接続してください。", "Multiple bridges were found. Connect only the bridge you want to configure."));
             HidBridge result = matches[0]; matches.Clear(); return result;
         }
         finally { SetupDiDestroyDeviceInfoList(set); foreach (HidBridge m in matches) m.Dispose(); }
@@ -178,7 +178,7 @@ internal sealed class HidBridge : IDisposable
     {
         if (payload?.Length > 56) throw new ArgumentException("payload");
         byte[] b = new byte[65]; "UC2C"u8.CopyTo(b.AsSpan(1)); b[5] = 1; b[6] = cmd; b[7] = ++sequence; payload?.CopyTo(b, 9);
-        if (!HidD_SetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("本体へ送信できません。接続を確認してください。", "Could not send to the device. Check the connection."));
+        if (!HidD_SetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスへ送信できません。接続を確認してください。", "Could not send to the device. Check the connection."));
         Stopwatch watch = Stopwatch.StartNew();
         do
         {
@@ -187,16 +187,16 @@ internal sealed class HidBridge : IDisposable
             {
                 if (r[7] != 0) throw new BridgeCommandException(r[7], r[7] switch
                 {
-                    1 when cmd == 20 => L.T("本体のファームウェアが古いため、GUI付属のControllerBridge.uf2へ更新してください。", "The device firmware is too old. Update it with the included ControllerBridge.uf2."),
-                    1 => L.T("本体が設定データを受け付けませんでした。形式・入力範囲を確認してください。", "The device rejected the settings. Check the format and input ranges."),
-                    2 => L.T("本体は計測中です。計測終了後に保存してください。", "The device is recording. Save after recording finishes."), 3 => L.T("Flashへの保存または読み出しに失敗しました。", "Flash storage could not be written or read."),
-                    4 => L.T("本体の設定が別の操作で変更されました。再読込してから保存してください。", "Another operation changed the device settings. Reload before saving."), _ => L.T($"本体エラー {r[7]}", $"Device error {r[7]}")
+                    1 when cmd == 20 => L.T("デバイスのファームウェアが古いため、GUI付属のControllerBridge.uf2へ更新してください。", "The device firmware is too old. Update it with the included ControllerBridge.uf2."),
+                    1 => L.T("デバイスが設定データを受け付けませんでした。形式・入力範囲を確認してください。", "The device rejected the settings. Check the format and input ranges."),
+                    2 => L.T("デバイスは計測中です。計測終了後に保存してください。", "The device is recording. Save after recording finishes."), 3 => L.T("Flashへの保存または読み出しに失敗しました。", "Flash storage could not be written or read."),
+                    4 => L.T("デバイスの設定が別の操作で変更されました。再読込してから保存してください。", "Another operation changed the device settings. Reload before saving."), _ => L.T($"デバイスエラー {r[7]}", $"Device error {r[7]}")
                 });
                 return r[8..];
             }
             Thread.Sleep(1);
         } while (watch.ElapsedMilliseconds < 5000);
-        throw new TimeoutException(L.T("本体の応答待ちがタイムアウトしました。", "The device response timed out."));
+        throw new TimeoutException(L.T("デバイスの応答待ちがタイムアウトしました。", "The device response timed out."));
     }
     private async Task<T> Run<T>(Func<T> work)
     {
@@ -233,7 +233,7 @@ internal sealed class HidBridge : IDisposable
         {
             byte[] identity = Command(32, [(byte)slot]);
             if (Wire.U32(identity, 16) != caps.BankGeneration || Wire.U32(identity, 20) != Wire.Crc(b))
-                throw new IOException(L.T("読込中に本体の設定が変わりました。再読込してください。", "The device settings changed while reading. Reload the device."));
+                throw new IOException(L.T("読込中にデバイスの設定が変わりました。再読込してください。", "The device settings changed while reading. Reload the device."));
             profile.ProfileId = new Guid(identity.AsSpan(0, 16));
         }
         return profile;
@@ -243,7 +243,7 @@ internal sealed class HidBridge : IDisposable
         Capabilities before = Caps(); DeviceProfile[] profiles = new DeviceProfile[DeviceProfile.SlotCount];
         for (int i = 0; i < profiles.Length; i++) profiles[i] = ReadProfile(i, before);
         Capabilities after = Caps();
-        if (before.BankGeneration != after.BankGeneration) throw new IOException(L.T("読込中に本体の設定が変わりました。再読込してください。", "The device settings changed while reading. Reload the device."));
+        if (before.BankGeneration != after.BankGeneration) throw new IOException(L.T("読込中にデバイスの設定が変わりました。再読込してください。", "The device settings changed while reading. Reload the device."));
         return (after, profiles);
     });
     public Task<DeviceState> ReadDeviceAsync() => Run(() =>
@@ -298,9 +298,9 @@ internal sealed class HidBridge : IDisposable
         if (registration is not null && (!before.SupportsGuardedRegistration || !registration.Matches(before)))
             throw new IOException(L.T("登録対象の接続を確認できません。コントローラーの接続を確認し、登録をやり直してください。", "The registration connection could not be verified. Check the controller and start registration again."));
         if ((profile.Version >= 2 || profile.HasRapidFire) && !before.SupportsRapidFire)
-            throw new InvalidDataException(L.T("連射設定にはファームウェア0.6.0-dev以降が必要です。先に本体を更新してください。", "Rapid fire requires firmware 0.6.0-dev or later. Update the device first."));
+            throw new InvalidDataException(L.T("連射設定にはファームウェア0.6.0-dev以降が必要です。先にデバイスを更新してください。", "Rapid fire requires firmware 0.6.0-dev or later. Update the device first."));
         if (profile.ProfileId != Guid.Empty && !before.SupportsProfileIdentity)
-            throw new InvalidDataException(L.T("ゲーム別プロファイルにはファームウェア0.7.0-dev以降が必要です。先に本体を更新してください。", "Per-game profiles require firmware 0.7.0-dev or later. Update the device first."));
+            throw new InvalidDataException(L.T("ゲーム別プロファイルにはファームウェア0.7.0-dev以降が必要です。先にデバイスを更新してください。", "Per-game profiles require firmware 0.7.0-dev or later. Update the device first."));
         if (slot < 0 || slot >= DeviceProfile.SlotCount || !before.SupportsMouseProfiles) throw new InvalidDataException(L.T("16スロットと個別感度にはファームウェア0.10.0以降が必要です。", "16 slots and per-profile gain require firmware 0.10.0 or later."));
         if (profile.Mouse.TrackballGain > 10 && !before.SupportsExtendedTrackballGain)
             throw new InvalidDataException(L.T("10.0倍を超えるトラックボール感度にはファームウェア0.13.0以降が必要です。", "Trackball gain above 10.0 requires firmware 0.13.0 or later."));
@@ -337,7 +337,7 @@ internal sealed class HidBridge : IDisposable
     internal Task<byte[]> RawAsync(byte command, byte[]? payload = null) => Run(() => Command(command, payload));
     public Task<uint> SelectProfileAsync(int slot, uint expectedGeneration) => Run(() =>
     {
-        if (!Caps().SupportsOnBoardVariants) throw new InvalidDataException(L.T("本体でのプロファイル切替にはFW 0.8.0以降が必要です。", "On-device profile switching requires firmware 0.8.0 or later."));
+        if (!Caps().SupportsOnBoardVariants) throw new InvalidDataException(L.T("デバイスでのプロファイル切替にはFW 0.8.0以降が必要です。", "On-device profile switching requires firmware 0.8.0 or later."));
         byte[] args = new byte[5]; args[0] = checked((byte)slot); Wire.W32(args, 1, expectedGeneration);
         uint generation = Wire.U32(Command(33, args), 0); Capabilities after = Caps();
         if (after.BankGeneration != generation || after.ActiveSlot != slot || after.SelectionUnsaved)
@@ -376,7 +376,7 @@ internal sealed class HidBridge : IDisposable
     {
         Capabilities before = Caps();
         if (!before.SupportsBankTransfer || before.BankGeneration != expectedGeneration)
-            throw new IOException(L.T("本体のスロット設定を再読込してから保存してください。", "Reload the device's slots before saving."));
+            throw new IOException(L.T("デバイスのスロット設定を再読込してから保存してください。", "Reload the device's slots before saving."));
         foreach (DeviceProfile profile in bank.Profiles) before.ValidatePointingSettings(profile);
         byte[] data = bank.Encode(), begin = new byte[12];
         Wire.W32(begin, 0, expectedGeneration); Wire.W32(begin, 4, Wire.Crc(data)); Wire.W32(begin, 8, (uint)data.Length);
@@ -392,7 +392,7 @@ internal sealed class HidBridge : IDisposable
             byte[] reply = Command(44); committed = true;
             SlotBank actual = ReadBank(), expected = bank.WithGeneration(unchecked(expectedGeneration + 1));
             if (Wire.U32(reply, 0) != actual.Generation || Wire.U32(reply, 4) != actual.Crc || !actual.Encode().SequenceEqual(expected.Encode()))
-                throw new IOException(L.T("保存後の全スロット照合に失敗しました。本体から再読込してください。", "The saved slots could not be verified. Reload the device."));
+                throw new IOException(L.T("保存後の全スロット照合に失敗しました。デバイスから再読込してください。", "The saved slots could not be verified. Reload the device."));
             ApplyProfileOutput(actual.Generation);
             return actual;
         }

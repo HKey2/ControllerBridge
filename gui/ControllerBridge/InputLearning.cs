@@ -122,7 +122,7 @@ internal sealed partial class MappingEditor : UserControl
         guide.RowStyles.Add(new(SizeType.AutoSize)); guide.RowStyles.Add(new(SizeType.AutoSize));
         instruction = Ui.Label(L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller"), 11, true); instruction.Dock = DockStyle.Fill;
         detail = Ui.Label(L.T("ボタンを選ぶと、ここに操作手順を表示します。", "Select an output button to see the instructions here."), 9); detail.Dock = DockStyle.Fill; detail.ForeColor = Ui.Muted;
-        clear = Ui.Button(shiftPage ? L.T("出力なし", "No output") : L.T("割り当て解除", "Clear mapping"), (_, _) => { if (selected < 0) return; learningRequest++; SetBinding(selected, new()); learner = null; UpdateButtons(); detail.Visible = true; instruction.Text = TargetName(selected) + L.T("：出力なし", ": no output"); detail.Text = L.T("割り当てを解除しました。本体に保存すると反映されます。", "Mapping cleared. Save to the device to apply it."); Modified?.Invoke(this, EventArgs.Empty); });
+        clear = Ui.Button(shiftPage ? L.T("出力なし", "No output") : L.T("割り当て解除", "Clear mapping"), (_, _) => { if (selected < 0) return; learningRequest++; SetBinding(selected, new()); learner = null; UpdateButtons(); detail.Visible = true; instruction.Text = TargetName(selected) + L.T("：出力なし", ": no output"); detail.Text = L.T("割り当てを解除しました。デバイスに保存すると反映されます。", "Mapping cleared. Save to the device to apply it."); Modified?.Invoke(this, EventArgs.Empty); });
         guide.Controls.Add(instruction, 0, 0); guide.Controls.Add(detail, 0, 1); inherit = Ui.Button(L.T("表から継承", "Inherit from main"), (_, _) => {
             if (selected < 0) return; learningRequest++; profile.Shift.Overrides &= ~(1u << selected); profile.Shift.Buttons[selected] = new(); learner = null;
             UpdateButtons(); detail.Visible = true; instruction.Text = TargetName(selected) + L.T("：表から継承", ": inherit from main"); detail.Text = L.T("表ページの割り当てを引き継ぎます。", "This output inherits its main-page mapping."); Modified?.Invoke(this, EventArgs.Empty);
@@ -198,7 +198,7 @@ internal sealed partial class MappingEditor : UserControl
         learned.Binding.RapidHz = Binding(selected).RapidHz;
         SetBinding(selected, learned.Binding); learner = null;
         instruction.Text = L.T($"{TargetName(selected)} ← {learned.Field.Label} を割り当てました", $"Assigned {TargetName(selected)} ← {learned.Field.Label}");
-        detail.Text = learned.Binding + L.T("　／　本体に保存すると反映されます。", " / Save to the device to apply it.");
+        detail.Text = learned.Binding + L.T("　／　デバイスに保存すると反映されます。", " / Save to the device to apply it.");
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
     }
     private async void EditAxis(int axis)
@@ -230,7 +230,7 @@ internal sealed partial class MappingEditor : UserControl
         }
         if (!changed) return;
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
-        instruction.Text = L.T("連射設定を変更しました", "Rapid fire settings changed"); detail.Text = L.T("本体に保存すると、設定したボタンを押している間だけ連射します。", "Save to the device to enable rapid fire while holding the configured buttons.");
+        instruction.Text = L.T("連射設定を変更しました", "Rapid fire settings changed"); detail.Text = L.T("デバイスに保存すると、設定したボタンを押している間だけ連射します。", "Save to the device to enable rapid fire while holding the configured buttons.");
     }
     private DigitalBinding Binding(int i) => shiftPage && (profile.Shift.Overrides & (1u << i)) != 0 ? profile.Shift.Buttons[i] : profile.Buttons[i];
     private void SetBinding(int i, DigitalBinding value)
@@ -274,7 +274,7 @@ internal sealed partial class MappingEditor : UserControl
         shift.Enabled = profile.Enabled;
         shift.Text = profile.Shift.Keys.Count == 0 ? L.T("シフト設定…", "Button shift…") : L.T($"シフト設定…（{profile.Shift.Keys.Count}キー）", $"Button shift… ({profile.Shift.Keys.Count} {(profile.Shift.Keys.Count == 1 ? "key" : "keys")})");
         int rapidCount = Enumerable.Range(0, 18).Count(i => Binding(i).RapidHz != 0);
-        rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（本体の更新が必要）", "Rapid fire (update required)");
+        rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（デバイスの更新が必要）", "Rapid fire (update required)");
         rapid.Enabled = profile.Enabled && supportsRapid;
         tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒1～60回を設定します。新規設定は20回です。", "Set each button to OFF or 1–60 presses per second. New settings start at 20.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));
         string[] shortNames = [L.T("左 X", "Left X"), L.T("左 Y", "Left Y"), L.T("右 X", "Right X"), L.T("右 Y", "Right Y")];

@@ -55,7 +55,7 @@ internal sealed partial class LedRgbDialog : Form
         FlowLayoutPanel preview = new() { AutoSize = true, WrapContents = false, Margin = new(22, 0, 0, 0) };
         Label previewLabel = Ui.Label(L.T("プレビュー", "Preview"), 9); previewLabel.Anchor = AnchorStyles.Left;
         preview.Controls.Add(swatch); preview.Controls.Add(previewLabel); root.Controls.Add(preview, 0, 4);
-        Label hint = Ui.Label(L.T("本体には入力したRGB値（0～255）を送信します。0 / 0 / 0 は消灯です。\n状態通知の色・点滅は優先されます。\n",
+        Label hint = Ui.Label(L.T("デバイスには入力したRGB値（0～255）を送信します。0 / 0 / 0 は消灯です。\n状態通知の色・点滅は優先されます。\n",
             "The entered RGB values (0–255) are sent to the LED. 0 / 0 / 0 is off.\nStatus colors and flashes take priority.\n") + L.ProfileSaveNotice, 9);
         hint.Dock = DockStyle.Fill; hint.ForeColor = Ui.Muted; hint.Margin = new(4, 8, 4, 8); root.Controls.Add(hint, 0, 5);
         FlowLayoutPanel actions = new() { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Dock = DockStyle.Bottom, Margin = Padding.Empty };

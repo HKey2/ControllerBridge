@@ -40,11 +40,11 @@ internal sealed partial class MainForm : Form
     private readonly RadioButton mouseButtons = new() { Text = L.T("マウス扱い", "Mouse"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton gamepadButtons = new() { Text = L.T("コントローラー扱い", "Controller"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly FlowLayoutPanel buttonBehavior = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = Padding.Empty };
-    private readonly Label connection = Ui.Label(L.T("本体のUSB-CをPCへ接続してください。", "Connect the bridge's USB-C port to this PC."), 10);
+    private readonly Label connection = Ui.Label(L.T("デバイスのUSB-CをPCへ接続してください。", "Connect the bridge's USB-C port to this PC."), 10);
     private string connectionDetail = "";
     private readonly Label live = Ui.Label(L.T("入力: —", "Input: —"), 9);
     private readonly Label identity = Ui.Label("", 9);
-    private readonly Label saved = Ui.Label(L.T("16スロットを本体に保存できます。", "Store up to 16 profiles on the bridge."), 9);
+    private readonly Label saved = Ui.Label(L.T("16スロットをデバイスに保存できます。", "Store up to 16 profiles on the bridge."), 9);
     private readonly Label outputStatus = Ui.Label("", 9);
     private readonly Button connect, reload, saveButton, useProfile, switchMethod, mouseUdlrSettings, delete, duplicate, ledSettings, conversionSettings, backup, restore, firmwareUpdate;
     private MappingEditor ActiveEditor => outputTabs.SelectedIndex == 0 ? editor :
@@ -53,7 +53,7 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3), new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r2", new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -97,22 +97,29 @@ internal sealed partial class MainForm : Form
         BufferedTableLayoutPanel metadata = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(2, 0, 2, 4) };
         metadata.ColumnStyles.Add(new(SizeType.Percent, 100)); metadata.ColumnStyles.Add(new(SizeType.Absolute, 190));
         metadata.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty };
+        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
         nameRow.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 5; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 4; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3);
         metadata.Controls.Add(nameRow, 0, 0);
-        BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(8, 0, 0, 0) };
+        BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 4, Padding = new(8, 0, 0, 0) };
         profileActions.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 3; i++) profileActions.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 4; i++) profileActions.RowStyles.Add(new(SizeType.AutoSize));
         delete = Ui.Button(L.T("プロファイル削除", "Delete profile"), async (_, _) => { if (profiles[selected].Enabled) DeleteProfile(); else await AddController(); });
         duplicate = Ui.Button(L.T("プロファイル複製", "Duplicate profile"), (_, _) => DuplicateProfile());
         delete.Dock = duplicate.Dock = DockStyle.Fill; profileActions.Controls.Add(duplicate, 0, 0); profileActions.Controls.Add(delete, 0, 1);
         ledSettings = Ui.Button(L.T("LED RGB設定", "LED RGB settings"), (_, _) => ConfigureLed());
         ledSettings.Dock = DockStyle.Fill; profileActions.Controls.Add(ledSettings, 0, 2);
         conversionSettings = Ui.Button(L.T("方向変換の割り当て", "Conversion mapping"), (_, _) => ConfigureConversion());
-        conversionSettings.Anchor = AnchorStyles.Left; nameRow.Controls.Add(conversionSettings, 0, 4);
+        conversionSettings.Dock = DockStyle.Fill; profileActions.Controls.Add(conversionSettings, 0, 3);
+        // Four aligned actions share the existing header space, preserving room for combined output.
+        foreach (Button action in new[] { duplicate, delete, ledSettings, conversionSettings })
+        {
+            action.MinimumSize = new(90, 32);
+            action.Padding = new(10, 2, 10, 2);
+            action.Margin = new(4, 2, 4, 2);
+        }
         metadata.Controls.Add(profileActions, 1, 0); right.Controls.Add(metadata, 0, 0);
         details = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         details.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -153,7 +160,7 @@ internal sealed partial class MainForm : Form
         Label buttonBehaviorLabel = Ui.Label(L.T("ボタン動作", "Button behavior"), 10); buttonBehaviorLabel.Anchor = AnchorStyles.Left;
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
-        SetTip(trackballKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後のX/Yを個別に蓄積し、本体共通の64で↑↓←→を1回押して離します。超過分は捨てます。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted X/Y independently; at the device-wide threshold of 64, press/release ↑↓←→ once and discard excess."));
+        SetTip(trackballKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後のX/Yを個別に蓄積し、デバイス共通の64で↑↓←→を1回押して離します。超過分は捨てます。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted X/Y independently; at the device-wide threshold of 64, press/release ↑↓←→ once and discard excess."));
         SetTip(paddleKeys, L.T("マウス UDLR設定のパドルモードを有効にします。ボタンクリックは選択軸の方向入力、Virtual Rollingは選択スティックへ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Mouse UDLR settings: button clicks along the selected axis, or Virtual Rolling on the selected stick. Pointer movement continues."));
         SetTip(invertPaddle, L.T("ポインタ移動とボタンクリックを反転します。Virtual Rollingの反転はマウス UDLR設定で指定します。", "Reverse pointer movement and button clicks. Virtual Rolling has its own reversal in Mouse UDLR settings."));
         // Keep both editors in the control tree while hidden so they receive
@@ -167,7 +174,7 @@ internal sealed partial class MainForm : Form
         BufferedTableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(0, 12, 0, 0) };
         footer.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) footer.ColumnStyles.Add(new(SizeType.AutoSize));
         saved.Dock = DockStyle.Fill; saved.ForeColor = Ui.Muted; footer.Controls.Add(saved, 0, 0);
-        reload = Ui.Button(L.T("本体から再読込", "Reload device"), async (_, _) => await Reload());
+        reload = Ui.Button(L.T("デバイスから再読込", "Reload device"), async (_, _) => await Reload());
         useProfile = Ui.Button(L.T("この設定を使用", "Use this profile"), async (_, _) => await UseProfile());
         saveButton = Ui.Button(L.ProfileSaveButton, async (_, _) => await SaveSelected(), true);
         footer.Controls.Add(reload, 1, 0); footer.Controls.Add(useProfile, 2, 0); footer.Controls.Add(saveButton, 3, 0); root.Controls.Add(footer, 0, 2); Controls.Add(root);
@@ -210,7 +217,7 @@ internal sealed partial class MainForm : Form
     }
     private static BufferedTableLayoutPanel TuningRow(CheckBox toggle, NumericUpDown gain, params Control[] options)
     {
-        BufferedTableLayoutPanel row = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 + options.Length, RowCount = 1, Margin = Padding.Empty };
+        RaisedTableLayoutPanel row = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3 + options.Length, RowCount = 1, Padding = new(6, 4, 6, 4), Margin = new(0, 0, 0, 4) };
         for (int i = 0; i < row.ColumnCount; i++) row.ColumnStyles.Add(new(SizeType.AutoSize));
         Label label = Ui.Label(L.T("ポインタ感度（倍）", "Pointer gain (×)"), 10); label.Anchor = AnchorStyles.Left;
         row.Controls.Add(toggle, 0, 0); row.Controls.Add(label, 1, 0); row.Controls.Add(gain, 2, 0);
@@ -314,7 +321,7 @@ internal sealed partial class MainForm : Form
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
         useProfile.Enabled = online && !working && !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } && caps.ActiveSlot != selected && profiles[selected].Matches(caps);
     }
-    private bool ConfirmDiscard() => !dirty.Any(x => x) || MessageBox.Show(this, L.T("未保存の編集を破棄して、本体から読み直しますか？", "Discard unsaved edits and reload the device?"),
+    private bool ConfirmDiscard() => !dirty.Any(x => x) || MessageBox.Show(this, L.T("未保存の編集を破棄して、デバイスから読み直しますか？", "Discard unsaved edits and reload the device?"),
         L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     private async Task WaitForPoll() { while (polling && !closing) await Task.Delay(5); }
     private async Task WaitForConnection() { while (connecting && !closing) await Task.Delay(5); }
@@ -357,14 +364,14 @@ internal sealed partial class MainForm : Form
             if (!retain && caps.ActiveSlot < profiles.Length) selected = caps.ActiveSlot;
             UpdateConnection();
             RefreshSlots(); BindSelected();
-            SetText(saved, retain ? L.T("再接続しました。未保存の編集を保持しています。", "Reconnected. Unsaved edits have been kept.") : L.T("本体から16スロットを読み込みました。", "Loaded all 16 slots from the device."));
+            SetText(saved, retain ? L.T("再接続しました。未保存の編集を保持しています。", "Reconnected. Unsaved edits have been kept.") : L.T("デバイスから16スロットを読み込みました。", "Loaded all 16 slots from the device."));
         }
         catch (Exception ex)
         {
             bridge?.Dispose(); bridge = null;
             if (closing || !showErrors && (working || ModalEditorOpen)) return;
             ClearDeviceState();
-            SetConnectionDetail(ex.Message); SetText(connection, L.T("本体の接続を確認できません。接続・ファームウェアを確認してください。", "Could not verify the device connection. Check USB and firmware.")); if (showErrors) Ui.Error(this, ex);
+            SetConnectionDetail(ex.Message); SetText(connection, L.T("デバイスの接続を確認できません。接続・ファームウェアを確認してください。", "Could not verify the device connection. Check USB and firmware.")); if (showErrors) Ui.Error(this, ex);
         }
         finally
         {
@@ -397,7 +404,7 @@ internal sealed partial class MainForm : Form
         if (working || !ConfirmDiscard()) return;
         if (bridge is null) return;
         working = true; AbortLearning(); UpdateEnabled(); await WaitForPoll();
-        try { var bank = await bridge.ReadProfilesAsync(); ApplyBank(bank.Profiles, bank.Caps.BankGeneration); await RefreshDevice(); RefreshSlots(); BindSelected(); SetText(saved, L.T("本体のスロットを再読込しました。", "Reloaded the device's slots.")); }
+        try { var bank = await bridge.ReadProfilesAsync(); ApplyBank(bank.Profiles, bank.Caps.BankGeneration); await RefreshDevice(); RefreshSlots(); BindSelected(); SetText(saved, L.T("デバイスのスロットを再読込しました。", "Reloaded the device's slots.")); }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
@@ -422,9 +429,9 @@ internal sealed partial class MainForm : Form
     private void UpdateConnection()
     {
         if (caps is null) return;
-        string connectionText = caps.Connected ? L.T($"本体 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel} {caps.FieldCount}項目", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel}, {caps.FieldCount} fields") :
-            caps.Vid != 0 ? L.T($"本体 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4} を検出", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4} detected") :
-            L.T("本体 接続済み  •  入力コントローラーをUSB-Aへ接続してください。", "Device connected  •  Connect an input controller to USB-A.");
+        string connectionText = caps.Connected ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel} {caps.FieldCount}項目", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel}, {caps.FieldCount} fields") :
+            caps.Vid != 0 ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4} を検出", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4} detected") :
+            L.T("デバイス 接続済み  •  入力コントローラーをUSB-Aへ接続してください。", "Device connected  •  Connect an input controller to USB-A.");
         string stateText = !caps.Connected ? WaitingState(caps) : caps.InvalidBinding ? L.T("入力形式が保存済みの割り当てと一致しません。再登録してください。", "The input layout does not match the saved mapping. Register the controller again.") :
             caps.ActiveSlot < profiles.Length ? L.T($"スロット {caps.ActiveSlot + 1} を使用中", $"Slot {caps.ActiveSlot + 1} is active") :
             L.T("このコントローラーに一致するプロファイルがありません。未使用スロットから追加してください。", "This controller has no matching profile. Use an empty slot to add it.");
@@ -436,7 +443,7 @@ internal sealed partial class MainForm : Form
         if (!caps.Persisted) stateText += L.T("  •  初期設定を使用中", "  •  Using default settings");
         if (caps.SelectionUnsaved) stateText += L.T("  •  選択スロットが未保存", "  •  Active slot not saved");
         if (caps.BankGeneration != bankGeneration) {
-            stateText = L.T("本体の設定が変更されています。「本体から再読込」を押してください。", "The device settings have changed. Choose “Reload device”.");
+            stateText = L.T("デバイスの設定が変更されています。「デバイスから再読込」を押してください。", "The device settings have changed. Choose “Reload device”.");
             SetText(saved, stateText);
         }
         if (InputNeedsSpace) { stateText = NoProfileSpace; connectionText += "\n" + NoProfileSpace; }
@@ -522,7 +529,7 @@ internal sealed partial class MainForm : Form
         {
             AbortLearning(); wizard?.ConnectionLost(); bridge?.Dispose(); bridge = null; reconnectAfter = DateTime.UtcNow.AddSeconds(2);
             ClearDeviceState();
-            SetConnectionDetail(ex.Message); SetText(connection, L.T("本体の再接続待ち。編集内容は保持しています。", "Waiting for the device to reconnect. Your edits are kept.")); UpdateEnabled();
+            SetConnectionDetail(ex.Message); SetText(connection, L.T("デバイスの再接続待ち。編集内容は保持しています。", "Waiting for the device to reconnect. Your edits are kept.")); UpdateEnabled();
         }
         finally { polling = false; HandleControllerArrival(); }
     }
@@ -561,7 +568,7 @@ internal sealed partial class MainForm : Form
             bankGeneration = await bridge!.SaveAsync(slot, p, bankGeneration);
             profiles[slot] = p; persistedProfiles[slot] = p.Clone(); dirty[slot] = false; observedBankGeneration = bankGeneration;
             await RefreshDevice(); RefreshSlots(); BindSelected();
-            SetText(saved, L.F("スロット {0} を本体に保存しました。", "Saved slot {0} to the device.", slot + 1));
+            SetText(saved, L.F("スロット {0} をデバイスに保存しました。", "Saved slot {0} to the device.", slot + 1));
         }
         catch (Exception ex) { SetText(saved, L.T("保存結果を確認できませんでした。編集内容は保持しています。", "The save could not be verified. Your edits are kept.")); Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
@@ -589,8 +596,8 @@ internal sealed partial class MainForm : Form
         DeviceProfile profile = profiles[selected];
         if (!profile.Enabled) return L.T("コントローラーを登録すると出力方式を選択できます。", "Register a controller to choose its output mode.");
         if (working) return L.T("処理中は出力方式を変更できません。完了後に選択してください。", "Output modes cannot be changed while an operation is in progress. Wait for it to finish.");
-        if (caps is null) return L.T("出力方式を変更するには、本体のUSB-CをPCへ接続し、「接続 / 再接続」を押してください。", "To change the output mode, connect the bridge's USB-C port to this PC and choose Connect / Reconnect.");
-        if (!caps.SupportsProfileOutput) return L.T("この本体では出力方式を変更できません。「ファームウェア更新」から同梱ファームウェアへ更新してください。", "This firmware cannot change profile output modes. Install the bundled firmware using Firmware update.");
+        if (caps is null) return L.T("出力方式を変更するには、デバイスのUSB-CをPCへ接続し、「接続 / 再接続」を押してください。", "To change the output mode, connect the bridge's USB-C port to this PC and choose Connect / Reconnect.");
+        if (!caps.SupportsProfileOutput) return L.T("このデバイスでは出力方式を変更できません。「ファームウェア更新」から同梱ファームウェアへ更新してください。", "This firmware cannot change profile output modes. Install the bundled firmware using Firmware update.");
         return null;
     }
     private void UpdateOutputAvailability()
@@ -685,7 +692,7 @@ internal sealed partial class MainForm : Form
     }
     private void DeleteProfile()
     {
-        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n本体への反映は保存時に行います。", "Delete “{1}” from slot {0}?\nThis takes effect when you save the slot.", selected + 1, profiles[selected].Name),
+        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n\n削除は「プロファイルをデバイスに保存」で反映されます。\n未保存の変更をデバイスに反映するまで、リストをドラッグして並べ替えることはできません。", "Delete “{1}” from slot {0}?\n\nDeletion is applied when you choose “Save profile to device”.\nDragging profiles to reorder the list is disabled until all unsaved changes are saved to the device.", selected + 1, profiles[selected].Name),
             L.T("プロファイル削除", "Delete profile"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         profiles[selected] = new(); MarkDirty(); RefreshSlots(); BindSelected();
     }
@@ -705,7 +712,7 @@ internal sealed partial class MainForm : Form
     {
         SlotBank bank = await bridge!.ReadBankAsync();
         if (bank.Generation != bankGeneration || !Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i])))
-            throw new IOException(L.T("本体の設定が変わっています。再読込してください。", "The device settings have changed. Reload them first."));
+            throw new IOException(L.T("デバイスの設定が変わっています。再読込してください。", "The device settings have changed. Reload them first."));
         return bank;
     }
     private async Task BackupAll()
@@ -757,13 +764,13 @@ internal sealed partial class MainForm : Form
             await RefreshDevice(); RefreshSlots(); BindSelected();
             SetText(saved, L.T("スロットの順番を保存しました。BOOT・ショートカットもこの順で切り替わります。", "Slot order saved. BOOT and shortcuts follow this order."));
         }
-        catch (Exception ex) { SetText(saved, L.T("並べ替えの結果を確認できません。本体から再読込してください。", "The new order could not be verified. Reload the device.")); Ui.Error(this, ex); }
+        catch (Exception ex) { SetText(saved, L.T("並べ替えの結果を確認できません。デバイスから再読込してください。", "The new order could not be verified. Reload the device.")); Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
     private async void OnClosing(object? sender, FormClosingEventArgs e)
     {
         if (closing) return; if (working) { e.Cancel = true; return; }
-        if (dirty.Any(x => x) && MessageBox.Show(this, L.T("本体に保存していない編集があります。終了しますか？", "There are unsaved edits. Close ControllerBridge?"),
+        if (dirty.Any(x => x) && MessageBox.Show(this, L.T("デバイスに保存していない編集があります。終了しますか？", "There are unsaved edits. Close ControllerBridge?"),
             L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
         e.Cancel = true; closing = true; timer.Stop(); while (polling) await Task.Delay(5);
         bridge?.Dispose(); bridge = null; timer.Dispose(); tips.Dispose(); BeginInvoke(Close);

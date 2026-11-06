@@ -31,7 +31,7 @@ internal sealed class ConversionSettingsDialog : Form
             control.AccessibleName = label; grid.Controls.Add(text, 0, row); grid.Controls.Add(control, 1, row);
         }
         TableLayoutPanel ball = Page("Trackball"), paddle = Page("Paddle");
-        trackballMode.Items.AddRange(["Virtual Rolling", "Hold"]); trackballMode.SelectedIndex = Result.TrackballMode;
+        trackballMode.Items.AddRange(["Virtual Cursor", "Hold"]); trackballMode.SelectedIndex = Result.TrackballMode;
         paddleMode.Items.AddRange([L.T("ボタンクリック", "Button clicks"), "Virtual Rolling"]); paddleMode.SelectedIndex = Result.PaddleMode;
         Row(ball, L.T("変換モード", "Conversion mode"), trackballMode);
         inertia.Checked = Result.InertiaEnabled; Row(ball, L.T("疑似慣性", "Pseudo-inertia"), inertia);
@@ -96,7 +96,7 @@ internal sealed partial class MainForm
     }
     private static string LegacyImportNotice(bool fromDevice) =>
         L.T("旧形式を変換しました。4個目のシフトキーがある場合は削除し、先頭3個を保持します。\n", "Converted the older format. A fourth shift key is removed; the first three are retained.\n") +
-        (fromDevice ? L.T("旧ファイルに含まれない方向変換設定は、この本体に残る移行用設定で補完しました。保存前に割り当てと回転刻みを確認してください。",
+        (fromDevice ? L.T("旧ファイルに含まれない方向変換設定は、このデバイスに残る移行用設定で補完しました。保存前に割り当てと回転刻みを確認してください。",
             "Conversion settings missing from the old file use this device's retained migration defaults. Check mappings and rotation steps before saving.") :
             L.T("旧ファイルに含まれない方向変換設定は標準値で補完しました。保存前に割り当てと回転刻みを確認してください。",
             "Conversion settings missing from the old file use standard defaults. Check mappings and rotation steps before saving."));

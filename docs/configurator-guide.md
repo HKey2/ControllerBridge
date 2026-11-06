@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.22.0 and RP2350-USB-A firmware 0.22.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.22.0 - GUI r2 and RP2350-USB-A firmware 0.22.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -44,7 +44,7 @@ In this screenshot, unused slot 05 was selected manually to show its controls. T
 
 **Duplicate profile** copies the selection into the nearest unused slot below it. It creates a new ID and appends an available `[2]`, `[3]`, and so on to the stored name. Copying a numbered copy does not nest suffixes. The original name stays unchanged. Reordering or deleting other profiles does not renumber names. Names are shortened at complete Unicode character boundaries when necessary to fit the 47-byte UTF-8 limit. Save the new slot to persist it. Duplication does not wrap to unused slots above the source.
 
-**Delete profile** marks the selected slot unused after confirmation. Save that slot to apply the deletion. Before saving, **Reload device** can discard the draft.
+**Delete profile** marks the selected slot unused after confirmation. Choose **Save profile to device** for that slot to apply the deletion. The Yes/No confirmation explains that dragging profiles to reorder the list is disabled until all unsaved changes have been saved to the device. Before saving, **Reload device** can discard the draft.
 
 ### Inspect raw inputs during registration
 
@@ -153,23 +153,25 @@ Selecting an available tab edits the profile. Save the slot to persist it. Unava
 
 A USB layout change reconnects USB-C; the USB-A input host remains running. Changing only combined-mode button behavior needs no USB reconnection.
 
+Trackball and Paddle controls are enclosed in separate raised panels in every output tab. Each panel groups its source ON/OFF switch with pointer gain, inversion and conversion settings; Paddle also contains its output-axis selector. The combined-mode Button behavior row remains outside both groups.
+
 For the EGRET II mini Paddle Controller, trackball and paddle can be enabled independently. Trackball gain is 1.0-256.0, default 16.0; paddle gain is 1.0-10.0, default 1.0, both in 0.1 steps. The paddle can produce horizontal or vertical movement.
 
 ### Movement to D-pad
 
 Enable **Trackball ON** and **Convert to ↑↓←→**, or **Paddle ON** and **Enable conversion**, in the profile editor. Choose **Gamepad** for gamepad output alone or **Mouse + Gamepad** for pointer movement together with conversion. USB mouse-only retains these preferences in disabled controls but does not execute conversion. Pointer gain and inversion remain independent per-profile settings. No physical D-pad binding is required.
 
-Trackball **Virtual Rolling** is the original accumulated-click mode. It uses hidden shared gains (initially 6.0× for Trackball and 1.5× for Paddle) instead of pointer gain. Each axis emits one click when its signed sum reaches the click threshold, clears that sum and discards excess. Trackball X, Trackball Y and Paddle events retain their order. A separate queue holds four waiting clicks in addition to the current click; extra clicks are discarded and counted. Physical buttons/axes and pointer movement continue independently.
+Trackball **Virtual Cursor** is the original accumulated-click mode. It uses hidden shared gains (initially 6.0× for Trackball and 1.5× for Paddle) instead of pointer gain. Each axis emits one click when its signed sum reaches the click threshold, clears that sum and discards excess. Trackball X, Trackball Y and Paddle events retain their order. A separate queue holds four waiting clicks in addition to the current click; extra clicks are discarded and counted. Physical buttons/axes and pointer movement continue independently.
 
 Each click holds for the configured pressed time after USB acknowledges the press, then waits for the configured released interval after release is acknowledged. The defaults 30/20 ms give an ideal upper bound of 20 clicks/s before polling overhead. A physical button using the same target, or any physical D-pad when the target is a direction, takes priority. Disconnects, profile changes and output resets clear generated work.
 
 ## Conversion mapping and shared settings
 
-Use the selected profile's **Conversion mapping** button, below its name, to edit these settings:
+Use the selected profile's **Conversion mapping** button in the right-hand action column, below **LED RGB settings**, to edit these settings:
 
 | Setting | Profile value |
 |---|---|
-| Trackball | Virtual Rolling (clicks) or Hold with optional pseudo-inertia; four targets in ↑/↓/←/→ order |
+| Trackball | Virtual Cursor (clicks) or Hold with optional pseudo-inertia; four targets in ↑/↓/←/→ order |
 | Paddle | Button clicks or Virtual Rolling; negative and positive targets |
 | Virtual Rolling | Rotation step, output stick and independent rotation reversal |
 
