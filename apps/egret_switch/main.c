@@ -226,6 +226,14 @@ static void schedule_output(void) {
         pad_was_ready=false;return;
     }
     pad_was_ready=true;
+    // Expiration is an ordered input edge, even while earlier frames wait for ACK.
+    // Never replace the historical masks already queued for quick reversals.
+    uint32_t hold_now=time_us_32();uint8_t hold_now_mask=upr_hold_directions(hold_now);
+    if(outgoing.have_latest && outgoing.latest.hold_directions!=hold_now_mask) {
+        ub_frame release=outgoing.latest;release.hold_directions=hold_now_mask;
+        release.received_us=hold_now;release.sequence=++input_sequence;
+        ub_queue_push(&outgoing,&release);
+    }
     if(atomic_load_explicit(&ack_pending,memory_order_acquire))return;
     bool from_queue=ub_queue_depth(&outgoing)!=0;
     ub_frame next;
@@ -236,14 +244,14 @@ static void schedule_output(void) {
         next.transition=false;next.hold_directions=upr_hold_directions(time_us_32());
     }
     // Hold state belongs to the queued input edge; preserve quick reversals/releases.
-    um_hold_overlay(next.hold_directions,direction_settings.targets,&next.report);
+    um_hold_overlay(next.hold_directions,upr_direction_settings()->targets,&next.report);
     // Overlay the chosen generated target. Other buttons, axes and the mouse
     // endpoint retain their independent scheduling.
     uint8_t active_direction=direction_pulse.phase!=UB_DIRECTION_IDLE && direction_pulse.level?
         (uint8_t)(direction_pulse.level-1):direction_pulse.pending[direction_pulse.read].direction;
-    if(ub_direction_pending_frames(&direction_pulse) && ub_direction_blocked(&next.report,active_direction,udk_source_targets(&direction_settings,
+    if(ub_direction_pending_frames(&direction_pulse) && ub_direction_blocked(&next.report,active_direction,udk_source_targets(upr_direction_settings(),
         direction_pulse.phase!=UB_DIRECTION_IDLE?direction_pulse.source:direction_pulse.pending[direction_pulse.read].source)))direction_blocked++;
-    ub_direction_prepare(&direction_pulse,time_us_32(),direction_settings.hold_ms*1000u,direction_settings.wait_ms*1000u,direction_settings.targets,direction_settings.paddle_targets,&next);
+    ub_direction_prepare(&direction_pulse,time_us_32(),direction_settings.hold_ms*1000u,direction_settings.wait_ms*1000u,upr_direction_settings()->targets,upr_direction_settings()->paddle_targets,&next);
     // Use current virtual axes even when the ordinary state queue is empty.
     // Overlays never enter that queue, so stopping/switching restores its base axes.
     upr_rolling_overlay(time_us_32(),&next.report);
@@ -457,7 +465,7 @@ static void handle_host_event(const uc_event *e) {
         ub_queue_push(&outgoing,&frame);
         for(unsigned i=0;i<keys.count;++i) {
             direction_generated++;
-            if(ub_direction_blocked(&frame.report,keys.direction[i],udk_source_targets(&direction_settings,keys.source[i])))direction_blocked++;
+            if(ub_direction_blocked(&frame.report,keys.direction[i],udk_source_targets(upr_direction_settings(),keys.source[i])))direction_blocked++;
             else if(ub_direction_offer(&direction_pulse,keys.direction[i],keys.source[i],e->time_us))direction_enqueued++;
             else direction_dropped++;
         }
@@ -606,10 +614,11 @@ static void handle_command(void) {
                 ub_direction_reset(&direction_pulse);ub_queue_clear_hold(&outgoing);
             }
         }
-        memcpy(payload,"UDS7",4);put32(payload+4,7);
+        memcpy(payload,"UDS9",4);put32(payload+4,9);
         put32(payload+8,direction_settings.threshold);put32(payload+12,direction_settings.hold_ms);
         put32(payload+16,direction_settings.wait_ms);put32(payload+20,direction_setting_saved?1:0);
-        memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));break;
+        memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));put32(payload+36,0);
+        put32(payload+40,udk_inertia_pack(&direction_settings));put32(payload+44,direction_settings.inertia_interval_ms);break;
     }
     case CMD_DIRECTION_TIMING:
         memcpy(payload,"DPT1",4);payload[4]=1;payload[5]=direction_pulse.phase;
@@ -726,6 +735,10 @@ int __not_in_flash_func(main)(void) {
     bool config_valid=ub_store_load(0,&config,sizeof(config)) && configuration_valid(&config);
     if(!config_valid)egret_default_configuration(&config);
     direction_setting_saved=config_valid && ub_store_load_direction_settings(&direction_settings);
+    // Resolve old profile routing while its original common defaults are intact.
+    // Commit the migrated bank before extending the single common-settings sector.
+    upr_init(&direction_settings);
+    upr_set_direction_settings(&direction_settings);
     boot_capture_ms=config.boot_capture_ms;
     // Add missing hidden records once; preserve each independently valid value.
     // Consume a boot capture in the same write.
@@ -736,8 +749,6 @@ int __not_in_flash_func(main)(void) {
         if(!direction_setting_saved)boot_capture_ms=0;
     }
     saved_valid=load_snapshot(&selected_snapshot);
-    upr_init();
-    upr_set_direction_settings(&direction_settings);
     start_usb_output(0);
     uc_request_poll_interval(config.input_interval_ms);
     multicore_launch_core1(host_core);

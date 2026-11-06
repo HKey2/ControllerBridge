@@ -55,10 +55,19 @@ typedef struct { uint8_t count,direction[3],source[3]; } um_key_events;
 void um_direction_keys(um_key_state *state,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,const udk_settings *settings,um_key_events *keys);
 // Mix independently enabled sources at tenths precision; retain signed fractions.
 void um_mix(um_fraction *fraction,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,int32_t wheel,int32_t *x,int32_t *y);
-// Hold uses the magnitude of each received raw X/Y delta, not accumulated gain.
-// A real zero/subthreshold report releases; unrelated reports do not update it.
-typedef struct { uint32_t last_report_us;uint8_t directions; } um_hold_state;
-_Static_assert(sizeof(um_hold_state)==8,"hold runtime allocation");
+// Ordinary Hold is unchanged when inertia is disabled. Enabled profiles estimate
+// displacement over 20 ms, with proportional overlap for report-boundary jitter.
+// Q8 inertia decays on real-time deadlines to the shared activation threshold.
+#define UM_INERTIA_WINDOW_US 20000u
+#define UM_INERTIA_HISTORY 32u
+typedef struct { int32_t x,y;uint32_t end_us,span_us; } um_motion_sample;
+typedef struct {
+    uint32_t last_axis_us[2],inertia_q8[2],decay_at_us[2],last_report_us,threshold_q8,period_us;
+    um_motion_sample history[UM_INERTIA_HISTORY];
+    uint8_t directions,inertia_directions,decay_percent,head,count;
+    bool have_report;
+} um_hold_state;
+_Static_assert(sizeof(um_hold_state)==556,"hold runtime allocation");
 void um_hold_input(um_hold_state *state,const up_mouse_options *options,int32_t raw_x,int32_t raw_y,uint32_t time_us,const udk_settings *settings);
 uint8_t um_hold_directions(um_hold_state *state,uint32_t now_us,uint32_t idle_us);
 void um_hold_overlay(uint8_t directions,const uint8_t targets[4],sw_report *report);

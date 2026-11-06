@@ -72,7 +72,7 @@ internal sealed class FirmwareUpdateDialog : Form
         waitingForBootsel = false; cancelWait.Visible = false;
         status.Text = prompt == FirmwarePrompt.ConfirmOverwrite
             ? L.T("書き込みの最終確認", "Confirm firmware write") : L.T("ファームウェア更新", "Firmware update");
-        detail.Text = (introduction is null || prompt == FirmwarePrompt.ConfirmOverwrite ? "" : introduction + "\r\n\r\n") + FirmwareWorkflow.PromptText(prompt, package.Version);
+        detail.Text = (introduction is null || prompt == FirmwarePrompt.ConfirmOverwrite ? "" : introduction + "\r\n\r\n") + FirmwareWorkflow.PromptText(prompt, package.Version, device.RequiresDataUpgrade);
         progress.Visible = false; yes.Visible = no.Visible = true; prompted = true; ControlBox = true;
         answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
         AcceptButton = no; CancelButton = no; no.Focus();

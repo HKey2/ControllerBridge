@@ -8,19 +8,34 @@ static int active_store=-1;
 static bool load_bank(unsigned slot,up_bank *bank) {
     return ub_store_load(slot,bank,sizeof(*bank)) && up_bank_valid(bank);
 }
-bool up_registry_load(up_bank *bank) {
+bool up_registry_load(up_bank *bank,const udk_settings *defaults) {
     bool first=load_bank(4,bank),second=load_bank(5,&scratch);
     active_store=-1;
     if(second && (!first || (int32_t)(scratch.generation-bank->generation)>0)) {
         *bank=scratch;active_store=5;return true;
     }
     if(first) { active_store=4;return true; }
+    // Current v8 copies win. Otherwise migrate the newest valid published v6 copy.
     bool migrated=false;
+    for(unsigned slot=4;slot<=5;++slot) {
+        if(ub_store_load(slot,&scratch,sizeof(scratch)) && up_bank_upgrade_v6(&scratch,defaults) &&
+           (!migrated || (int32_t)(scratch.generation-bank->generation)>0)) {
+            *bank=scratch;active_store=(int)slot;migrated=true;
+        }
+    }
+    if(migrated) {
+        unsigned target=active_store==4?5:4;
+        if(!ub_store_save(target,bank,sizeof(*bank),false))return false;
+        active_store=(int)target;return true;
+    }
     for(unsigned copy=0;copy<2;++copy) {
-        if(ub_store_load_legacy_bank(copy,&scratch,UP_LEGACY_BANK_BYTES) && up_bank_upgrade_v5(&scratch) &&
+        if(ub_store_load_legacy_bank(copy,&scratch,UP_LEGACY_BANK_BYTES) && up_bank_upgrade_v5(&scratch,defaults) &&
            (!migrated || (int32_t)(scratch.generation-bank->generation)>0)) { *bank=scratch;migrated=true; }
     }
-    if(migrated)return true; // active_store remains -1: preserve both v5 copies until slot 4 verifies.
+    if(migrated) {
+        if(!ub_store_save(4,bank,sizeof(*bank),false))return false;
+        active_store=4;return true;
+    }
     up_bank_clear(bank);return false;
 }
 bool up_registry_save(up_bank *bank,unsigned slot,const up_profile *profile) {

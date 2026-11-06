@@ -58,17 +58,19 @@ internal sealed partial class MainForm
                 using OpenFileDialog dialog = new() { Filter = "ControllerBridge profile (*.json)|*.json", CheckFileExists = true,
                     Title = L.T("プロファイルをインポート", "Import profile") };
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                ImportProfileFile(slot, dialog.FileName);
+                MouseUdlrSettings? migrationDefaults = bridge is null ? null : await new MouseUdlrSettingsClient(bridge.RawAsync).ReadAsync();
+                ImportProfileFile(slot, dialog.FileName, migrationDefaults);
             }
         }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
 
-    private void ImportProfileFile(int slot, string path)
+    private void ImportProfileFile(int slot, string path, MouseUdlrSettings? migrationDefaults = null)
     {
         if (profiles[slot].Enabled) throw new InvalidDataException(L.T("未使用スロットを選んでください。", "Select an unused slot."));
-        DeviceProfile imported = ProfileFile.Load(path);
+        DeviceProfile imported = ProfileFile.Load(path, migrationDefaults);
+        if (imported.LegacyConversionApplied) MessageBox.Show(this, LegacyImportNotice(migrationDefaults is not null), L.T("旧設定の変換", "Legacy settings conversion"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         if (!imported.Enabled) throw new InvalidDataException(L.T("ファイルに登録済みプロファイルがありません。", "The file does not contain an enabled profile."));
         // A copied file may carry an identity already present in either drafts or the device bank.
         if (imported.ProfileId == Guid.Empty || Enumerable.Range(0, profiles.Length).Any(i => i != slot &&

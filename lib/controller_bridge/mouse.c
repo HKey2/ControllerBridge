@@ -75,21 +75,97 @@ void um_direction_keys(um_key_state *s,const up_mouse_options *o,int32_t raw_x,i
         key_axis(&s->paddle10,rotation,limit,vertical?UM_KEY_UP:UM_KEY_LEFT,vertical?UM_KEY_DOWN:UM_KEY_RIGHT,UDK_SOURCE_PADDLE,keys);
     } else s->paddle10=0;
 }
+static uint8_t hold_mask(unsigned axis) { return (uint8_t)(axis?3u:12u); }
+static void inertia_decay(um_hold_state *s,unsigned axis,uint32_t now) {
+    if(!s->inertia_q8[axis] || !s->period_us)return;
+    uint32_t elapsed=(uint32_t)(now-s->decay_at_us[axis]);
+    if(elapsed>=0x80000000u)return; // An older queued report must not advance the clock.
+    uint32_t steps=elapsed/s->period_us;
+    s->decay_at_us[axis]+=steps*s->period_us;
+    // At most ~1,104 iterations even after a long pause: Q8 magnitude is bounded,
+    // the retained fraction is <=99%, and termination is >=1 count. No time cap.
+    while(steps-- && s->inertia_q8[axis]>s->threshold_q8)
+        s->inertia_q8[axis]=s->inertia_q8[axis]*s->decay_percent/100u;
+    if(s->inertia_q8[axis]<=s->threshold_q8) {
+        s->inertia_q8[axis]=0;s->inertia_directions&=(uint8_t)~hold_mask(axis);
+    }
+}
+static void inertia_history(um_hold_state *s,int32_t x,int32_t y,uint32_t now) {
+    uint32_t span=s->have_report?(uint32_t)(now-s->last_report_us):UM_INERTIA_WINDOW_US;
+    // No elapsed interval can establish velocity; retain the old time baseline.
+    if(!span)return;
+    if(span>=0x80000000u) { s->count=0;span=UM_INERTIA_WINDOW_US; }
+    s->last_report_us=now;s->have_report=true;
+    s->history[s->head]=(um_motion_sample){x,y,now,span};
+    s->head=(uint8_t)((s->head+1u)%UM_INERTIA_HISTORY);
+    if(s->count<UM_INERTIA_HISTORY)s->count++;
+}
+static int32_t inertia_velocity(const um_hold_state *s,unsigned axis,uint32_t now) {
+    int64_t total=0;
+    for(unsigned n=0;n<s->count;++n) {
+        const um_motion_sample *p=&s->history[(s->head+UM_INERTIA_HISTORY-1u-n)%UM_INERTIA_HISTORY];
+        uint32_t age=(uint32_t)(now-p->end_us);if(age>=UM_INERTIA_WINDOW_US)break;
+        uint32_t overlap=UM_INERTIA_WINDOW_US-age;if(overlap>p->span_us)overlap=p->span_us;
+        // Deltas describe the preceding report interval. Fractional overlap
+        // prevents a few microseconds of jitter from counting a third full report.
+        int64_t value=(int64_t)(axis?p->y:p->x)*256;
+        total+=overlap==p->span_us?value:value*overlap/p->span_us;
+    }
+    const int32_t maximum=65535*256;
+    return total>maximum?maximum:total<-maximum?-maximum:(int32_t)total;
+}
 void um_hold_input(um_hold_state *s,const up_mouse_options *o,int32_t raw_x,int32_t raw_y,uint32_t time_us,const udk_settings *settings) {
-    s->directions=0;
     if(!udk_settings_valid(settings) || settings->trackball_mode!=UDK_HOLD_MODE ||
-       (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return;
-    int64_t x=raw_x,y=raw_y,limit=settings->trackball_hold_threshold;
-    if(o->flags&UP_MOUSE_INVERT_X)x=-x;
-    if(o->flags&UP_MOUSE_INVERT_Y)y=-y;
-    if(x>=limit)s->directions|=1u<<UM_KEY_RIGHT;else if(x<=-limit)s->directions|=1u<<UM_KEY_LEFT;
-    if(y>=limit)s->directions|=1u<<UM_KEY_DOWN;else if(y<=-limit)s->directions|=1u<<UM_KEY_UP;
-    s->last_report_us=time_us;
+       (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
+        *s=(um_hold_state){0};return;
+    }
+    int64_t values[2]={raw_x,raw_y},limit=settings->trackball_hold_threshold;
+    if(o->flags&UP_MOUSE_INVERT_X)values[0]=-values[0];
+    if(o->flags&UP_MOUSE_INVERT_Y)values[1]=-values[1];
+    s->threshold_q8=(uint32_t)settings->inertia_threshold*256u;
+    s->period_us=(uint32_t)settings->inertia_interval_ms*1000u;s->decay_percent=settings->inertia_decay_percent;
+    if(!settings->inertia_enabled) {
+        s->inertia_q8[0]=s->inertia_q8[1]=0;s->inertia_directions=0;s->count=0;s->have_report=false;
+    }
+    uint8_t next[2];
+    for(unsigned axis=0;axis<2;++axis) {
+        inertia_decay(s,axis,time_us);
+        uint8_t mask=hold_mask(axis),previous=(s->directions|s->inertia_directions)&mask;
+        next[axis]=values[axis]>=limit?(uint8_t)(axis?2u:8u):values[axis]<=-limit?(uint8_t)(axis?1u:4u):0;
+        if(next[axis] && previous && next[axis]!=previous) {
+            // A qualifying reverse input cancels only this axis immediately.
+            s->inertia_q8[axis]=0;s->inertia_directions&=(uint8_t)~mask;
+            for(unsigned i=0;i<UM_INERTIA_HISTORY;++i) {
+                if(axis)s->history[i].y=0;else s->history[i].x=0;
+            }
+        }
+        s->directions=(s->directions&~mask)|next[axis];s->last_axis_us[axis]=time_us;
+    }
+    if(settings->inertia_enabled) {
+        // Saturate only the unrepresentable inverted INT32_MIN before storage.
+        int32_t x=values[0]>INT32_MAX?INT32_MAX:(int32_t)values[0];
+        int32_t y=values[1]>INT32_MAX?INT32_MAX:(int32_t)values[1];
+        inertia_history(s,x,y,time_us);
+        for(unsigned axis=0;axis<2;++axis) {
+            int32_t velocity=inertia_velocity(s,axis,time_us);
+            uint32_t magnitude=(uint32_t)(velocity<0?-velocity:velocity);
+            if(next[axis] && magnitude>s->threshold_q8 && ((velocity>0)==(values[axis]>0))) {
+                // Refresh from current measured speed, never accumulate energy.
+                // Zero/subthreshold windows do not refill or restart decay.
+                s->inertia_q8[axis]=magnitude;s->decay_at_us[axis]=time_us;
+                s->inertia_directions=(s->inertia_directions&~hold_mask(axis))|next[axis];
+            }
+        }
+    }
 }
 uint8_t um_hold_directions(um_hold_state *s,uint32_t now_us,uint32_t idle_us) {
-    if((uint32_t)(now_us-s->last_report_us)>=idle_us)s->directions=0;
-    return s->directions;
+    for(unsigned axis=0;axis<2;++axis) {
+        if((uint32_t)(now_us-s->last_axis_us[axis])>=idle_us)s->directions&=(uint8_t)~hold_mask(axis);
+        inertia_decay(s,axis,now_us);
+    }
+    return s->directions|s->inertia_directions;
 }
+
 void um_hold_overlay(uint8_t directions,const uint8_t targets[4],sw_report *report) {
     uint8_t hat=0;
     for(unsigned direction=0;direction<4;++direction)if(directions&(1u<<direction)) {

@@ -148,7 +148,10 @@ public sealed class DeviceProfile
     public const int SlotCount = 16;
     public static readonly string[] Targets = ["Y", "B", "A", "X", "L", "R", "ZL", "ZR", "−", "+", L.T("L押込", "L stick"), L.T("R押込", "R stick"), "HOME", "CAPTURE", "↑", "→", "↓", "←"];
     public static readonly string[] AxisNames = [L.T("左スティック X", "Left stick X"), L.T("左スティック Y", "Left stick Y"), L.T("右スティック X", "Right stick X"), L.T("右スティック Y", "Right stick Y")];
-    public ushort Version { get; set; } = 6;
+    public ushort Version { get; set; } = 8;
+    public ConversionSettings Conversion { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool LegacyConversionApplied { get; internal set; }
     public ShiftSettings Shift { get; set; } = new();
     public MouseProfileSettings Mouse { get; set; } = new();
     public byte OutputMode { get; set; } // 0 gamepad, 1 USB mouse, 2 combined.
@@ -180,12 +183,12 @@ public sealed class DeviceProfile
     public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 }) || Shift.Buttons.Where((b, i) => (Shift.Overrides & (1u << i)) != 0).Any(b => b.RapidHz > 0);
     public byte[] Encode()
     {
-        if (Version != 6 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
+        if (Version != 8 || OutputMode > 2 || Flags > 15 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
             (Enabled && (Vid == 0 || string.IsNullOrWhiteSpace(Name))) || Buttons is null || Buttons.Length != 18 || Axes is null || Axes.Length != 4)
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));
         // v5 stores per-profile output in one former reserved byte, without
         // changing the original prefix. Shift data follows at offset 488.
-        const ushort wireVersion = 6;
+        const ushort wireVersion = 8;
         byte[] b = new byte[ByteCount]; Wire.W16(b, 0, wireVersion); Wire.W16(b, 2, Flags); Wire.W16(b, 4, Vid);
         Wire.W16(b, 6, Pid); Wire.W16(b, 8, Revision); b[10] = InputInterval; Wire.W32(b, 12, DescriptorHash);
         Encoding.UTF8.GetBytes(Name).CopyTo(b, 16);
@@ -202,15 +205,17 @@ public sealed class DeviceProfile
         b[484] = (byte)(OutputMode | (ControllerButtons ? 4 : 0));
         b[485] = LedRed; b[486] = LedGreen; b[487] = LedBlue;
         (Shift ?? throw new InvalidDataException()).Write(b);
+        (Conversion ?? throw new InvalidDataException()).Write(b);
         return b;
     }
-    public static DeviceProfile Decode(byte[] b)
+    public static DeviceProfile Decode(byte[] b, MouseUdlrSettings? legacyDefaults = null)
     {
         if (b.Length == LegacyByteCount && Wire.U16(b, 0) == 5)
         {
             byte[] migrated = new byte[ByteCount]; b.CopyTo(migrated, 0); Wire.W16(migrated, 0, 6); b = migrated;
         }
-        if (b.Length != ByteCount || Wire.U16(b, 0) != 6)
+        bool legacy = b.Length == ByteCount && Wire.U16(b, 0) == 6;
+        if (b.Length != ByteCount || Wire.U16(b, 0) is not (6 or 8))
             throw new InvalidDataException(L.T("プロファイル形式・長さが不正です。", "The profile format or length is invalid."));
         int end = Array.IndexOf(b, (byte)0, 16, 48);
         if (end < 16) throw new InvalidDataException(L.T("プロファイル名が不正です。", "The profile name is invalid."));
@@ -227,10 +232,12 @@ public sealed class DeviceProfile
         if ((b[484] & ~7) != 0) throw new InvalidDataException(L.T("未対応の出力方式です。", "This output mode is not supported."));
         p.OutputMode = (byte)(b[484] & 3); p.ControllerButtons = (b[484] & 4) != 0;
         p.LedRed = b[485]; p.LedGreen = b[486]; p.LedBlue = b[487];
-        p.Shift = ShiftSettings.Read(b);
+        p.Shift = ShiftSettings.Read(b, legacy);
+        p.Conversion = legacy ? ConversionSettings.FromLegacy(p.Mouse, legacyDefaults ?? MouseUdlrSettings.Defaults) : ConversionSettings.Read(b);
+        p.Version = 8; p.LegacyConversionApplied = legacy;
         _ = p.Encode(); return p;
     }
-    public DeviceProfile Clone() { DeviceProfile p = Decode(Encode()); p.ProfileId = ProfileId; return p; }
+    public DeviceProfile Clone() { DeviceProfile p = Decode(Encode()); p.ProfileId = ProfileId; p.LegacyConversionApplied = LegacyConversionApplied; return p; }
     public bool SameContent(DeviceProfile p) => ProfileId == p.ProfileId && Encode().SequenceEqual(p.Encode());
     public bool SameController(DeviceProfile p) => Enabled && p.Enabled && Vid == p.Vid && Pid == p.Pid &&
         (Flags & 6) == (p.Flags & 6) && ((Flags & 2) == 0 || DescriptorHash == p.DescriptorHash) &&
@@ -242,7 +249,7 @@ public sealed class DeviceProfile
 internal sealed class ProfileFile
 {
     public string Format { get; set; } = "ControllerBridge.Profile";
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 5;
     public DeviceProfile Profile { get; set; } = new();
     public static void Save(string path, DeviceProfile p)
     {
@@ -256,16 +263,29 @@ internal sealed class ProfileFile
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-    public static DeviceProfile Load(string path)
+    public static DeviceProfile Load(string path, MouseUdlrSettings? legacyDefaults = null)
     {
         if (new FileInfo(path).Length > 256 * 1024) throw new InvalidDataException(L.T("プロファイルファイルが大きすぎます。", "The profile file is too large."));
         ProfileFile f = JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(path)) ?? throw new InvalidDataException(L.T("JSON形式が不正です。", "The JSON format is invalid."));
-        if (f.Format != "ControllerBridge.Profile" || f.Version is not (2 or 3) || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
+        if (f.Format != "ControllerBridge.Profile" || f.Version is not (2 or 3 or 5) || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
         if (f.Version == 2 && f.Profile.Version == 5)
         {
             if (!f.Profile.Shift.IsEmpty) throw new InvalidDataException("Legacy profiles cannot contain shift settings.");
             f.Profile.Version = 6;
         }
+        if (f.Version <= 3 && f.Profile.Version == 6)
+        {
+            // Validate every old key before the user-authorized truncation.
+            if (f.Profile.Shift is null || f.Profile.Shift.Keys is null || f.Profile.Shift.Keys.Count > 4)
+                throw new InvalidDataException("Invalid legacy shift settings.");
+            foreach (DigitalBinding key in f.Profile.Shift.Keys) { if (key is null || key.Mode == 0) throw new InvalidDataException("Invalid shift key."); key.Validate(); }
+            for (int i = 0; i < f.Profile.Shift.Keys.Count; i++)
+                if (f.Profile.Shift.Keys.Take(i).Any(k => ShiftSettings.SameSource(k, f.Profile.Shift.Keys[i]))) throw new InvalidDataException("Duplicate shift key.");
+            f.Profile.Shift.Keys = f.Profile.Shift.Keys.Take(3).ToList();
+            f.Profile.Conversion = ConversionSettings.FromLegacy(f.Profile.Mouse, legacyDefaults ?? MouseUdlrSettings.Defaults);
+            f.Profile.Version = 8; f.Profile.LegacyConversionApplied = true;
+        }
+        else if (f.Version != 5 || f.Profile.Version != 8) throw new InvalidDataException("Unsupported profile version.");
         return f.Profile.Clone();
     }
 }
