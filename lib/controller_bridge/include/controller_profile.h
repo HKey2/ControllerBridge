@@ -2,12 +2,15 @@
 #define CONTROLLER_PROFILE_H
 #include "controller_usb.h"
 #include "switch_wired.h"
+#include "controller_direction.h"
+#include <stddef.h>
 
 #define UP_PROFILE_COUNT 16
 #define UP_DIGITAL_COUNT 18
 #define UP_AXIS_COUNT 4
 #define UP_PROFILE_BYTES 848
-#define UP_SHIFT_KEYS 4
+#define UP_SHIFT_KEYS 3
+#define UP_PROFILE_VERSION 8u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
@@ -54,9 +57,20 @@ typedef struct {
 } up_analog;
 typedef union { up_analog analog; up_digital pair[2]; } up_axis;
 typedef struct {
+    uint8_t targets[4]; // Explicit output IDs, U/D/L/R.
+    uint8_t paddle_targets[2]; // Negative/positive after input reversal; independent of pointer axis.
+    uint8_t modes; // bits 0..1 trackball, 2..3 paddle; 0 clicks, 1 Hold/Rolling.
+    uint8_t rolling_flags; // bit 0 reverse, bit 1 left stick.
+    uint8_t rolling_step_deg;
+    uint8_t inertia_flags; // bit 0 enables pseudo-inertia for Trackball Hold.
+    uint8_t reserved[6];
+} up_conversion;
+#define UP_DEFAULT_CONVERSION {{15,17,18,16},{18,16},0,0,30,0,{0}}
+typedef struct {
     uint32_t overrides; // One bit per output: 0 inherits, 1 replaces (disabled = mute).
     uint8_t count,reserved[3]; // All configured physical modifiers must be held.
     up_digital keys[UP_SHIFT_KEYS];
+    up_conversion conversion; // Independent of shift activation; reuses the old fourth key.
     up_digital digital[UP_DIGITAL_COUNT];
 } up_shift;
 typedef struct {
@@ -103,6 +117,9 @@ _Static_assert(sizeof(up_analog)==32,"analog wire ABI");
 _Static_assert(sizeof(up_profile)==UP_PROFILE_BYTES,"profile wire ABI");
 _Static_assert(sizeof(up_mouse_options)==8,"mouse profile wire ABI");
 _Static_assert(sizeof(up_shift)==360,"button shift wire ABI");
+_Static_assert(sizeof(up_conversion)==16,"conversion wire ABI");
+_Static_assert(offsetof(up_profile,shift.conversion)==544,"conversion offset");
+_Static_assert(offsetof(up_profile,shift.digital)==560,"shifted bindings offset");
 _Static_assert(sizeof(up_bank)==13908,"16 profiles fit four flash sectors with store header");
 
 void up_profile_clear(up_profile *profile);
@@ -111,7 +128,7 @@ bool up_profile_valid(const up_profile *profile);
 bool up_digital_overlap(const up_digital *a,const up_digital *b);
 bool up_profile_shift_conflicts(const up_profile *profile,uint32_t switch_keys);
 // Expand a validated v5 payload already copied to the beginning of this bank.
-bool up_bank_upgrade_v5(up_bank *bank);
+bool up_bank_upgrade_v5(up_bank *bank,const udk_settings *defaults);
 uint8_t up_profile_output_options(const up_profile *profile);
 uint32_t up_profile_led_rgb(const up_profile *profile); // 0xRRGGBB; default 0x000001.
 bool up_bank_valid(const up_bank *bank);
@@ -133,7 +150,10 @@ bool up_mapper_tick(up_mapper *mapper,uint32_t now_us,bool output_ready,sw_repor
 void up_release_guard_begin(up_release_guard *guard,const up_profile *profile,uint32_t keys);
 void up_release_guard_apply(up_release_guard *guard,uint8_t interface_number,const uint8_t *report,unsigned length);
 // Load four-sector slots 4/5, or migrate the read-only v5 banks in RAM.
-bool up_registry_load(up_bank *bank);
+bool up_registry_load(up_bank *bank,const udk_settings *defaults);
+bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
+void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
+void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);
 bool up_registry_save(up_bank *bank,unsigned slot,const up_profile *profile);
 // NULL preserves the existing ID; disabled profiles always clear it.
 bool up_registry_save_identified(up_bank *bank,unsigned slot,const up_profile *profile,const uint8_t *id);

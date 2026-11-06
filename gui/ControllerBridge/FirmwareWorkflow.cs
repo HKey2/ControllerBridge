@@ -6,6 +6,7 @@ internal enum FirmwareResult { AlreadyCurrent, Cancelled, Updated }
 
 internal interface IFirmwareDevice : IDisposable
 {
+    bool RequiresDataUpgrade => false;
     Task<FirmwareInfo?> ProbeAsync();
     Task PrepareAsync(FirmwareInfo? original, CancellationToken cancellationToken = default);
     Task WriteAsync(byte[] image, Action<int> progress);
@@ -55,11 +56,13 @@ internal static class FirmwareWorkflow
         return FirmwareResult.Updated;
     }
 
-    internal static string PromptText(FirmwarePrompt prompt, string version) => prompt switch
+    internal static string PromptText(FirmwarePrompt prompt, string version, bool requiresDataUpgrade = false) => (prompt switch
     {
         FirmwarePrompt.Replace => L.F("v{0} に更新しますか？", "Install v{0}?", version),
         _ => L.F("BOOT接続を確認しました。\n\n本ツールのファームウェア v{0} を書き込み、現在のファームウェアを上書きします。書き込みを開始してよろしいですか？", "BOOT connection confirmed.\n\nInstall this tool's firmware v{0} and overwrite the board's current firmware?", version)
-    };
+    }) + (prompt == FirmwarePrompt.Replace && requiresDataUpgrade ? "\n\n" + L.T(
+        "更新後の初回起動時にデータ形式をアップデートします。",
+        "The data format will be updated on the first startup after installation.") : "");
 
     internal static string BootWaitInstructions => L.T(
         "1. RP2350-USB-AのUSB-Cケーブルを抜いてください。\n2. BOOTボタンを押したまま、同じPCのUSBポートへ接続し直してください。\n3. 接続後にBOOTボタンを離してください。\n\nBOOT接続を検出すると、書き込みの最終確認へ自動的に進みます。まだ書き込みは行いません。",

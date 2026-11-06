@@ -2,13 +2,13 @@
 
 ControllerBridge 0.20.0 adds one shifted button page inside each profile. Hold all configured shift keys to use it; release any one to return. The active profile, USB output mode, four axes, mouse movement settings and LED color stay common. No page transition saves Flash or reconnects USB.
 
-This follows the hold action and inherited-mapping concept described in the [reWASD Shift mode guide](https://www.help.rewasd.com/basic-functions/shift-mode.html). ControllerBridge implements one button-only page, up to four AND modifiers and the rules below; it does not reproduce reWASD's complete layer/shortcut system.
+This follows the hold action and inherited-mapping concept described in the [reWASD Shift mode guide](https://www.help.rewasd.com/basic-functions/shift-mode.html). ControllerBridge implements one button-only page, up to three AND modifiers and the rules below; it does not reproduce reWASD's complete layer/shortcut system.
 
 ## Configure
 
 1. Select the profile, or open the mapping step while adding a controller.
 2. Choose **Button shift…** beside **Rapid fire…**.
-3. Release all inputs, choose **Learn shift keys**, then press the desired buttons together and release them all. The gesture is registered when its last input is released; it can include buttons arriving on different reports. You can also add one key at a time. Up to four different keys can be registered in total. Already registered keys are ignored; a gesture exceeding the remaining capacity is rejected as a whole. A key does not need a normal output mapping. All configured keys must be held together during play; there is no time limit between their presses.
+3. Release all inputs, choose **Learn shift keys**, then press the desired buttons together and release them all. The gesture is registered when its last input is released; it can include buttons arriving on different reports. You can also add one key at a time. Up to three different keys can be registered in total. Already registered keys are ignored; a gesture exceeding the remaining capacity is rejected as a whole. A key does not need a normal output mapping. All configured keys must be held together during play; there is no time limit between their presses.
 4. Select a shifted output and perform the physical input to assign. Outputs you leave unchanged inherit the main page. **No output** explicitly mutes the selected output while shifted; **Inherit from main** removes that override. A `*` marks an actual registered shifted input. An unassigned/no-output override has no star and its tooltip says **no registered shifted mapping**. The no-output setting still prevents inheritance; clearing a main-page mapping does not delete a separately assigned shifted input. **Rapid fire…** can give a shifted output its own Off/1–60 Hz setting. Newly enabling an Off output starts at 20; existing rates are preserved.
 5. Choose **Apply to draft**, then **Save profile to device**, or finish registration. Closing with Cancel discards the dialog's edits. Removing every shift key disables shift while retaining the stored shifted mappings for later use.
 
@@ -37,7 +37,7 @@ In USB mouse or combined mouse-button behavior, B/A remain the shared left/right
 
 ## Modifier and release behavior
 
-- One to four modifiers form an AND condition. A single modifier activates shift immediately. There is no toggle, tap action, hold delay, or multi-key timing window.
+- One to three modifiers form an AND condition. A single modifier activates shift immediately. There is no toggle, tap action, hold delay, or multi-key timing window.
 - Once the full chord activates, modifier inputs cannot produce normal button outputs on either page. Their use by a common axis is also suppressed while consumed; other axis inputs continue normally.
 - Releasing any modifier immediately restores the main page. Modifier output suppression remains until every modifier has been released, so a remaining held modifier does not suddenly fire its main mapping. Holding all modifiers again can reactivate shift without a Flash write.
 - For a multi-key chord, an individual modifier can produce its main mapping **before the chord first completes**. Output already sent cannot be withdrawn. Dedicated physical keys with no ordinary mappings avoid this. A single immediate modifier cannot also perform a normal press action.
@@ -46,8 +46,8 @@ In USB mouse or combined mouse-button behavior, B/A remain the shared left/right
 
 ## Upgrade and backup
 
-Install the 0.20.16 firmware bundled with the 0.20.16 configurator. Settings from 0.20.0 retain their mappings and rates without conversion. Settings from 0.16.0–0.19.0 migrate automatically with shift disabled. Main mappings, axes, IDs, slot order, preferred selections, permanent shortcuts, RGB and output settings are preserved. Pre-0.16.0 storage remains unsupported.
+Install matching 0.22.0 firmware and GUI. v5 settings gain disabled shift; v6 settings preserve the first three modifiers, shifted mappings and rapid rates, discarding only the fourth modifier if present. Main mappings, axes, IDs, slot order, selection, shortcuts, RGB and output settings are preserved. Pre-0.16.0 storage remains unsupported.
 
-New backups/exports use JSON version 3. Old version-2 files are accepted and converted; they have no shifted assignments. Keep a pre-upgrade version-2 backup if returning to old firmware may be necessary: 0.19.0 cannot read the expanded bank or new backup format, and downgrade conversion is not implemented. The existing [firmware update](firmware-update.md) confirmation still controls board programming.
+Exports use JSON v5; old JSON v2/v3 files are accepted. Old files lack common conversion settings, so the import notice explains whether device migration defaults or standard defaults were used. New v8 profiles keep 848 bytes by reusing the old fourth modifier's 16 bytes for 10 bytes of conversion settings plus 6 reserved bytes. Old firmware cannot read the new format; retain a pre-upgrade backup for downgrade recovery.
 
-The first save after migration writes and verifies a separate new bank before the legacy copies can be overwritten. Later saves alternate two 16 KiB areas. See [storage layout](configurator-design.md#profile-bank-and-flash), [memory budget](../README.md#memory-budget), and [verification limits](verification.md).
+Migration writes and verifies the inactive bank before adopting it; v5 migration first uses Bank A, away from both old small copies. Later saves alternate two 16 KiB areas. See [storage layout](configurator-design.md#profile-bank-and-flash), [memory budget](../README.md#memory-budget), and [verification limits](verification.md).

@@ -2,7 +2,7 @@ namespace ControllerBridge;
 
 public sealed class ShiftSettings
 {
-    public const int MaxKeys = 4;
+    public const int MaxKeys = 3;
     public uint Overrides { get; set; }
     public List<DigitalBinding> Keys { get; set; } = [];
     public DigitalBinding[] Buttons { get; set; } = Enumerable.Range(0, 18).Select(_ => new DigitalBinding()).ToArray();
@@ -52,15 +52,19 @@ public sealed class ShiftSettings
         }
         for (int i = 0; i < 18; i++) (Buttons[i] ?? throw new InvalidDataException()).Write(bytes, 560 + 16 * i, true);
     }
-    internal static ShiftSettings Read(byte[] bytes)
+    internal static ShiftSettings Read(byte[] bytes, bool legacy = false)
     {
         int count = bytes[492];
-        if (count > MaxKeys || bytes[493] != 0 || bytes[494] != 0 || bytes[495] != 0) throw new InvalidDataException(L.T("未対応のシフト設定です。", "These shift settings are not supported."));
+        if (count > (legacy ? 4 : MaxKeys) || bytes[493] != 0 || bytes[494] != 0 || bytes[495] != 0) throw new InvalidDataException(L.T("未対応のシフト設定です。", "These shift settings are not supported."));
         ShiftSettings result = new() { Overrides = Wire.U32(bytes, 488) };
-        for (int i = 0; i < MaxKeys; i++)
+        for (int i = 0; i < (legacy ? 4 : MaxKeys); i++)
         {
             DigitalBinding key = DigitalBinding.Read(bytes, 496 + 16 * i);
-            if (i < count) result.Keys.Add(key);
+            if (i < count)
+            {
+                if (key.Mode == 0 || result.Keys.Any(k => SameSource(k, key))) throw new InvalidDataException("Invalid shift key.");
+                if (i < MaxKeys) result.Keys.Add(key);
+            }
         }
         for (int i = 0; i < 18; i++) result.Buttons[i] = DigitalBinding.Read(bytes, 560 + 16 * i, true);
         return result;

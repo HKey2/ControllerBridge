@@ -4,11 +4,12 @@
 #include <string.h>
 
 void up_profile_clear(up_profile *p) {
-    memset(p,0,sizeof(*p));p->version=6;
+    memset(p,0,sizeof(*p));p->version=UP_PROFILE_VERSION;
+    p->shift.conversion=(up_conversion)UP_DEFAULT_CONVERSION;
     p->mouse=(up_mouse_options){.flags=UP_MOUSE_TRACKBALL|UP_MOUSE_PADDLE,.trackball_gain10=160,.paddle_gain10=10};
 }
 void up_bank_clear(up_bank *b) {
-    memset(b,0,sizeof(*b));b->magic=UP_BANK_MAGIC;b->version=6;b->bytes=sizeof(*b);
+    memset(b,0,sizeof(*b));b->magic=UP_BANK_MAGIC;b->version=UP_PROFILE_VERSION;b->bytes=sizeof(*b);
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)up_profile_clear(&b->profiles[i]);
 }
 uint32_t up_crc32(const void *data,unsigned length) {
@@ -41,8 +42,9 @@ static bool digital_valid(const up_digital *d,bool allow_rapid) {
     int64_t range=(int64_t)d->high-d->low;
     return d->mode==UP_RANGE || range==7 || range==3;
 }
-bool up_profile_valid(const up_profile *p) {
-    if(p->version!=6 || (p->flags&~15u) || !memchr(p->name,0,sizeof(p->name)))return false;
+static bool profile_valid(const up_profile *p,unsigned version) {
+    bool legacy=version==6;
+    if(p->version!=version || (p->flags&~15u) || !memchr(p->name,0,sizeof(p->name)))return false;
     const up_mouse_options *m=&p->mouse;
     unsigned gain=up_mouse_trackball_gain10(m);
     if(gain<10 || gain>2560u || m->paddle_gain10<10 || m->paddle_gain10>100)return false;
@@ -66,24 +68,51 @@ bool up_profile_valid(const up_profile *p) {
         } else return false;
     }
     const up_shift *s=&p->shift;
-    if(s->count>UP_SHIFT_KEYS || (s->overrides&~0x3ffffu) || s->reserved[0] || s->reserved[1] || s->reserved[2])return false;
-    for(unsigned i=0;i<UP_SHIFT_KEYS;++i) {
-        if(!digital_valid(&s->keys[i],false) || (i<s->count && !s->keys[i].mode))return false;
+    if(s->count>(legacy?4u:UP_SHIFT_KEYS) || (s->overrides&~0x3ffffu) || s->reserved[0] || s->reserved[1] || s->reserved[2])return false;
+    const up_digital *keys=(const up_digital *)((const uint8_t *)p+496);
+    for(unsigned i=0;i<(legacy?4u:UP_SHIFT_KEYS);++i) {
+        if(!digital_valid(&keys[i],false) || (i<s->count && !keys[i].mode))return false;
         for(unsigned j=0;j<i && i<s->count;++j) {
-            const up_digital *a=&s->keys[i],*b=&s->keys[j];
+            const up_digital *a=&keys[i],*b=&keys[j];
             if(a->interface_number==b->interface_number && a->report_id==b->report_id && a->bit_offset==b->bit_offset && a->bits==b->bits)return false;
         }
     }
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(!digital_valid(&s->digital[i],true))return false;
+    if(!legacy) {
+        const up_conversion *c=&s->conversion;
+        for(unsigned i=0;i<4;++i)if(!c->targets[i] || c->targets[i]>18)return false;
+        for(unsigned i=0;i<2;++i)if(!c->paddle_targets[i] || c->paddle_targets[i]>18)return false;
+        if((c->modes&~5u) || c->rolling_flags>3 || c->rolling_step_deg<5 || c->rolling_step_deg>90 ||
+           c->rolling_step_deg%5u || 360u%c->rolling_step_deg)return false;
+        if(c->inertia_flags>1u)return false;
+        for(unsigned i=0;i<6;++i)if(c->reserved[i])return false;
+    }
     return true;
 }
+bool up_profile_valid(const up_profile *p) { return profile_valid(p,UP_PROFILE_VERSION); }
+void up_conversion_from_legacy(up_conversion *c,const up_mouse_options *mouse,const udk_settings *s) {
+    *c=(up_conversion)UP_DEFAULT_CONVERSION;
+    for(unsigned i=0;i<4;++i)c->targets[i]=udk_target((uint8_t)i,s->targets);
+    unsigned negative=(mouse->flags&UP_MOUSE_PADDLE_Y)?0u:2u;
+    for(unsigned i=0;i<2;++i)c->paddle_targets[i]=udk_target((uint8_t)(negative+i),s->paddle_targets);
+    c->modes=s->trackball_mode|(s->paddle_mode<<2);
+    c->rolling_flags=s->rolling_flags;c->rolling_step_deg=s->rolling_step_deg;
+}
+void up_conversion_apply(const up_conversion *c,udk_settings *s) {
+    memcpy(s->targets,c->targets,4);
+    // Both possible legacy axis labels resolve to the same negative/positive map.
+    s->paddle_targets[0]=s->paddle_targets[2]=c->paddle_targets[0];
+    s->paddle_targets[1]=s->paddle_targets[3]=c->paddle_targets[1];
+    s->trackball_mode=c->modes&3u;s->paddle_mode=(c->modes>>2)&3u;
+    s->rolling_flags=c->rolling_flags;s->rolling_step_deg=c->rolling_step_deg;s->inertia_enabled=c->inertia_flags&1u;
+}
 uint32_t up_profile_led_rgb(const up_profile *p) {
-    if(!p || !(p->flags&UP_ENABLED) || !(p->flags&UP_LED_CUSTOM) || p->version!=6)return 1;
+    if(!p || !(p->flags&UP_ENABLED) || !(p->flags&UP_LED_CUSTOM) || p->version!=UP_PROFILE_VERSION)return 1;
     const uint8_t *rgb=p->mouse.led_rgb;
     return ((uint32_t)rgb[0]<<16)|((uint32_t)rgb[1]<<8)|rgb[2];
 }
 uint8_t up_profile_output_options(const up_profile *p) {
-    if(!p || !(p->flags&UP_ENABLED) || p->version!=6)return 0;
+    if(!p || !(p->flags&UP_ENABLED) || p->version!=UP_PROFILE_VERSION)return 0;
     unsigned mode=p->mouse.output_mode&3u;
     // These bits retain the established MSE1 diagnostic wire representation.
     return mode==UP_OUTPUT_MOUSE?1u:mode==UP_OUTPUT_COMBINED?
@@ -94,7 +123,7 @@ bool up_switch_keys_valid(uint32_t keys) {
     return !(keys&~0x3ffffu) && (keys&(keys-1)) && (keys&0x14000u)!=0x14000u && (keys&0x28000u)!=0x28000u;
 }
 bool up_bank_valid(const up_bank *b) {
-    if(b->magic!=UP_BANK_MAGIC || b->version!=6 || b->bytes!=sizeof(*b) || (b->preferred_slots&~65535u))return false;
+    if(b->magic!=UP_BANK_MAGIC || b->version!=UP_PROFILE_VERSION || b->bytes!=sizeof(*b) || (b->preferred_slots&~65535u))return false;
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!up_profile_valid(&b->profiles[i]))return false;
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i) {
         if(up_profile_shift_conflicts(&b->profiles[i],b->switch_keys[i]) || !up_switch_keys_valid(b->switch_keys[i]) || (!(b->profiles[i].flags&UP_ENABLED) && b->switch_keys[i]))return false;
@@ -194,7 +223,19 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
         for(unsigned k=0;k<p->shift.count;++k)if(up_digital_overlap(&p->digital[i],&p->shift.keys[k]))return true;
     return false;
 }
-bool up_bank_upgrade_v5(up_bank *b) {
+bool up_bank_upgrade_v6(up_bank *b,const udk_settings *defaults) {
+    if(b->magic!=UP_BANK_MAGIC || b->version!=6 || b->bytes!=sizeof(*b) || !udk_settings_valid(defaults))return false;
+    // Validate the original fourth key before the explicitly permitted removal.
+    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!profile_valid(&b->profiles[i],6))return false;
+    for(unsigned i=0;i<UP_PROFILE_COUNT;++i) {
+        up_profile *p=&b->profiles[i];
+        if(p->shift.count>UP_SHIFT_KEYS)p->shift.count=UP_SHIFT_KEYS;
+        up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);p->version=UP_PROFILE_VERSION;
+    }
+    b->version=UP_PROFILE_VERSION;
+    return up_bank_valid(b);
+}
+bool up_bank_upgrade_v5(up_bank *b,const udk_settings *defaults) {
     if(b->magic!=UP_BANK_MAGIC || b->version!=5 || b->bytes!=UP_LEGACY_BANK_BYTES)return false;
     uint8_t *raw=(uint8_t *)b,tail[324];
     memcpy(tail,raw+7824,sizeof(tail));
@@ -205,7 +246,7 @@ bool up_bank_upgrade_v5(up_bank *b) {
         memset(&b->profiles[i].shift,0,sizeof(up_shift));b->profiles[i].version=6;
     }
     memcpy(b->profile_ids,tail,sizeof(tail));b->version=6;b->bytes=sizeof(*b);
-    return up_bank_valid(b);
+    return up_bank_upgrade_v6(b,defaults);
 }
 static bool UC_RAM_FUNC(digital_value)(const up_digital *d,uint8_t iface,const uint8_t *raw,unsigned n,bool *pressed) {
     int32_t value;

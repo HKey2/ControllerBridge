@@ -15,6 +15,8 @@
 #define UPR_CMD_BANK_COMMIT 44
 #define UPR_CMD_BANK_ABORT 45
 #define UPR_CMD_REGISTER_BEGIN 48
+#define UPR_FEATURE_PSEUDO_INERTIA 33554432u
+#define UPR_FEATURE_PROFILE_CONVERSION (1u<<24)
 #define UPR_FEATURE_BANK_TRANSFER 2048u
 #define UPR_FEATURE_PROFILE_OUTPUT 4096u
 #define UPR_FEATURE_GUARDED_REGISTRATION 8192u
@@ -28,7 +30,8 @@
 #define UPR_FEATURE_VIRTUAL_ROLLING 2097152u
 #define UPR_FEATURE_TRACKBALL_HOLD 4194304u
 #define UPR_FEATURE_ROLLING_STEP 8388608u
-void upr_init(void);
+void upr_init(const udk_settings *common);
+const udk_settings *upr_direction_settings(void);
 // True means the outgoing state must be reset to neutral (new device/profile).
 bool upr_event(const uc_event *event);
 bool upr_apply(const uc_event *event,uint32_t now_us,bool output_ready,sw_report *report);

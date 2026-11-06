@@ -36,8 +36,10 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsVirtualRolling => SupportsDirectionSources && (Features & 2097152) != 0;
     public bool SupportsTrackballHold => SupportsVirtualRolling && (Features & 4194304) != 0;
     public bool SupportsRollingStep => SupportsTrackballHold && (Features & 8388608) != 0;
+    public bool SupportsProfileConversion => (Features & (16777216 | 33554432)) == (16777216 | 33554432);
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
+        if (!SupportsProfileConversion) throw new InvalidDataException(L.T("プロファイル別の変換設定には同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware for per-profile conversion settings."));
         if (profile.Mouse.TrackballGain > 64 && !SupportsGain256)
             throw new InvalidDataException(L.T("64倍を超える感度にはファームウェア0.20.3以降が必要です。", "Gain above 64 requires firmware 0.20.3 or later."));
         if ((profile.Mouse.TrackballToDpad || profile.Mouse.PaddleToDpad) && !SupportsDirectionKeys)
@@ -49,7 +51,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
-        if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & 4096) == 0)
+        if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & (4096 | 16777216 | 33554432)) != (4096 | 16777216 | 33554432))
             throw new InvalidDataException(L.T("この本体は未対応の設定形式です。GUI付属のControllerBridge.uf2へ更新してください。", "This device uses an unsupported settings format. Update it with the included ControllerBridge.uf2."));
         return new(b[9], Wire.U16(b, 10), Wire.U16(b, 12), Wire.U16(b, 14), Wire.U16(b, 16), Wire.U16(b, 18),
             Wire.U32(b, 20), Wire.U32(b, 24), Wire.U32(b, 28), Wire.U32(b, 32), b[36], b[37], b[38], Wire.U32(b, 44), b[50], b[51], Wire.U32(b, 52));

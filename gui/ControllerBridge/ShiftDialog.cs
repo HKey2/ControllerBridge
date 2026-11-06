@@ -26,7 +26,7 @@ internal sealed partial class ShiftDialog : Form
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(18), ColumnCount = 1, RowCount = 7 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 7; i++) root.RowStyles.Add(new(i == 4 ? SizeType.Percent : SizeType.AutoSize, i == 4 ? 100 : 0));
-        Label intro = Ui.Label(L.T("登録したキー(最大4つ)をすべて押している間、裏ページに登録したキーアサインに変化します。\n未変更のボタンとアナログスティックは表ページから継承します。\nシフト時に押したキーはシフトが解除されても離すまでは継続します。", "Hold all registered keys (up to four) to switch to the mappings registered on the shifted page.\nUnchanged buttons and analog sticks inherit from the main page.\nKeys pressed while shifted remain active until released, even after shift ends."), 11);
+        Label intro = Ui.Label(L.T("登録したキー(最大3つ)をすべて押している間、裏ページに登録したキーアサインに変化します。\n未変更のボタンとアナログスティックは表ページから継承します。\nシフト時に押したキーはシフトが解除されても離すまでは継続します。", "Hold all registered keys (up to four) to switch to the mappings registered on the shifted page.\nUnchanged buttons and analog sticks inherit from the main page.\nKeys pressed while shifted remain active until released, even after shift ends."), 11);
         intro.Dock = DockStyle.Fill; root.Controls.Add(intro, 0, 0);
         TableLayoutPanel row = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(0, 8, 0, 4) };
         row.ColumnStyles.Add(new(SizeType.Percent, 100)); row.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -77,7 +77,7 @@ internal sealed partial class ShiftDialog : Form
         if (!canLearn || draft.Shift.Keys.Count >= ShiftSettings.MaxKeys) return;
         if (prepare is not null && !await prepare()) return;
         if (current != request || IsDisposed || !canLearn) return;
-        learner = new(fields); status.Text = L.T("シフトキーにするボタンを同時に押し、すべて離してください（合計最大4つ）。", "Press the shift buttons together, then release them all (up to four keys in total).");
+        learner = new(fields); status.Text = L.T("シフトキーにするボタンを同時に押し、すべて離してください（合計最大3つ）。", "Press the shift buttons together, then release them all (up to three keys in total).");
     }
     public void OnInput(InputField field, int value)
     {
@@ -88,7 +88,7 @@ internal sealed partial class ShiftDialog : Form
         StopLearning();
         if (draft.Shift.Keys.Count + additions.Count > ShiftSettings.MaxKeys)
         {
-            status.Text = L.T("シフトキーは合計4つまでです。今回の入力は登録していません。キー数を減らして追加し直してください。", "Shift supports four keys in total. This gesture was not added. Learn again with fewer keys."); return;
+            status.Text = L.T("シフトキーは合計3つまでです。今回の入力は登録していません。キー数を減らして追加し直してください。", "Shift supports three keys in total. This gesture was not added. Learn again with fewer keys."); return;
         }
         if (additions.Count == 0) { status.Text = L.T("この入力は登録済みです。別のボタンを追加してください。", "These inputs are already shift keys. Choose other buttons."); return; }
         draft.Shift.Keys.AddRange(additions.Select(i => i.Binding)); RefreshKeys();

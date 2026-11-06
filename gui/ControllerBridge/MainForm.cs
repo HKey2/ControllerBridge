@@ -46,7 +46,7 @@ internal sealed partial class MainForm : Form
     private readonly Label identity = Ui.Label("", 9);
     private readonly Label saved = Ui.Label(L.T("16スロットを本体に保存できます。", "Store up to 16 profiles on the bridge."), 9);
     private readonly Label outputStatus = Ui.Label("", 9);
-    private readonly Button connect, reload, saveButton, useProfile, switchMethod, mouseUdlrSettings, delete, duplicate, ledSettings, backup, restore, firmwareUpdate;
+    private readonly Button connect, reload, saveButton, useProfile, switchMethod, mouseUdlrSettings, delete, duplicate, ledSettings, conversionSettings, backup, restore, firmwareUpdate;
     private MappingEditor ActiveEditor => outputTabs.SelectedIndex == 0 ? editor :
         outputTabs.SelectedIndex == 2 && gamepadButtons.Checked ? combinedEditor : mouseEditor;
 
@@ -68,7 +68,7 @@ internal sealed partial class MainForm : Form
         firmwareUpdate = Ui.Button(L.T("ファームウェア更新", "Firmware update"), async (_, _) => await UpdateFirmware()); firmwareUpdate.Dock = DockStyle.Fill; header.Controls.Add(firmwareUpdate, 1, 0);
         connect = Ui.Button(L.T("接続 / 再接続", "Connect / Reconnect"), async (_, _) => await Connect()); connect.Dock = DockStyle.Fill; header.Controls.Add(connect, 2, 0);
         switchMethod = Ui.Button(L.T("プロファイル切替方法…", "Profile switching…"), async (_, _) => await ConfigureSwitchMethod()); switchMethod.Dock = DockStyle.Fill; header.Controls.Add(switchMethod, 3, 0);
-        mouseUdlrSettings = Ui.Button(L.T("マウス UDLR設定", "Mouse UDLR settings"), async (_, _) => await ConfigureMouseUdlr()); mouseUdlrSettings.Dock = DockStyle.Fill; header.Controls.Add(mouseUdlrSettings, 4, 0);
+        mouseUdlrSettings = Ui.Button(L.T("共通設定", "Shared settings"), async (_, _) => await ConfigureMouseUdlr()); mouseUdlrSettings.Dock = DockStyle.Fill; header.Controls.Add(mouseUdlrSettings, 4, 0);
         root.Controls.Add(header, 0, 0);
 
         body = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
@@ -97,9 +97,9 @@ internal sealed partial class MainForm : Form
         BufferedTableLayoutPanel metadata = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(2, 0, 2, 4) };
         metadata.ColumnStyles.Add(new(SizeType.Percent, 100)); metadata.ColumnStyles.Add(new(SizeType.Absolute, 190));
         metadata.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty };
         nameRow.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 4; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 5; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3);
         metadata.Controls.Add(nameRow, 0, 0);
@@ -111,6 +111,8 @@ internal sealed partial class MainForm : Form
         delete.Dock = duplicate.Dock = DockStyle.Fill; profileActions.Controls.Add(duplicate, 0, 0); profileActions.Controls.Add(delete, 0, 1);
         ledSettings = Ui.Button(L.T("LED RGB設定", "LED RGB settings"), (_, _) => ConfigureLed());
         ledSettings.Dock = DockStyle.Fill; profileActions.Controls.Add(ledSettings, 0, 2);
+        conversionSettings = Ui.Button(L.T("方向変換の割り当て", "Conversion mapping"), (_, _) => ConfigureConversion());
+        conversionSettings.Anchor = AnchorStyles.Left; nameRow.Controls.Add(conversionSettings, 0, 4);
         metadata.Controls.Add(profileActions, 1, 0); right.Controls.Add(metadata, 0, 0);
         details = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         details.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -288,17 +290,17 @@ internal sealed partial class MainForm : Form
         interval.Enabled = enabled && !working;
         delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration && fields.Any(f => f.Learnable && f.Valid)));
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;
-        ledSettings.Enabled = enabled && !working;
+        ledSettings.Enabled = conversionSettings.Enabled = enabled && !working;
         SetTip(duplicate, ProfileSlots.EmptyBelow(profiles, selected) >= 0 ? L.T("下側の最も近い未使用スロットへ複製します。", "Copy to the nearest unused slot below this profile.") : L.T("このスロットより下に未使用スロットがありません。", "There are no unused slots below this profile."));
         backup.Enabled = restore.Enabled = online && !working && clean && (caps?.SupportsBankTransfer == true);
         string backupTip = caps?.SupportsBankTransfer == true ? L.T("全16スロットと切替設定を保存・復帰します。", "Back up or restore all 16 slots and profile switching settings.") :
             L.T("ファームウェア0.14.0以降が必要です。", "Requires firmware 0.14.0 or later.");
         SetTip(backup, backupTip); SetTip(restore, backupTip);
         switchMethod.Enabled = online && !working && clean && enabled && caps?.SupportsSwitchKeys == true;
-        mouseUdlrSettings.Enabled = online && !working && (caps?.SupportsRollingStep == true);
-        SetTip(mouseUdlrSettings, caps?.SupportsRollingStep == true
-            ? L.T("全プロファイル共通のマウス UDLR設定を本体に保存します。", "Save Mouse UDLR settings shared by all profiles.")
-            : L.T("ファームウェア0.20.16以降が必要です。", "Requires firmware 0.20.16 or later."));
+        mouseUdlrSettings.Enabled = online && !working && (caps?.SupportsProfileConversion == true);
+        SetTip(mouseUdlrSettings, caps?.SupportsProfileConversion == true
+            ? L.T("全プロファイル共通のしきい値・時間・感度を調整します。", "Adjust thresholds, timings and sensitivity shared by all profiles.")
+            : L.T("同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware."));
         trackballOn.Enabled = paddleOn.Enabled = enabled && !working;
         invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
         mouseGain.Enabled = invertX.Enabled;
@@ -457,7 +459,7 @@ internal sealed partial class MainForm : Form
         if (p.OutputMode != 0 || p.Mouse.DirectionKeysEnabled)
             text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",
                 $"  •  Pointer gain: ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}");
-        if (p.OutputMode != 1 && p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON（マウス UDLR設定）", "  •  Movement conversion ON (Mouse UDLR settings)");
+        if (p.OutputMode != 1 && p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON", "  •  Movement conversion ON");
         SetText(outputStatus, p.Enabled ? text : "");
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)
@@ -725,7 +727,10 @@ internal sealed partial class MainForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            SlotBank loaded = SlotBackup.Load(dialog.FileName);
+            working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
+            MouseUdlrSettings migrationDefaults = await new MouseUdlrSettingsClient(bridge.RawAsync).ReadAsync();
+            SlotBank loaded = SlotBackup.Load(dialog.FileName, migrationDefaults);
+            if (loaded.LegacyConversionApplied) MessageBox.Show(this, LegacyImportNotice(true), L.T("旧設定の変換", "Legacy settings conversion"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             if (MessageBox.Show(this, L.F("全16スロットをこのバックアップで置き換えます。\n登録済み: {0} / 16\n切替方法と選択設定も復帰します。続行しますか？",
                 "Replace all 16 slots with this backup?\nRegistered profiles: {0} / 16\nProfile switching settings and saved selections will also be restored.", loaded.Profiles.Count(p => p.Enabled)),
                 L.T("全スロットを復帰", "Restore all slots"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;

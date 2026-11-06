@@ -12,16 +12,19 @@ internal sealed class FirmwareDevice : IFirmwareDevice
     private string? probePath;
     private UsbDeviceLocation? probeUsb;
     internal Exception? TransferWarning { get; private set; }
+    public bool RequiresDataUpgrade { get; private set; }
 
     public async Task<FirmwareInfo?> ProbeAsync()
     {
-        probePath = null; probeUsb = null; target = null; TransferWarning = null;
+        probePath = null; probeUsb = null; target = null; TransferWarning = null; RequiresDataUpgrade = false;
         try
         {
             using HidBridge device = await HidBridge.ConnectAsync();
             probePath = device.DevicePath;
             probeUsb = UsbDeviceLocation.ForHid(device.DevicePath);
-            return await device.ReadFirmwareAsync();
+            FirmwareInfo? current = await device.ReadFirmwareAsync();
+            if (current is not null) RequiresDataUpgrade = await FirmwareDataMigration.ReadAsync(device.RawAsync);
+            return current;
         }
         catch (BridgeDiscoveryException ex) when (ex.Matches == 0)
         {

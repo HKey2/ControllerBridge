@@ -100,11 +100,17 @@ static void seed_buttons(void) {
         if(f->valid)up_mapper_seed(&mapper,f->iface,f->field.report_id,f->field.bit_offset,f->field.bits,f->flags,f->value);
     }
 }
+static void refresh_conversion(void) {
+    const up_conversion defaults=UP_DEFAULT_CONVERSION;
+    up_conversion_apply(active>=0?&bank.profiles[active].shift.conversion:&defaults,&direction_settings);
+}
+const udk_settings *upr_direction_settings(void) { return &direction_settings; }
 static void select_profile(void) {
     upr_mouse_reset();
     active=connected?up_find_profile(&bank,vid,pid,revision,~descriptor_crc):-1;
     binding_error=active>=0 && !profile_exists(&bank.profiles[active]);
     if(binding_error)active=-1;
+    refresh_conversion();
     refresh_group();
     up_mapper_attach(&mapper,active>=0?&bank.profiles[active]:NULL);
     seed_buttons();
@@ -129,7 +135,7 @@ void upr_direction_accumulators(int32_t tenths[3]) {
 unsigned upr_direction_threshold(void) { return direction_settings.threshold; }
 bool upr_set_direction_settings(const udk_settings *settings) {
     if(!udk_settings_valid(settings))return false;
-    direction_settings=*settings;direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};return true;
+    direction_settings=*settings;refresh_conversion();direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};return true;
 }
 static bool rolling_enabled(void) {
     return upr_ready() && mouse_wheel>=0 && direction_settings.paddle_mode==UDK_ROLLING_MODE &&
@@ -177,7 +183,8 @@ bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,
     bool paddle_present=(options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel);
     if(paddle_present)touched=true;else wheel=0;
     if(keys_ready && ball_present && direction_settings.trackball_mode==UDK_HOLD_MODE) {
-        hold_idle_us=pointing_timeout(e);um_hold_input(&hold_state,options,dx,dy,e->time_us,&direction_settings);
+        hold_idle_us=pointing_timeout(e);
+        um_hold_input(&hold_state,options,dx,dy,e->time_us,&direction_settings);
     }
     if(keys_ready && rolling_enabled() && paddle_present) {
         rolling_idle_us=pointing_timeout(e);um_rolling_input(&rolling_state,wheel,e->time_us,&direction_settings);
@@ -203,15 +210,15 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     um_mix(&mouse_fraction,options,dx,dy,wheel,x,y);
     return true;
 }
-void upr_init(void) {
+void upr_init(const udk_settings *common) {
     rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};hold_idle_us=20000u;
-    direction_settings=(udk_settings)UDK_DEFAULT_SETTINGS;
+    direction_settings=*common;
     bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
     mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
     switch_guard.keys=switch_guard.held=0;
     pending_selection=-1;selection_unsaved=false;
     group_count=profile_number=0;
-    persisted=up_registry_load(&bank);
+    persisted=up_registry_load(&bank,common);
     descriptor_crc=~0u;up_mapper_attach(&mapper,NULL);
 }
 bool upr_ready(void) { return connected && active>=0; }
@@ -242,7 +249,7 @@ uint32_t upr_switch_keys(void) { return active<0?0:bank.switch_keys[active]; }
 bool upr_switch_released(void) { return !switch_guard.held; }
 static void activate(unsigned slot) {
     upr_mouse_reset();
-    active=(int)slot;binding_error=false;up_mapper_attach(&mapper,&bank.profiles[slot]);
+    active=(int)slot;binding_error=false;refresh_conversion();up_mapper_attach(&mapper,&bank.profiles[slot]);
     seed_buttons();
     refresh_group();
     uc_request_poll_interval(bank.profiles[slot].input_interval_ms);
@@ -374,7 +381,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

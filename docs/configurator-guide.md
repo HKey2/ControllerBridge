@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.20.21 and RP2350-USB-A firmware 0.20.21. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.22.0 and RP2350-USB-A firmware 0.22.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -10,7 +10,7 @@ The window and text follow each monitor's Windows display scaling, including mov
 2. Connect USB-C to a Windows PC.
 3. Run `ControllerBridge.exe`.
 4. A factory-state RP2350-USB-A automatically opens the firmware installation guide, whether connected before startup or while the tool is running. The dialog immediately waits for reconnection with BOOT held and shows only **Cancel**. Follow its numbered steps; after BOOT is detected, the final **Yes/No** overwrite confirmation opens automatically. A detected bridge with a different or unreadable version also opens guidance; **Firmware update** is available manually. See [firmware update](firmware-update.md).
-5. Check the connection status and the **Profile list**. Settings from 0.16.0–0.19.0 migrate automatically with button shift disabled. Installing this release over firmware older than 0.16.0 starts with all 16 slots unused; choose **Add controller** to register each controller again. New registrations persist across restarts.
+5. Check the connection status and the **Profile list**. Settings from 0.16.0–0.20.21 migrate to v8 automatically; v5 gains disabled shift, while v6 retains its first three shift keys. Installing this release over firmware older than 0.16.0 starts with all 16 slots unused; choose **Add controller** to register each controller again. New registrations persist across restarts.
 
 The executable includes its runtime; no separate .NET installation is required. Only one instance can run. Close other bridge configuration tools while using the GUI. When the board is disconnected, the application retries about every two seconds. **Connect / Reconnect** starts an attempt immediately. An empty USB-A port shows a stable waiting message during enumeration retries.
 
@@ -98,7 +98,7 @@ Save pending edits before reordering. A completed move is saved immediately and 
 
 Per-profile output modes, button behavior, shift settings, and LED colors are included. Common diagnostic settings and saved measurements are separate. Save or discard drafts before either operation.
 
-New backups use `ControllerBridge.Slots`, JSON version 3, with a SHA-256 checksum. Version-2 backups with version-5 bank data are verified and migrated with shift disabled, preserving all 16 slots and metadata. JSON version 1 remains unsupported. Keep a version-2 backup made before upgrading if you may return to older firmware; 0.19.0 cannot read version-6 banks or version-3 backups. The board validates the full payload, generation, CRC, and profile structure before writing the inactive Flash copy. An interrupted transfer before commit does not replace the active bank.
+New backups use `ControllerBridge.Slots`, JSON version 4, with a SHA-256 checksum. JSON v2/v3 backups are verified and converted; v2/v5 has shift disabled and v3/v6 retains its first three modifiers. Missing shared conversion settings use the import defaults described under [compatibility](#import-and-upgrade-compatibility). JSON v1 remains unsupported. Keep a pre-upgrade backup if returning to old firmware: it cannot read v8 banks or JSON v5. The board validates payload, generation, CRC and profiles before writing the inactive copy; an interrupted transfer before commit leaves the active bank intact.
 
 ### Individual profile files
 
@@ -106,7 +106,7 @@ For occasional individual transfers, right-click a registered row and choose **E
 
 Export includes current edits. Import creates an unsaved draft; **Save profile to device** persists it. Occupied slots cannot be overwritten this way. Duplicate names receive a number; missing IDs or IDs conflicting with another slot receive a new ID. Unique names and IDs remain unchanged. Canceling or rejecting a file preserves existing drafts.
 
-Individual files use `ControllerBridge.Profile`, JSON version 3. Version-2/profile-v5 exports migrate with shift disabled; earlier exports are rejected. They exclude slot order, shortcuts, and active selection, and cannot replace whole-slot backups.
+Individual files use `ControllerBridge.Profile`, JSON version 4. Version-2/profile-v5 exports migrate with shift disabled; earlier exports are rejected. They exclude slot order, shortcuts, and active selection, and cannot replace whole-slot backups.
 
 ## Map inputs and calibrate axes
 
@@ -124,7 +124,7 @@ The screenshot shows the saved **Cyber analog** profile's **Left stick X** setti
 
 The meter uses the descriptor range before calibration, inversion, or dead zone. A range crossing zero uses zero as its reference; other ranges use their midpoint. Missing input shows a waiting state; out-of-range values appear gray. Select the source, measure its travel, record the released center, and apply the result.
 
-The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.20.21 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
+The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.22.0 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
 
 ![Rapid fire settings with new default 20 and preserved saved values](gui-rapid-fire-en.png)
 
@@ -132,7 +132,7 @@ The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 pres
 
 ## Button shift
 
-Choose **Button shift…** beside **Rapid fire…**, either in a saved profile or during registration. Learn one to four physical shift keys, then change only the button outputs that need a shifted assignment. All learned keys must be held together (AND); there is no press-time window. Unchanged outputs inherit the main page. **No output** explicitly disables an output while shifted; **Inherit from main** restores it. A `*` marks an override. The four axes remain common and have no shifted editors.
+Choose **Button shift…** beside **Rapid fire…**, either in a saved profile or during registration. Learn one to three physical shift keys, then change only the button outputs that need a shifted assignment. All learned keys must be held together (AND); there is no press-time window. Unchanged outputs inherit the main page. **No output** explicitly disables an output while shifted; **Inherit from main** restores it. A `*` marks an override. The four axes remain common and have no shifted editors.
 
 Choose **Apply to draft**, then **Save profile to device** (or complete registration). Pressing/releasing the shift keys changes runtime button mappings immediately without saving Flash, changing the active profile, or reconnecting USB. Any key release returns to the main page, but all modifier outputs remain consumed until every shift key has been released. Removing every shift key disables the feature while retaining the draft's shifted mappings.
 
@@ -157,123 +157,93 @@ For the EGRET II mini Paddle Controller, trackball and paddle can be enabled ind
 
 ### Movement to D-pad
 
-The pointing controls are available in **Gamepad**, **USB mouse**, and **Mouse + Gamepad** tabs. In Gamepad or Mouse + Gamepad, enable **Convert to ↑↓←→** for the trackball, **Enable conversion** for the paddle, or both, then choose **Save profile to device**. Selecting USB mouse preserves both conversion flags and displays their ON/OFF values in grey with the controls disabled. Mouse-only output does not execute gamepad conversion. Pointer gain, inversion, paddle axis and source ON/OFF remain editable without clearing either preference. Returning to a gamepad mode restores the retained settings and makes the conversion checkboxes editable for enabled sources. Save and reload preserve these settings, including mouse-only profiles with enabled sources. Use matching 0.20.21 firmware; earlier firmware rejects that combination. Merely browsing or loading a saved profile does not change its data.
+Enable **Trackball ON** and **Convert to ↑↓←→**, or **Paddle ON** and **Enable conversion**, in the profile editor. Choose **Gamepad** for gamepad output alone or **Mouse + Gamepad** for pointer movement together with conversion. USB mouse-only retains these preferences in disabled controls but does not execute conversion. Pointer gain and inversion remain independent per-profile settings. No physical D-pad binding is required.
 
-The following click accumulation and timing apply to Trackball **Virtual Rolling** (the original click mode) and Paddle **Button clicks**. Trackball [Hold](#trackball-hold) has its own per-report threshold. For paddle-to-stick operation, see [Virtual Rolling](#virtual-rolling). Pointer movement and direction conversion have separate gains. **Pointer gain (×)** keeps each profile’s existing values and defaults (trackball 16.0, paddle 1.0), and stays editable when that source is ON, including while conversion is enabled. These controls and the profile summary describe pointer movement only. Cursor gains are hidden device-wide parameters, initially **6.0× for the trackball** and **1.5× for the paddle**, saved separately from profiles. They have no numeric display or editing control in the profile/test screens. Direction inversion remains effective. Ball X, ball Y and paddle have independent signed sums. At the configured positive or negative threshold (initially +64 or -64), that source produces **one click**, clears its sum and discards excess. Opposite movement cancels and fractional tenths are retained. With the initial threshold and cursor gains, 10 raw ball counts give 60 and the next count produces one click; 42 raw paddle counts give 63 and the next count produces one click. Simultaneous thresholds produce clicks in ball-X, ball-Y, paddle order.
+Trackball **Virtual Rolling** is the original accumulated-click mode. It uses hidden shared gains (initially 6.0× for Trackball and 1.5× for Paddle) instead of pointer gain. Each axis emits one click when its signed sum reaches the click threshold, clears that sum and discards excess. Trackball X, Trackball Y and Paddle events retain their order. A separate queue holds four waiting clicks in addition to the current click; extra clicks are discarded and counted. Physical buttons/axes and pointer movement continue independently.
 
-The paddle follows **Output axis** for pointer movement and Button clicks: X produces left/right (←→), Y produces up/down (↑↓). The axis selector remains enabled during conversion. The checkbox is labeled **Enable conversion**; Virtual Rolling uses its own stick selection and reversal. **Reverse rotation** reverses either pair. With normal firmware **0.20.6 or later**, conversion is an additional output: in **Mouse + Gamepad**, both enabled sources continue mouse movement using their saved pointer gain (ball 1.0–256.0, paddle 1.0–10.0), while hidden cursor gains drive independent D-pad clicks. No physical D-pad or direction assignment is needed. From 0.20.12, Mouse UDLR settings can replace each generated direction with any gamepad output. Version 0.20.13 gives Trackball and Paddle separate assignment tabs. The previous shared mapping is copied to both sources on upgrade. These assignments always target the gamepad report, including when combined-mode physical buttons are routed as mouse clicks. The **Gamepad** tab still selects a gamepad-only USB layout; choose **Mouse + Gamepad** for both outputs. Firmware 0.20.3–0.20.5 suppressed mouse movement for converted sources. Existing conversion preferences are retained.
+Each click holds for the configured pressed time after USB acknowledges the press, then waits for the configured released interval after release is acknowledged. The defaults 30/20 ms give an ideal upper bound of 20 clicks/s before polling overhead. A physical button using the same target, or any physical D-pad when the target is a direction, takes priority. Disconnects, profile changes and output resets clear generated work.
 
-The movement threshold, minimum pressed duration and minimum released interval are separate persistent device-wide settings, shared by all profiles and normal/test firmware. Their defaults are **64 pt**, **30 ms hold** and **20 ms wait**. Each click holds its press for at least the hold duration after the press is acknowledged, then remains released for at least the wait duration after release is acknowledged before starting another click. Changing one duration does not change the other. Normal buttons/axes and pointer movement continue independently. The ideal upper bound is 1000 / (hold ms + wait ms) clicks per second before host polling overhead: **20 clicks per second** with both defaults. The separate direction queue holds four waiting clicks in addition to the current click; extra clicks are counted and discarded. With the defaults, four queued clicks represent about 200 ms of additional work plus polling. Ordinary input has priority when it holds the same output button, or any D-pad direction when the generated target is a direction; conflicting generated work is cancelled without releasing the ordinary input. A generated A/B/etc. button can coexist with a physical D-pad direction. USB loss, profile changes and output resets clear pending movement. The defaults are application choices, not documented Nintendo minimums. Existing saved timings are retained; the default change does not overwrite a saved 16/16 ms pair.
+## Conversion mapping and shared settings
 
-Separately stored hidden cursor gains and the always-editable pointer fields require **0.20.5 or later**. Firmware 0.20.4 uses the same initial conversion gains as constants; 0.20.3 uses profile gain and paddle left/right only. The profile format remains compatible with those versions. Before returning to a version older than 0.20.3, turn both conversion options off in every profile and reduce trackball gain to at most 64, then save with the current firmware. Individual JSON exports, slot backups, duplication and reorder retain pointer values without changing profile or bank size.
+Use the selected profile's **Conversion mapping** button, below its name, to edit these settings:
 
-![Editable pointer gain with separate hidden cursor gains](gui-direction-keys-en.png)
+| Setting | Profile value |
+|---|---|
+| Trackball | Virtual Rolling (clicks) or Hold with optional pseudo-inertia; four targets in ↑/↓/←/→ order |
+| Paddle | Button clicks or Virtual Rolling; negative and positive targets |
+| Virtual Rolling | Rotation step, output stick and independent rotation reversal |
 
-## Mouse UDLR settings
+Targets can be any of the 18 digital gamepad outputs, including four directions and stick clicks. Analog axes and Unassigned are not offered. Negative/positive refer to Paddle movement after the profile's pointer reversal. Changing the pointer axis from X to Y retains those targets. The Paddle target controls are greyed out in Virtual Rolling; rolling options are greyed out in Button clicks. Their values are retained.
 
-Choose **Mouse UDLR settings**, immediately to the right of **Profile switching...** at the top of the main window. This opens the settings shared by **all profiles**. It requires a connected board with matching firmware 0.20.19 supporting configurable rotation steps; the button is disabled when disconnected or unsupported.
+Choose **Apply to draft**, then **Save profile to device** to persist and apply the changes. **Cancel** discards the dialog edits. Selecting another profile uses that profile's own settings. Profile export, duplication, reorder and whole-bank backup retain them.
 
-The following three fields control button clicks. They remain visible but disabled for **Trackball → Hold** and **Paddle → Virtual Rolling**; they are enabled for Trackball Virtual Rolling and Paddle Button clicks. Their saved/draft values are retained. Hold has a separate threshold.
+![Per-profile Trackball conversion mapping](gui-conversion-trackball-en.png)
 
-| Parameter | Default | Allowed integer range | Effect |
-|---|---:|---:|---|
-| Movement threshold | 64 pt | 1–256 pt | Signed accumulated movement required for one direction click |
-| Hold time | 30 ms | 1–512 ms | Minimum pressed duration after the press is acknowledged |
-| Wait time | 20 ms | 1–512 ms | Minimum released interval after release is acknowledged, before the next click |
+![Per-profile Paddle mapping and rotation options](gui-conversion-paddle-en.png)
 
-Choose the **Trackball** or **Paddle** tab to edit that source. Trackball offers **Virtual Rolling** (the original click mode and upgrade default) or **Hold**. Its four assignments are shared by both modes. For Paddle, choose **Button clicks** (the default) to display the existing assignments, or **Virtual Rolling** for stick rotation. Trackball in either mode, and Paddle in Button clicks mode, have four independent drop-down lists in a D-pad arrangement: upper = upward movement, lower = downward, left = leftward, and right = rightward. Their initial selections are **↑ / ↓ / ← / →**. Each list contains the four directions plus every Switch-side button shown on the profile screen: **Y, B, A, X, L, R, ZL, ZR, −, +, L stick click, R stick click, HOME and CAPTURE**. Analog axes and Unassigned are not offered. These are output choices and require no learning from physical controller buttons. For example, choosing **A** in the upper Trackball list makes upward trackball movement send A, without changing the paddle. Paddle **X axis** uses its left/right choices and **Y axis** uses its up/down choices; **Reverse rotation** applies before choosing the direction.
+Open **Shared settings** at the top, immediately after **Profile switching...**, to tune response for all profiles. A matching 0.22.0 board is required. These values do not change when switching profiles:
 
-**Reset to defaults** restores the four selections on the displayed tab to ↑/↓/←/→. It leaves the other tab, both mode selections and all numeric settings unchanged, and does not write to the device until **Save to device** is chosen. Existing custom assignments are loaded as selected values. Earlier zero/default mappings display the corresponding direction; their saved representation changes only on an explicit save.
+| Parameter | Default | Editing range |
+|---|---:|---:|
+| Click movement threshold | 64 pt | 1–256 pt |
+| Click hold time | 30 ms | 1–512 ms |
+| Click wait time | 20 ms | 1–512 ms |
+| Hold movement threshold | 1 pt | 1–127 pt |
+| Inertia threshold | 8 pt/20 ms | 1–65,535 pt/20 ms |
+| Inertia decay factor | 0.90 | 0.00–0.99, steps of 0.01 |
+| Inertia decay interval | 100 ms | 1–1,000 ms |
+| Rotation sensitivity | 1.0°/pt | 0.1–10.0°/pt, steps of 0.1 |
 
-All parameters remain at fixed positions within their source tab. Unused parameters are **greyed out**, rather than removed:
+The dialog groups click conversion (Trackball Virtual Rolling / Paddle Button clicks), Trackball Hold, and Paddle Virtual Rolling in separate panels. Pseudo-inertia and its explanation sit inside the Hold panel.
 
-| Selected tab and mode | Common click threshold / hold / wait | Hold threshold | Direction assignments | Paddle rolling options |
-|---|---|---|---|---|
-| Trackball — Virtual Rolling | Enabled | Disabled | Enabled | In Paddle tab |
-| Trackball — Hold | Disabled | Enabled | Enabled | In Paddle tab |
-| Paddle — Button clicks | Enabled | In Trackball tab | Enabled | Disabled |
-| Paddle — Virtual Rolling | Disabled | In Trackball tab | Disabled | Enabled |
+**Save to device** is disabled until a displayed setting differs from its opening value; reverting all edits disables it again. The same rule applies to **Apply to draft** in Conversion mapping. Browsing the Trackball/Paddle tabs does not count as an edit.
 
-The same rules apply on the first opening with saved settings, after tab/mode changes and after a failed save. Mode changes preserve values and keep the tab and lower assignment/reset controls in place. During saving, all editable controls are disabled; a failure restores only those used by the selected mode. The dialog reserves space for both modes and uses the existing scrolling behavior if the monitor cannot display its full height.
+All eight controls remain editable regardless of the currently selected profile's mode. **Save to device** persists these shared values and verifies a readback, without saving or discarding profile drafts. Cancel writes nothing; failures retain entered values for retry. Older values outside the editing range are shown clamped with a notice and change only on an explicit save. Hidden click-conversion gains remain unchanged.
 
-The fields load the current device values. Choose **Save to device** to apply and persist the three shared numeric settings, all eight Trackball/Paddle assignments, both source modes and their parameters in one operation, then verify them by reading back. Switching tabs retains both drafts. The values survive restart and profile switching. Upgrading from 0.20.12 copies the saved shared assignment to both tabs, so existing behavior is retained until one is edited. **Cancel** discards dialog edits. A save failure leaves the dialog and entered values available for retry. Unsaved profile edits remain intact; this operation does not save those drafts. Cursor gains and per-profile pointer sensitivity retain their values.
-
-The dialog explains that pointer movement is converted to gamepad input and that the settings are common to all profiles. Units sit directly beside the spinners; the ranges above remain enforced but are not printed in the dialog. On upgrade from a shared-duration version, an absent wait setting inherits a valid saved hold duration to preserve the earlier behavior. If no valid hold value has been saved, initialization uses 30 ms hold and 20 ms wait. A valid saved wait value is retained.
-
-If an older stored value is outside the new editing range, the dialog shows a notice and a value inside the range. The device is changed only when **Save to device** is chosen. Opening the dialog or cancelling does not rewrite old settings.
-
-![Mouse UDLR settings button immediately right of Profile switching](gui-mouse-udlr-button-en.png)
-
-![Trackball tab with movement threshold 64 pt, hold time 30 ms, wait time 20 ms and directional defaults](gui-mouse-udlr-settings-en.png)
-
-![Paddle tab with independent directional defaults](gui-mouse-udlr-paddle-en.png)
+![Shared settings](gui-shared-response-en.png)
 
 ### Trackball Hold
 
-1. On the profile screen, enable **Trackball ON** and **Convert to ↑↓←→**, then **Save profile to device**. Choose **Mouse + Gamepad** for pointer movement together with held gamepad controls, or **Gamepad** for gamepad output alone.
-2. Open **Mouse UDLR settings → Trackball → Mode** and select **Hold**.
-3. Set **Movement threshold** and any of the four output assignments, then **Save to device**. These are common settings shared by all profiles.
+Select **Conversion mapping → Trackball → Hold**, optionally check **Enable pseudo-inertia**, apply to draft and save the profile. Enable is stored per profile and defaults to off; tuning stays in **Shared settings**. Hold compares raw X/Y with its movement threshold after profile inversion, without pointer gain. Axes act independently and can hold a diagonal.
 
-The dedicated threshold defaults to **1 pt** and accepts integers **1–127**. The screen shows the label, value and `pt` unit, with no printed range. This is raw relative movement per valid trackball report, after the profile's X/Y inversion. Neither pointer gain nor the hidden click-conversion gain multiplies it, and movement does not accumulate between reports.
+Without inertia, zero/subthreshold reports release that axis immediately. If reporting stops, ordinary Hold expires after max(20 ms, two effective input polling intervals). With inertia enabled, each axis measures signed displacement over the preceding 20 ms and starts/refills inertia only above the common threshold and in the direction of a qualifying movement. The default is **8 pt/20 ms**. Small windows do not refill the existing amount or restart its clock. Qualifying reverse movement immediately cancels that axis; a sufficiently strong reverse movement can start new inertia in its own direction.
 
-Each axis is evaluated independently:
+The default **0.90** decay factor retains 90% every **100 ms**, ending when the amount reaches or falls below **8**. There is no maximum duration. The following durations start at the last qualifying inertia refresh; they are not extra delays added to ordinary Hold. Internal fractional rounding is included in the implemented results.
 
-| New movement on an axis | Output |
-|---|---|
-| Magnitude at least the Hold threshold | Hold the output assigned to that sign/direction |
-| Zero, or nonzero magnitude below the threshold | Release that axis's generated output |
-| Opposite sign | Release the previous direction; hold the opposite output only when its magnitude meets the threshold |
+| Starting amount (pt/20 ms) | Inertia duration with defaults |
+|---:|---:|
+| 8 or less | None |
+| 12 | 400 ms |
+| 14–15 | 600 ms |
+| 16 | 700 ms |
+| 20 | 900 ms |
+| 36 | 1,500 ms |
 
-For example, with a threshold of 3 pt and default mappings, X=+4 holds right, X=+1 releases it, and X=-3 holds left. X/Y can hold together for diagonal movement. Custom buttons use the same four assignments as Trackball Virtual Rolling, and returning to either mode retains them. Generated buttons coexist with ordinary held buttons; a physical D-pad owns the hat while pressed. Opposing generated hat directions cancel. Hold does not change analog axes.
+Hold outputs pressed/released state, so this decays the internal duration-control quantity, not the strength of a digital direction. Actual cursor repeats depend on the host/game. Trackball/paddle pointer movement, click conversion and Virtual Rolling do not gain inertia.
 
-A genuine zero/subthreshold trackball report releases immediately in the output queue. Reports belonging only to the paddle or another interface/report ID do not synthesize a trackball release. For devices that stop reporting when idle, a fallback releases Hold after **20 ms or two input polling intervals without a valid trackball report, whichever is longer**. Input/output resets, readiness loss and saved setting changes also clear held output. USB polling determines when the host receives a transition; Hold adds no click-style minimum pressed duration or released gap.
-
-The shared 64 pt / 30 ms / 20 ms click parameters remain visible and disabled while Trackball Hold is displayed, retaining their values. They do not affect Hold's per-report threshold or idle timeout. Updating old settings keeps the original trackball click behavior under **Virtual Rolling**, with the unused Hold threshold initialized to 1 pt. Paddle mode, its gain/stick/reversal and all existing assignments remain intact.
-
-![Saved Trackball Hold on first opening, with a 1 pt threshold, default directions and inactive common parameters greyed out](gui-trackball-hold-en.png)
-
-This capture opens saved Hold directly, before any tab navigation. The direction assignments are ↑/↓/←/→.
+Physical button holds remain intact; a physical D-pad owns the hat while pressed. Opposing generated directions cancel. Profile/settings changes, readiness loss and output resets clear old generated Hold and clicks. Click hold/wait fields do not impose a minimum duration on Hold.
 
 ### Virtual Rolling
 
-This subsection describes **Paddle Virtual Rolling**, which produces analog-stick rotation. **Trackball Virtual Rolling** is the name of the existing accumulated-click mode described under [Movement to D-pad](#movement-to-d-pad).
+Paddle **Virtual Rolling** produces a full-strength analog-stick direction. Choose it under **Conversion mapping → Paddle**, set the output stick, reversal and step, then apply and save the profile. The default stick is Right and reversal is Off. Rotation sensitivity is adjusted separately in **Shared settings**.
 
-1. On the profile screen, enable **Paddle ON** and **Enable conversion**, then **Save profile to device**. Use **Mouse + Gamepad** for pointer movement plus stick output, or **Gamepad** for stick output alone.
-2. Open **Mouse UDLR settings → Paddle** and select **Virtual Rolling** in **Mode**.
-3. Set the following options and choose **Save to device**. These options are shared by all profiles; this save does not save unrelated profile drafts.
+The nine steps are **5/10/15/20/30/40/45/60/90°**; default **30°** provides 12 positions, while 5° gives 72 and 90° gives four cardinal directions. All choices divide 360 evenly. Sensitivity converts input points to degrees: at 1.0°/pt, 30 points advance one 30° position. Incomplete movement is retained, and reversing first cancels that residual. Fast input can advance several steps in one report. These are virtual positions; physical detents and counts per revolution are device-dependent.
 
-| Option | Default | Range or choices |
-|---|---|---|
-| Rotation sensitivity | 1.0°/pt | 0.1–10.0°/pt, in steps of 0.1 |
-| Rotation step | 30° | 5°, 10°, 15°, 20°, 30°, 40°, 45°, 60° or 90° |
-| Output analog stick | Right stick | Right stick / Left stick |
-| Reverse rotation | Off | Reverses this virtual rotation independently of pointer settings |
+The angle starts up at board startup; output stays centered until movement arrives. Stopping centers the selected stick while retaining angle and residual. A changed step aligns the retained angle to the nearest new position on the next nonzero movement (clockwise on a tie) and clears the old residual. Sensitivity/stick/reversal changes do not discard angle/residual. Profile/output changes and reconnection stop motion without resetting the retained angle; a board restart resets it. No runtime angle is saved to Flash.
 
-The default virtual lever has **12 positions, 30° apart**. This default follows the 12-contact endless rotary mechanism in the [user-supplied loop-lever article](https://ykuns-mechanical-club.com/loop.lever); [Alps Alpine's SRRM series specification](https://tech.alpsalpine.com/j/products/category/switches/sub/04/series/srrm/) independently documents 12-position endless switches with a nominal 30° switching angle. The latter is a reference for the mechanism, not identification of the article's SRN part or the connected paddle.
-
-**Rotation step** selects only the nine values in the table, using a drop-down list with an adjacent ° unit. Every choice divides 360° evenly: 5° gives 72 positions, 10° gives 36, 15° gives 24, 20° gives 18, 30° gives 12, 40° gives 9, 45° gives 8, 60° gives 6 and 90° gives four cardinal directions. Smaller steps make the available directions finer; this remains discrete stick output. Values such as 1°, 25° and 35° are not offered. Choose a step to suit the game's expected directions; these are virtual positions, not a claim about the physical paddle's detents.
-
-Sensitivity converts raw relative paddle input points to virtual degrees, independently of the selected step. At the default 1.0°/pt and 30° step, 30 points in one direction advance one position and 360 points complete a virtual turn. With the same sensitivity, 5° needs 5 points per step and 90° needs 90 points. In general, step degrees divided by sensitivity gives the raw input amount required from zero residual. Movement below one step is retained, including across stops; reversing cancels that residual movement before completing a step in the other direction. Fast movement may advance multiple positions in one report. There is no added speed cap or inertia. These sources do not establish the connected paddle's counts per physical revolution or maximum speed, so one physical revolution is not assumed to equal one virtual revolution.
-
-The internal angle starts at **up** when the board starts, but the output remains centered until movement is received. While turning, the chosen stick points at the current position at full radial strength. When turning stops, it returns to center while retaining the angle and fractional movement. The next movement resumes from that state. If the step was changed, the next nonzero paddle input first aligns the held angle to the nearest new step measured from up (an exact tie chooses the clockwise position), clears the old fractional movement, then applies the new input. This keeps 90° on up/right/down/left even when changing from another step. Changing sensitivity, destination or reversal alone does not discard the held angle/residual. Game starts/restarts do not reset it. Profile/output changes and input reconnection stop the output without resetting the angle; a board restart resets it. The angle is held in RAM and is never saved to Flash during operation.
-
-A valid paddle report with zero movement stops the output immediately. For devices that stop reporting when idle, the fallback is no paddle report for **20 ms or two input polling intervals, whichever is longer**. This is an idle-detection rule, not a mechanical speed specification. Unrelated trackball/button reports do not count as a zero paddle report.
-
-Virtual Rolling controls the selected stick, including its centered idle state; the other stick, buttons and trackball conversion retain their own behavior. The mode replaces paddle-generated button clicks. Pointer motion continues in combined output. The profile's paddle **Output axis**, pointer gain and pointer **Reverse rotation** continue to affect the pointer and Button clicks; Virtual Rolling instead uses its own sensitivity and reversal. The shared **Movement threshold**, **Hold time** and **Wait time** apply to button clicks, not the virtual angle or stop timeout. The direction lists and their reset button remain visible but disabled during Paddle Virtual Rolling. Switching back to Button clicks enables the retained assignments and disables the still-visible rolling options. Upgrading from versions before Virtual Rolling initializes Button clicks mode. Upgrading from 0.20.15 retains valid paddle/trackball modes, sensitivity, stick, reversal and assignments, and initializes only the new rotation step to 30°. The step is shared by all profiles and is saved and read back with the other Mouse UDLR settings. Install matching 0.20.21 firmware to use it.
-
-![Virtual Rolling with 1.0 degree per input point, 30 degree rotation step, right stick and reversal off](gui-virtual-rolling-en.png)
+A zero Paddle report stops motion immediately. No-report fallback is max(20 ms, two effective Paddle polling intervals). Pseudo-inertia applies only to Trackball Hold. Virtual Rolling owns its selected stick, including centered idle output; the other stick and physical buttons retain their behavior. Its reversal is independent of pointer reversal, and its stick selection is independent of pointer X/Y axis.
 
 ## Paddle output axis
 
-In **USB mouse** or **Mouse + gamepad**, choose **X axis** or **Y axis** from **Output axis** on the paddle row, then choose **Save profile to device**. X is horizontal and Y is vertical. Existing profiles and new profiles default to X. The selection belongs to each profile and survives duplication, export/import, whole-bank backup/restore, and reordering. Turning **Paddle ON** off disables its controls while retaining the axis choice.
+In USB mouse or Mouse + Gamepad, choose **X axis** or **Y axis** in the Paddle **Output axis** list and save the profile. Pointer gain (1.0–10.0×) and pointer reversal apply to this axis. Trackball inversion affects only Trackball. Direction-conversion negative/positive target assignments are independent of this axis in v8. During migration, the old X profile's left/right or old Y profile's up/down are selected once as those targets. Virtual Rolling selects its stick independently.
 
-![Paddle output axis set to Y in the English mouse settings](gui-paddle-axis-en.png)
+## Import and upgrade compatibility
 
-For mouse movement, paddle gain (1.0–10.0) and **Reverse rotation** act on the selected axis. Direction conversion uses its separate hidden paddle gain (initially 1.5×) and retains reversal. Trackball **Invert X** and **Invert Y** affect only the trackball. With both inputs enabled, the paddle is added to the selected trackball axis; the other axis remains the trackball's value. Changing only the paddle axis does not require a USB layout change.
+Current device profiles and banks use version 8; exports use JSON version 4. v5 device banks (0.16.0–0.19.0), v6 banks (0.20.x), and JSON v2/v3 exports are accepted. Main bindings, axes, IDs, selection, shortcuts, RGB and rapid-fire settings are retained. v5 has shift disabled; v6 keeps the first three modifiers and drops only a fourth. Shifted output mappings remain intact.
 
-Y-axis profiles require GUI and firmware **0.20.2 or later**. The GUI rejects saving Y to older firmware before beginning a profile or bank upload. Older firmware does not recognize saved Y profiles; set every paddle profile back to X and save with the current firmware before using an older firmware version.
+Device migration copies the saved shared maps, modes, stick/reversal and rotation step into every profile, then writes and verifies the inactive bank before adopting it. The old source remains available if that first write is interrupted. A v5 migration first uses Bank A so its two smaller legacy copies remain untouched. New tuning defaults only initialize missing records; existing valid timings and sensitivity survive.
 
-The selected axis applies to pointer movement and optional Button clicks. Virtual Rolling selects its output analog stick separately in Mouse UDLR settings.
+Old JSON lacks the former common conversion settings. Imports use migration defaults retained in a connected device, or standard defaults if disconnected, and show a notice. Those values cannot recover a different device's missing shared settings; check targets/modes/step before saving. This operation does not copy common tuning into the profile. JSON v1 and binary v1–v4 remain unsupported. Old firmware cannot read v8; keep an old-format backup before upgrading for any downgrade.
 
 ## Switch profiles without a PC
 

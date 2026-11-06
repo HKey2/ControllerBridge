@@ -1,6 +1,70 @@
-# Current verification
+# Verification record
 
-Applies to ControllerBridge Windows configurator and normal firmware 0.20.21. Paddle Virtual Rolling offers nine rotation steps (5/10/15/20/30/40/45/60/90°), defaulting to the previous 30°. Inactive parameters stay visible and greyed out using one enabled-state path for initial opening, navigation and save completion. Shared click defaults remain 64 pt / 30 ms / 20 ms; Trackball Hold retains its independent threshold. Common settings use 208 bytes; profile/bank/measurement formats remain unchanged. Dated entries below describe their own builds. Current allocation figures are in [Current normal-build memory](#current-normal-build-memory).
+Applies to configurator **0.22.0** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+
+## 2026-11-06 — Unified 0.22.0 release label
+
+The configurator and firmware are one 0.22.0 release. The main-window title and current README/documentation omit the temporary GUI revision suffix. Current release metadata uses `guiRevision: 0` and `displayVersion: v0.22.0`. Dated checks below retain the labels on their actual intermediate artifacts.
+
+The normal EXE was rebuilt with existing .NET SDK 9.0.319. Product verification confirms version 0.22.0 without a GUI suffix, 212 product types without development entry points, and exact embedded firmware/manifest/icon hashes. The matching 0.22.0 UF2 and memory allocations are unchanged by this label correction. Existing functional results below remain applicable; only the title was changed in product code. No device was opened or written, and no Git commit was made. Evidence: `test/development/results/release-0220-20261106`.
+
+## 2026-11-06 — Unchanged-action disabling (0.22.0, GUI r2)
+
+Shared settings disables Save to device while values match the opening display; Conversion mapping disables Apply to draft while all modes, targets, flags and rotation options match the opening draft. Changing values enables the action and reverting them disables it. Tab navigation does not change this state. Numeric text is compared at the saved precision without forcing edit commitment; invalid pending text cannot trigger a save. Older values clamped for display start unedited. No-op guards prevent unchanged handlers from persisting, and failed changed saves remain retryable.
+
+The existing Japanese/English shared/conversion suite passes **1,501 checks per language (3,002 total)** at 96/144/192 DPI. Its opening-state expectation now includes disabled save, and the failure scenario uses an actual edited value. Existing changed-save and conversion-apply paths pass. Japanese unchanged shared/conversion screenshots were visually inspected to confirm disabled action styling. No new test suite or firmware test was introduced for this GUI change.
+
+Product verification confirms GUI r2, 212 product types without development entry points, and exact unchanged embedded UF2, manifest and icon. The existing .NET SDK 9.0.319 was used. Firmware remains 0.22.0; its source, binary formats, memory usage and distribution UF2 are unchanged. No physical device was opened or written. Evidence: `test/development/results/dirty-settings-20261106`.
+
+## 2026-11-06 — Shared-setting groups (0.22.0, GUI r1)
+
+The shared dialog groups click conversion, Trackball Hold and Paddle Virtual Rolling in separate existing-theme panels. Pseudo-inertia is a subsection of Hold with its own explanation. The Conversion mapping dialog omits the redundant profile-only sentence in Japanese and English. The eight parameters, defaults, save/readback transaction and per-profile inertia enable are unchanged.
+
+The existing shared/conversion GUI suite passes **1,501 checks per language (3,002 total)** in Japanese and English, including 96/144/192 DPI containment/text checks, draft/cancel behavior, saves, failures and serialization. Japanese default shared/conversion and English scaled shared screenshots were visually inspected. No new test cases were added; extra layout checks come from the grouped control tree. Product checks confirm GUI r1, 210 product types, no development entry points, and byte-identical embedded firmware, manifest and icon. The installed .NET SDK 9.0.319 was used without toolchain changes.
+
+Firmware, binary formats, board memory allocations and all protected build artifacts remain unchanged from 0.22.0. No physical hardware was opened or written. The local overlay and integration patch match the new GUI. Evidence: `test/development/results/grouped-settings-20261106`.
+
+## 2026-11-06 — Per-profile pseudo-inertia (0.22.0)
+
+Shared settings replaces the previous response-settings label. Eight common numeric controls include inertia threshold **8 pt/20 ms**, decay factor **0.90** and interval **100 ms**. Only enable is per profile; it defaults off and is available with Trackball Hold. There is no maximum-duration setting. Strong movement refreshes each axis's measured 20 ms displacement, small movement does not replenish it, a qualifying reversal cancels it, and the amount decays to the activation threshold. Digital Hold remains binary output.
+
+The real implementation passes **99** deterministic inertia checks, including threshold equality, 600/700 ms deadlines for 14–16 counts, 1,500 ms for 36, 1/10/20 ms input intervals, fractional report overlap, independent axes, reversal, settings/reset behavior, timestamp wrap, integer limits, zero decay and slow decay. Recorded EGRET trackball input is replayed through this implementation: small movement **9,001 reports / 0 starts**, intense movement **3,001 reports / 25 starts**, with peak window amount 36. These recordings establish small/large separation for those sessions; a separate moderate-strength capture and actual game behavior have not been measured. Durations are measured from the last qualifying refresh, not added after the physical stop.
+
+Fourteen core C suites pass **50,981** checks; the exact-product input/repeat/scheduler harness passes **113**, including preservation of a physical button and release of a 16-count impulse at 700 ms. Including the inertia suite gives **51,193** deterministic C checks (repeated replay invocations counted once). GIP implementation is unchanged. Earlier GIP results remain in their dated entries.
+
+Eight final Japanese/English GUI runs pass **3,420** checks: per language, conversion/shared settings 1,353, output tabs 128, firmware update 183 and connection guidance 46. They cover UDS9 expected-value guards, retries, readback failure, eight-value persistence, independent profile drafts, disabled-mode retention, profile/bank/JSON round trips, published v5/v6 migration and capability mismatch. Layout checks simulate 96/144/192 DPI; Japanese default shared/inertia and English scaled shared screens were visually inspected. Test screenshots use synthetic profiles.
+
+Published v5/v6 device banks and JSON v2/v3 imports migrate to v8 / JSON v5 with inertia disabled. Unpublished v7 conversion is deliberately absent from product code. A local-only converter read the connected board's current bank, preserved the original and generated a current-format backup. GUI validation confirms that every mapping, identity, shortcut and non-version byte is preserved. No firmware or device settings were written during this work.
+
+Normal EXE/UF2 were built with existing .NET SDK 9.0.319, Pico SDK 2.1.1 and Arm GCC 14.2.1. Product assembly checks verify version 0.22.0 without a GUI revision suffix, 210 normal types, no development entry points, original icon and exact embedded UF2/manifest. The estimator skips division for fully overlapping samples; no hardware speed claim is made. The local development overlay and integration patch apply to a fresh product copy. The temporary converter, private backup and tests remain under ignored local evidence: `test/development/results/pseudo-inertia-20261106`. The local UDLR variant and older release ZIPs are unchanged.
+
+## 2026-11-06 — Conditional saved-format notice (0.21.0, GUI r2)
+
+The GUI reads saved-bank metadata before update approval. It requires the persisted flag, supported v5/v6 sizes and versions, matching header/first-profile versions and consistent generation/CRC across the snapshot. It does not infer migration from firmware version alone. Confirmed older saved data displays the user's short notice; no stored bank, v7/future formats, invalid/missing metadata, changed snapshots and optional read failures omit it. The BOOT route omits it because this interface has no saved-bank metadata; it cannot reuse a stale claim. The old API reports the loaded persisted bank rather than all raw Flash copies, as described in the update guide.
+
+Japanese/English firmware suites pass 183 checks each, including deterministic metadata validation and the positive/negative notice paths. Connection/automatic-guidance suites pass 46 each: **458 total**. Checks cover both legacy sizes, a persisted bank without any connected input/active profile, generation-guarded reads, current/unknown layouts, absent storage, malformed replies, changed metadata and failure at each read boundary. They verify that only commands 20/40/41 are used and that an optional inspection failure does not block recovery. Layout captures confirm the short sentence fits the restored compact confirmation sizes, with/without automatic guidance; BOOT confirmation has no sentence. Japanese and English images were visually inspected.
+
+Normal GUI r2 was built using existing .NET SDK 9.0.319. Its 210 product types contain no development entry points. Original icon, firmware 0.21.0 and package manifest are byte-identical to GUI r1; board memory figures below are unchanged. Firmware and C suites were not rebuilt/rerun for this GUI change. No physical device was opened, reset or programmed. The local overlay and 17-file development patch were updated and verified on a fresh product copy. Evidence: `test/development/results/saved-format-notice-20261106`.
+
+## 2026-11-06 — Firmware data-migration notice (0.21.0, GUI r1)
+
+Normal update and post-BOOT final confirmations now explain that supported saved v5/v6 data is automatically converted to v7 on first startup after updating, without a backup restore. The notice is conditional on older saved data being present and does not claim that the updater inspected it. The confirmation dialog has 80 extra logical pixels of height to accommodate both languages with automatic version-mismatch guidance. Equal-version results and the BOOT wait retain their existing messages and behavior.
+
+The existing Japanese/English firmware-workflow checks pass 124 per language; connection/automatic-guidance checks pass 46 per language (340 total). Both confirm paths and the automatic mismatch introduction fit in their captured dialogs. Japanese and English captures were visually inspected. This text/layout-only change adds no new test cases or product test entry points. The normal GUI was published with existing .NET SDK 9.0.319; all three embedded resources match the unchanged firmware, manifest and original icon. Firmware stays 0.21.0, memory figures below are unchanged, and no physical device was opened or programmed. The local 17-file development patch applies to a fresh product copy. Evidence: `test/development/results/migration-notice-20261106`.
+
+## 2026-11-06 — Profile conversion and Hold release grace (0.21.0)
+
+The profile contains six targets, Trackball/Paddle mode, rolling stick/reversal and rotation step in the old fourth shift key's 16-byte area: nine used and seven reserved. Shift accepts at most three modifiers. Shared tuning retains 32-bit click threshold/timing transport, adds Hold grace 0–1,000 ms (default 0), and keeps sensitivity and Hold threshold common. New UDS8 writes guard only shared tuning; old migration maps/modes/step remain available for older JSON imports.
+
+v5/v6 device migration validates old banks, preserves identity/selection/shortcuts, copies common conversion defaults into every profile and commits to a verified inactive bank. v6 keeps the first three modifiers and shifted outputs/rates; only the fourth modifier is removed. v5 first commits to Bank A. Interrupted/failed migration retains the old bank. C and C# migration results are byte-identical for tested legacy fixtures. JSON v2/v3 is converted with an explicit notice about missing common settings and device/default supplementation. Mixed-format invalid banks are rejected.
+
+Fourteen deterministic C suites pass **51,003** checks; four GIP suites pass **532**, and the exact-product handler/repeat/scheduler harness passes **110**, for **51,645** C checks. Coverage includes per-axis grace deadlines, qualifying reversal, subthreshold input, unrelated reports, timestamp wrap, transition ordering before/after USB ACK, settings/profile reset and physical button preservation. The harness verifies that extracted product functions match the final source.
+
+Six Japanese/English GUI runs pass **2,516** checks (per language: conversion/shared settings 1,006, output tabs 128, firmware workflow 124). They include current/legacy binary and JSON round trips, C/C# conversion comparison, three-key limits, independent drafts, transaction/readback errors, 96/144/192 DPI layout checks and all four default-size output layouts. Screenshots use synthetic profiles; shared-response examples deliberately show non-default Hold threshold/grace/sensitivity. English 96-DPI and Japanese/English scaled views were visually inspected.
+
+The normal GUI and firmware build use existing .NET SDK 9.0.319, Pico SDK 2.1.1 and Arm GCC 14.2.1. Product assembly checks verify no development entry points/types, original icon, exact embedded UF2/manifest and version 0.21.0. The development overlay and 17-file integration patch remain local-only and apply to a fresh product copy. Evidence: `test/development/results/profile-conversion-20261106`.
+
+No physical board was opened, reset or programmed. Software checks establish logic and simulated workflows, not physical USB timing, power-failure behavior on actual Flash or game behavior. The normal EXE/UF2 are updated; the local UDLR variant and older release ZIPs are not rebuilt.
 
 ## 2026-11-03 — Reset the GUI revision label (0.20.21)
 
@@ -535,22 +599,20 @@ Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`
 
 Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.20.21. Device settings and firmware were not written during this work.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.21.0. Device settings and firmware were not written during this work.
 
 ## Current normal-build memory
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 116,064; persistent storage 49,152 | 1,931,936 |
-| SRAM, 532,480 bytes | Static data 156,124; two stacks 8,192 | 368,164 |
+| Flash, 2,097,152 bytes | Code/initial values 119,788; persistent storage 49,152 | 1,928,212 |
+| SRAM, 532,480 bytes | Static data 156,296; two stacks 8,192 | 367,992 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
-| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 144 | 3,888 |
+| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 164 | 3,868 |
 
-Static SRAM consists of vector table 272, initialized data 37,944, and BSS 117,908 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 232,448 bytes.
+Static SRAM consists of vector table 272, initialized data 37,568, and BSS 118,456 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 239,616 bytes.
 
-These figures were read from the normal 0.20.21 ELF with the extra Elite Series 2 startup recovery and recovery LED transition. Reserved Flash remains 49,152 bytes. Common settings use 208 bytes, leaving 3,888; profile/bank/measurement sizes remain 848/13,908/3,784 bytes. Normal UF2 is 232,448 bytes. The archived 0.20.16 local UDLR build used Flash 108,504 + reserved 49,152 (remaining 1,939,496), and SRAM 153,540 + stacks 8,192 (remaining 370,748); its UF2 is 217,088 bytes. UDLR sources and artifacts are local-only under `test`; that variant was not rebuilt for this change.
+These figures come from the final normal 0.22.0 ELF. Common settings use 228 bytes, leaving 3,868; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings are 40 bytes (+4 per instance). Compared with normal 0.21.0, Flash grows by 1,860 bytes and static SRAM grows by 724 bytes (initialized data +184, BSS +540). Stack and persistent-region reservations are unchanged. This is an allocation comparison, not a measured speed claim.
 
-These figures include the configurable rotation-step firmware. Button-page transitions use runtime state only; they do not write Flash. Both pages share all four axis settings. The GUI editor and test image buffers allocate PC memory, outside the board figures above.
-
-Compared with 0.20.20, normal Flash allocation grows by 240 bytes and static SRAM by 76 bytes (72 initialized bytes and 4 BSS bytes). Stacks and persistent-storage reservations are unchanged.
+The archived local UDLR variant was not rebuilt; its memory figures in dated entries describe those artifacts. GUI buffers use PC memory outside the board totals. Button shift and inertia transitions do not write Flash.
