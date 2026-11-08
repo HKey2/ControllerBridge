@@ -2,6 +2,7 @@
 #include "transport.h"
 #include "input_protocol.h"
 #include "xbox_one.h"
+#include "switch2.h"
 #include "pico/stdlib.h"
 #include <stdatomic.h>
 #include <string.h>
@@ -174,6 +175,24 @@ static bool switch_start(hid_interface *iface,input_endpoint *ep) {
     }
 done:
     ut_close_endpoint(1,out);
+    status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
+    return result==UT_OK;
+}
+static bool switch2_start(void) {
+    uint8_t bulk[2][7],request[28],reply[64];uint8_t step=0;
+    if(!uc_switch2_config(configuration,config_length,bulk))return false;
+    if(!ut_open(1,bulk[0]) || !ut_open(1,bulk[1]))return false;
+    ut_result result=UT_ERROR;
+    for(unsigned i=0;i<10;++i) {
+        uint8_t length;const uint8_t *packet=uc_switch2_init(i,&length);step=(uint8_t)(i+1);
+        memcpy(request,packet,length);
+        result=ut_submit(1,bulk[0][2],request,length)?ut_transfer_wait(1,bulk[0][2]):UT_ERROR;
+        if(result!=UT_OK)break;
+        // Drain one command response, retaining DATA toggles across commands.
+        result=ut_submit(1,bulk[1][2],reply,sizeof(reply))?ut_transfer_wait(1,bulk[1][2]):UT_ERROR;
+        if(result!=UT_OK)break;
+    }
+    ut_close_endpoint(1,bulk[0][2]);ut_close_endpoint(1,bulk[1][2]);
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
     return result==UT_OK;
 }
@@ -444,6 +463,10 @@ static bool enumerate(void) {
             iface->report_length=uc_xbox_one_layout(&xbox_one,iface->report);
             continue;
         }
+        if(iface->protocol==UC_PROTOCOL_SWITCH2) {
+            const uint8_t *schema=uc_switch2_layout(&iface->report_length);
+            memcpy(iface->report,schema,iface->report_length);continue;
+        }
         if(iface->protocol==UC_PROTOCOL_SWITCH_PRO) {
             const uint8_t *schema=uc_switch_pro_layout(&iface->report_length);
             memcpy(iface->report,schema,iface->report_length);
@@ -488,6 +511,9 @@ static bool enumerate(void) {
     }
     for(unsigned i=0;i<interface_count;++i)if(interfaces[i].protocol==UC_PROTOCOL_XBOX_ONE) {
         if(!xbox_start(&interfaces[i]))return false;
+    }
+    for(unsigned i=0;i<interface_count;++i)if(interfaces[i].protocol==UC_PROTOCOL_SWITCH2) {
+        if(!switch2_start())return false;
     }
     stats.generation++;
     stats.poll_interval_ms = interval_override ? interval_override : endpoints[0].native_interval;

@@ -51,6 +51,7 @@ internal sealed partial class MappingEditor : UserControl
     private ShiftDialog? shiftDialog;
     private readonly TableLayoutPanel buttonGrid;
     private readonly Label outputHeading;
+    private readonly Label mouseHelp;
     private readonly Button[] buttons = new Button[18];
     private readonly Button[] axes = new Button[4];
     private readonly Label instruction;
@@ -141,6 +142,7 @@ internal sealed partial class MappingEditor : UserControl
         root.Controls.Add(axisRow, 0, 4);
         axisRow.Visible = !mouseMode && !shiftPage;
         Label axisHelp = Ui.Label(L.T("出力軸: Xは左→右、Yは上→下。2つのボタンからスティック軸も作れます。", "Output axes: X is left → right; Y is up → down. Two buttons can also control an axis."), 9);
+        mouseHelp = axisHelp;
         axisHelp.Dock = DockStyle.Fill; axisHelp.ForeColor = Ui.Muted;
         if (mouseMode) {
             axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save profile to device” to apply your changes.");
@@ -179,6 +181,7 @@ internal sealed partial class MappingEditor : UserControl
     }
     public async void SelectButton(int index)
     {
+        if (index == 13 && OutputPresentation.XInput) return;
         int request = ++learningRequest; selected = index; learner = null; UpdateButtons();
         if (!profile.Enabled) { instruction.Text = L.T("先に「コントローラーを追加」を選んでください。", "Choose “Add controller” first."); return; }
         if (!canLearn) { instruction.Text = L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."); detail.Text = Binding(index).ToString(); return; }
@@ -249,14 +252,17 @@ internal sealed partial class MappingEditor : UserControl
         } finally { shiftDialog = null; }
     }
     private string TargetName(int index) => mouseMode ? index switch
-        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => "HOME", _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
+        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => OutputPresentation.XInput ? "Back" : "SELECT / −", 9 => OutputPresentation.XInput ? "Start" : "START / ＋", 12 => DeviceProfile.Targets[12], _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
     private void UpdateButtons()
     {
+        if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{DeviceProfile.Targets[1]}・{DeviceProfile.Targets[2]}と割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。",
+            $"Mouse buttons share the gamepad {DeviceProfile.Targets[1]} / {DeviceProfile.Targets[2]} mappings.\nChoose “Save profile to device” to apply your changes.");
         for (int i = 0; i < 18; i++)
         {
             if (buttons[i] is null) continue;
             bool set = Binding(i).Mode != 0;
-            buttons[i].Text = mouseMode ? TargetName(i) + (i == 1 ? L.T("\nBと共通", "\nShared with B") : i == 2 ? L.T("\nAと共通", "\nShared with A") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
+            buttons[i].Enabled = i != 13 || !OutputPresentation.XInput;
+            buttons[i].Text = mouseMode ? TargetName(i) + (i is 1 or 2 ? L.T($"\n{DeviceProfile.Targets[i]}と共通", $"\nShared with {DeviceProfile.Targets[i]}") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => OutputPresentation.XInput ? "—" : L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
             bool shiftedOverride = shiftPage && (profile.Shift.Overrides & (1u << i)) != 0;
             bool registeredShift = shiftedOverride && set;
             if (registeredShift) buttons[i].Text += " *";

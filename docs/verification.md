@@ -1,6 +1,27 @@
 # Verification record
 
-Applies to configurator **0.22.0 - GUI r4** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+## 2026-11-09 — First-generation Switch Pro USB enumeration (unresolved)
+
+The request to register the original Nintendo Switch Pro Controller remains unresolved. A direct Windows connection with the replacement cable reads `057E:2009`, revision `0210`, Full Speed, EP0 64, and complete device/configuration/HID descriptors. On the unmodified bridge, enumeration fails at the SETUP stage of the first GET_DESCRIPTOR, before identification, Pro initialization, input decoding or registration. Trying a second data cable and the user-confirmed short SYNC/A operation did not establish input; the charging lamp remained lit.
+
+An isolated diagnostic records control stages plus input-only D+/D- samples. At 48 MHz, the first SETUP and DATA0 packets decode with valid SYNC/PID/CRC and no following controller response across three retries. A separate 1 MHz reset capture measures 60,006 microseconds of SE0, followed by J. The normal 8-byte request, a 64-byte first request, 60 ms root reset, 4 mA/slow-slew output, 100 ms reset recovery, and a complete conservative PC-style startup all still fail at the first SETUP. The latter never reaches its second reset or address assignment. The comparisons follow the [Microsoft USB team's enumeration description](https://techcommunity.microsoft.com/blog/microsoftusbblog/how-does-usb-stack-enumerate-a-device/270685) and the root-reset requirement noted in the [Linux host implementation](https://kernel.googlesource.com/pub/scm/linux/kernel/git/rric/linux/+/fba69f042ad99f68c0268ef1c012f3199f898fac/drivers/usb/host/ohci-hub.c); these are diagnostic references, not evidence of the Pro controller's internal implementation.
+
+The captures show digital levels at the bridge. They do not measure the voltage or waveform at the controller connector, prove adequate VBUS, or identify R13/charging detection as the cause. Further diagnosis needs connector-side electrical measurements or comparison with a known USB host circuit. No unsupported electrical cause is claimed and no experimental change was adopted.
+
+Normal 0.23.0 is restored. The 13,908-byte profile bank (six existing registrations, generation 19) and shared settings are byte-identical to the pre-test backup; X output remains selected. Product code, EXE, UF2 and firmware manifest are unchanged. Flash remains 123,612 bytes plus 49,152 reserved, with 1,924,388 free; static SRAM 157,672 plus 8,192 stack reservations leaves 366,616 bytes. Private diagnostic sources, captures, original flash backup and the final preservation check are under ignored `test/development/results/switch1-pro-20261109`; they are not included in a release ZIP.
+
+
+## 2026-11-09 — S/X host mode and physical Switch 2 Pro to Windows (0.23.0)
+
+Shared settings ends with S (default), disabled Auto and X. X uses the published wired Xbox 360 20-byte input layout, physical-position face-button mapping and Guide bit. The independent configuration HID keeps the normal GUI usable in X mode. Switch 2 Pro input is recognized only for 057E:2069 with the supported descriptor shape; its ten initialization commands follow pinned SDL source. Raw input fields retain their report bit offsets. No custom PC driver or toolchain was installed.
+
+The physical RP2350-USB-A was backed up in full before writing the normal 0.23.0 image, with picotool verification and chip-ID matching. All previous profiles and shared tuning survived. The first unused slot (6) was registered as Switch 2 Pro and calibrated from the user's real stick movement. Windows reported XBOX 360 Controller For Windows using xusb22; all 15 digital XUSB controls, Guide included, produced mask 0xF7FF, both digital triggers reached 255, and all four stick axes moved in both directions. Across 35,411 XInput reads over 91 seconds, there were zero API errors. Guide was also observed through the system xinput1_4 extended-state export; ordinary XInputGetState does not expose that bit as a documented game control. Final neutral state was centered. The default profile conversion still quantizes analog output to 8-bit positions before encoding signed XInput values; it does not claim 16-bit source resolution.
+
+Physical layout checks passed for XInput gamepad (CAFE:4005), mouse + XInput (CAFE:4006), mouse-only (CAFE:4004 with retained X preference), S (20D6:A713), return to X, and warm reboot into X. Every layout retained its configuration connection. The temporary combined/mouse profile edits were restored; all other profiles, IDs and shortcut settings matched the original backup. The board ends in X with slot 6 active. Flash saves temporarily pause the input host, as in the existing storage path; the final reboot begins with zero input transfer errors. No claim is made for headset audio, input-device rumble forwarding, Xbox console authentication or game-specific behavior.
+
+Validation: 50,989 deterministic existing/core checks (including new HSM1 migration preservation), 115 XInput wire/descriptor/guarded-setting checks, 56 Switch 2 captured-descriptor/command/bit-offset checks, 532 Xbox One/GIP regression checks, and 958 Japanese + 958 English GUI checks. GUI checks cover default/disabled states, save errors and retry, old/new mode guards and readback, all profile bytes/drafts, physical ABXY geometry, and simulated 96/120/144/192-DPI transitions. Preview tests do not open hardware; a separate final read-only GUI capture used the real board. Final normal Release artifacts exclude development entry points. Evidence: `test/development/results/xinput-output-0230-20261109`.
+
+Applies to configurator **0.23.0** and normal firmware **0.23.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 244 bytes (UDSA/schema 10). Dated entries describe their own versions. Current memory is recorded at the end.
 
 ## 2026-11-09 — Equal header action widths (GUI r4)
 
@@ -665,20 +686,20 @@ Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`
 
 Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.22.0. Device settings and firmware were not written during this work.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.23.0. The original source-separation work did not write a device. Later physical updates are described in their dated entries.
 
 ## Current normal-build memory
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 119,788; persistent storage 49,152 | 1,928,212 |
-| SRAM, 532,480 bytes | Static data 156,296; two stacks 8,192 | 367,992 |
+| Flash, 2,097,152 bytes | Code/initial values 123,612; persistent storage 49,152 | 1,924,388 |
+| SRAM, 532,480 bytes | Static data 157,672; two stacks 8,192 | 366,616 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
-| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 164 | 3,868 |
+| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 37,568, and BSS 118,456 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 239,616 bytes.
+Static SRAM consists of vector table 272, initialized data 38,904, and BSS 118,496 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 247,296 bytes.
 
-These figures come from the final normal 0.22.0 ELF. Common settings use 228 bytes, leaving 3,868; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings are 40 bytes (+4 per instance). Compared with normal 0.21.0, Flash grows by 1,860 bytes and static SRAM grows by 724 bytes (initialized data +184, BSS +540). Stack and persistent-region reservations are unchanged. This is an allocation comparison, not a measured speed claim.
+These figures come from the final normal 0.23.0 ELF. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes. Compared with normal 0.22.0, Flash grows by 3,824 bytes and static SRAM grows by 1,376 bytes (initialized data +1,336, BSS +40). Runtime settings remain 40 bytes; shared Flash grows by 16 bytes. Stack and persistent-region reservations are unchanged. This is an allocation comparison, not a measured speed claim.
 
 The archived local UDLR variant was not rebuilt; its memory figures in dated entries describe those artifacts. GUI buffers use PC memory outside the board totals. Button shift and inertia transitions do not write Flash.

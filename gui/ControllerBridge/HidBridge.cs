@@ -48,7 +48,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
             throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。デバイスを更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
     }
     public bool SelectionUnsaved => (Flags & 16) != 0;
-    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", _ => "HID" };
+    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", 16 => "Switch 2 USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
         if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & (4096 | 16777216 | 33554432)) != (4096 | 16777216 | 33554432))
@@ -150,7 +150,9 @@ internal sealed class HidBridge : IDisposable
                     if (!SetupDiGetDeviceInterfaceDetailW(set, ref iface, detail, size, out _, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error());
                     string path = Marshal.PtrToStringUni(detail + 4) ?? "";
                     if (!path.Contains("vid_20d6&pid_a713", StringComparison.OrdinalIgnoreCase) &&
-                        !path.Contains("vid_cafe&pid_4004", StringComparison.OrdinalIgnoreCase)) continue;
+                        !path.Contains("vid_cafe&pid_4004", StringComparison.OrdinalIgnoreCase) &&
+                        !path.Contains("vid_cafe&pid_4005", StringComparison.OrdinalIgnoreCase) &&
+                        !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase)) continue;
                     SafeFileHandle h = CreateFileW(path, 0xc0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
                     if (h.IsInvalid) { h.Dispose(); continue; }
                     bool keep = false;
@@ -212,6 +214,7 @@ internal sealed class HidBridge : IDisposable
         if (!b.AsSpan(0, 4).SequenceEqual("MSE1"u8)) throw new InvalidDataException(L.T("出力切替にはファームウェア0.9.0-dev以降が必要です。", "Output switching requires firmware 0.9.0-dev or later."));
         return new OutputState(OutputSettings.Decode(b[4]), OutputSettings.Decode(b[5]), b[6] != 0);
     });
+    internal Task ApplyHostOutputAsync() => Run(() => { ApplyProfileOutput(Caps().BankGeneration); return true; });
     private void ApplyProfileOutput(uint expectedGeneration)
     {
         Capabilities current = Caps(); byte[] args = new byte[5];

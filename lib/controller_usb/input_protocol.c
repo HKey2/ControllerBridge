@@ -62,11 +62,11 @@ bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configurat
     return true;
 }
 bool uc_input_config_identify(uc_input_configuration *out,uint16_t vid,uint16_t pid) {
-    if(vid!=0x057e || pid!=0x2009)return true;
+    if(vid!=0x057e || (pid!=0x2009 && pid!=0x2069))return true;
     if(out->interface_count!=1 || out->endpoint_count!=1 || out->interfaces[0].number!=0 ||
        out->interfaces[0].protocol!=UC_PROTOCOL_HID || !out->interfaces[0].output_descriptor[0] ||
        le16(out->interfaces[0].output_descriptor+4)!=64 || le16(out->endpoints[0].descriptor+4)!=64)return false;
-    out->interfaces[0].protocol=out->endpoints[0].protocol=out->protocols=UC_PROTOCOL_SWITCH_PRO;
+    out->interfaces[0].protocol=out->endpoints[0].protocol=out->protocols=pid==0x2069?UC_PROTOCOL_SWITCH2:UC_PROTOCOL_SWITCH_PRO;
     return true;
 }
 
@@ -110,6 +110,7 @@ const uint8_t *uc_switch_pro_layout(uint16_t *length) {
 }
 bool uc_input_packet_valid(uint8_t protocol,const uint8_t *data,size_t length) {
     if(protocol==UC_PROTOCOL_HID)return length>0 && length<=UC_EVENT_BYTES;
+    if(protocol==UC_PROTOCOL_SWITCH2)return length>=17 && length<=64 && data[0]==0x05;
     if(protocol==UC_PROTOCOL_SWITCH_PRO)return length>=13 && length<=64 && data[0]==0x30;
     return protocol==UC_PROTOCOL_XBOX360 && length==20 && data[0]==0 && data[1]==20;
 }

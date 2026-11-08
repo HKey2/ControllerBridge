@@ -5,6 +5,7 @@
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
 #include "controller_bridge.h"
+#include "xinput_wired.h"
 #include "egret_switch_profile.h"
 #include "profile_runtime.h"
 #include "profile_button.h"
@@ -26,6 +27,7 @@ static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool direction_setting_saved;
 static uint8_t active_output_interval;
 static uint8_t active_output_options;
+static uint8_t active_host_mode;
 static um_queue mouse_queue;
 static um_flight mouse_flight;
 static uint8_t last_mouse_output[UM_REPORT_BYTES];
@@ -33,7 +35,7 @@ static bool mouse_flight_valid,mouse_was_ready;
 static uint32_t mouse_drops_begin,mouse_button_drops_begin;
 static uint32_t mouse_flushes_begin,mouse_input_x_begin,mouse_input_y_begin,mouse_acked_x_begin,mouse_acked_y_begin;
 static uint32_t last_mouse_ack_sequence,last_mouse_armed_sequence,last_mouse_poll_ack;
-static uint8_t output_configuration[59];
+static uint8_t output_configuration[XW_COMBINED_CONFIGURATION_BYTES];
 static bool input_ready;
 static uc_statistics host_stats;
 static ub_queue outgoing;
@@ -266,7 +268,10 @@ static void schedule_output(void) {
     flight=next;
     if(flight.direction_key)flight.sequence=++input_sequence;
     uint32_t armed;
-    bool sent=ud_send((const uint8_t *)&flight.report,sizeof(flight.report),flight.sequence,&armed);
+    uint8_t xinput[XW_REPORT_BYTES];
+    if(active_host_mode)xw_encode(&flight.report,xinput);
+    bool sent=ud_send(active_host_mode?xinput:(const uint8_t *)&flight.report,
+        active_host_mode?XW_REPORT_BYTES:sizeof(flight.report),flight.sequence,&armed);
     if(sent) {
         if(from_queue) { ub_frame consumed; ub_queue_pop(&outgoing,&consumed); }
         ub_direction_sent(&direction_pulse,flight.direction_key,flight.sequence);
@@ -346,7 +351,7 @@ static void reset_output(uint32_t timestamp) {
 }
 static bool request_profile_output(uint32_t now) {
     uint8_t desired=upr_output_options();
-    if(phase==MEASURE_IDLE && !output_disconnected && (desired&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
+    if(phase==MEASURE_IDLE && !output_disconnected && active_host_mode==direction_settings.host_mode && (desired&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
         // Button routing does not change USB descriptors. Release the old
         // interpretation before accepting reports under the new one.
         if(desired!=active_output_options) { active_output_options=desired;reset_output(now); }
@@ -614,10 +619,10 @@ static void handle_command(void) {
                 ub_direction_reset(&direction_pulse);ub_queue_clear_hold(&outgoing);
             }
         }
-        memcpy(payload,"UDS9",4);put32(payload+4,9);
+        memcpy(payload,"UDSA",4);put32(payload+4,10);
         put32(payload+8,direction_settings.threshold);put32(payload+12,direction_settings.hold_ms);
         put32(payload+16,direction_settings.wait_ms);put32(payload+20,direction_setting_saved?1:0);
-        memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));put32(payload+36,0);
+        memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));put32(payload+36,direction_settings.host_mode);
         put32(payload+40,udk_inertia_pack(&direction_settings));put32(payload+44,direction_settings.inertia_interval_ms);break;
     }
     case CMD_DIRECTION_TIMING:
@@ -665,7 +670,7 @@ static void handle_command(void) {
     publish_response(reply);
 }
 static void start_usb_output(uint8_t options) {
-    active_output_options=options;
+    active_output_options=options;active_host_mode=direction_settings.host_mode;
     flight_valid=mouse_flight_valid=mouse_was_ready=pad_was_ready=false;
     atomic_store_explicit(&ack_pending,false,memory_order_release);
     atomic_store_explicit(&mouse_ack_pending,false,memory_order_release);
@@ -709,12 +714,30 @@ static void start_usb_output(uint8_t options) {
         output.manufacturer="ControllerBridge";output.product="ControllerBridge USB Mouse";
         output.input_length=sizeof(initial_mouse);output.initial_input=initial_mouse;output.relative_mouse=true;
     }
+    if(active_host_mode && (!mouse_mode() || combined_mode())) {
+        bool combined=combined_mode();
+        memcpy(output_configuration,combined?xw_combined_configuration_descriptor:xw_configuration_descriptor,
+            combined?XW_COMBINED_CONFIGURATION_BYTES:XW_CONFIGURATION_BYTES);
+        output.device=combined?xw_combined_device_descriptor:xw_device_descriptor;
+        output.configuration_length=combined?XW_COMBINED_CONFIGURATION_BYTES:XW_CONFIGURATION_BYTES;
+        output.report=NULL;output.report_length=0;
+        output.configuration_report=um_feature_descriptor;output.configuration_report_length=sizeof(um_feature_descriptor);
+        output.configuration_interface=combined?2:1;output.configuration_endpoint=3;
+        output.output_endpoint=2;output.control_read=xw_control_read;
+        output.manufacturer="ControllerBridge";output.product="ControllerBridge XInput";
+        output.input_length=XW_REPORT_BYTES;active_output_interval=1;
+        // ud_init copies the initial report before this local buffer expires.
+        uint8_t initial_xinput[XW_REPORT_BYTES];xw_encode(&initial,initial_xinput);
+        output.initial_input=initial_xinput;
+        if(combined)output_configuration[73]=config.output_interval_ms;
+        ud_init(&output);return;
+    }
     ud_init(&output);
 }
 static void output_change_task(uint32_t now) {
     if(!output_change_requested || phase!=MEASURE_IDLE || (int32_t)(now-output_change_at)<0)return;
     if(!output_disconnected) {
-        if((upr_output_options()&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
+        if(active_host_mode==direction_settings.host_mode && (upr_output_options()&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
             request_profile_output(now);return;
         }
         ud_disconnect();output_disconnected=true;output_change_at=now+250000;

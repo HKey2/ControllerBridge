@@ -41,8 +41,10 @@ typedef struct { uint32_t magic,version;uint8_t targets[4];uint32_t crc; } direc
 typedef struct { uint32_t magic,version,value,crc; } rolling_setting;
 #define INERTIA_MAGIC 0x31524e49u // INR1 at offset 208; old records stay unchanged.
 typedef struct { uint32_t magic,version,options,interval_ms,crc; } inertia_setting;
-typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait;direction_map_setting map,paddle_map;rolling_setting rolling,trackball_hold,rolling_step;inertia_setting inertia; } direction_records;
-_Static_assert(sizeof(direction_records)==164,"cursor Flash records layout");
+#define HOST_MODE_MAGIC 0x314d5348u // HSM1 at offset 228; legacy settings default to S.
+
+typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait;direction_map_setting map,paddle_map;rolling_setting rolling,trackball_hold,rolling_step;inertia_setting inertia;rolling_setting host_mode; } direction_records;
+_Static_assert(sizeof(direction_records)==180,"cursor Flash records layout");
 _Static_assert(DIRECTION_OFFSET+sizeof(direction_records)<=FLASH_SECTOR_SIZE,"cursor records fit configuration sector");
 _Static_assert(sizeof(store_header)+sizeof(ub_configuration)<=DIRECTION_OFFSET,"configuration extension overlap");
 extern char __flash_binary_end;
@@ -150,7 +152,11 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
     bool inertia_valid=inertia->magic==INERTIA_MAGIC && inertia->version==1 &&
         inertia->crc==crc32((const uint8_t *)inertia,16) && udk_inertia_unpack(&candidate,inertia->options,inertia->interval_ms);
     if(inertia_valid)*settings=candidate;
-    return inertia_valid && threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;
+    const rolling_setting *host=(const rolling_setting *)(inertia+1);
+    bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=1 &&
+        host->crc==crc32((const uint8_t *)host,12);
+    if(host_valid)settings->host_mode=(uint8_t)host->value;
+    return host_valid && inertia_valid && threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;
 }
 bool ub_store_save_configuration(const ub_configuration *config,const udk_settings *settings,bool host_running) {
     if(!udk_settings_valid(settings))return false;
@@ -164,7 +170,8 @@ bool ub_store_save_configuration(const ub_configuration *config,const udk_settin
         .rolling={VIRTUAL_ROLLING_MAGIC,1,udk_rolling_pack(settings),0},
         .trackball_hold={TRACKBALL_HOLD_MAGIC,1,udk_hold_pack(settings),0},
         .rolling_step={ROLLING_STEP_MAGIC,1,settings->rolling_step_deg,0},
-        .inertia={INERTIA_MAGIC,1,udk_inertia_pack(settings),settings->inertia_interval_ms,0}};
+        .inertia={INERTIA_MAGIC,1,udk_inertia_pack(settings),settings->inertia_interval_ms,0},
+        .host_mode={HOST_MODE_MAGIC,1,settings->host_mode,0}};
     memcpy(records.map.targets,settings->targets,4);memcpy(records.paddle_map.targets,settings->paddle_targets,4);
     records.threshold.crc=crc32((const uint8_t *)&records.threshold,12);
     records.gains.crc=crc32((const uint8_t *)&records.gains,12);
@@ -176,5 +183,6 @@ bool ub_store_save_configuration(const ub_configuration *config,const udk_settin
     records.trackball_hold.crc=crc32((const uint8_t *)&records.trackball_hold,12);
     records.rolling_step.crc=crc32((const uint8_t *)&records.rolling_step,12);
     records.inertia.crc=crc32((const uint8_t *)&records.inertia,16);
+    records.host_mode.crc=crc32((const uint8_t *)&records.host_mode,12);
     return save(0,config,sizeof(*config),host_running,&records);
 }

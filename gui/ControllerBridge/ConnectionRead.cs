@@ -43,6 +43,7 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
     internal (Capabilities Caps, DeviceProfile[] Profiles) Bank { get; private init; }
     internal DeviceState? Device { get; private init; }
     internal OutputState? Output { get; private init; }
+    internal uint HostMode { get; private init; }
     internal HidBridge? TakeBridge() { HidBridge? value = Bridge; Bridge = null; return value; }
     public void Dispose() => Bridge?.Dispose();
 
@@ -69,8 +70,9 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
             var bank = await device.ReadProfilesAsync();
             DeviceState state = await device.ReadDeviceAsync();
             OutputState? output = state.Caps.SupportsMouseOutput ? await device.ReadOutputStateAsync() : null;
+            MouseUdlrSettings shared = await new MouseUdlrSettingsClient(device.RawAsync).ReadAsync();
             ConnectionRead result = new(new(ConnectionKind.Ready, device.DevicePath, firmware.Version))
-                { Bridge = device, Bank = bank, Device = state, Output = output };
+                { Bridge = device, Bank = bank, Device = state, Output = output, HostMode = shared.HostMode };
             device = null;
             return result;
         }

@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Full-speed HID interface 0, EP0 plus interrupt IN1 and optional OUT1.
+// Full-speed input interface 0, EP0 plus interrupt IN1 and optional OUT1/OUT2.
 // Optional interface 1 is vendor Feature HID, auxiliary bulk, or a second HID input.
 // Call from core 0. Completion/feature callbacks run in its USB IRQ and must not block.
 typedef struct {
@@ -14,13 +14,15 @@ typedef struct {
     bool relative_mouse; // GET_REPORT returns buttons with zero relative movement.
     const uint8_t *configuration_report; // Optional Feature-only HID interface 1, IN2 stays NAK.
     uint16_t configuration_report_length; // Mutually exclusive with auxiliary_bulk.
+    uint8_t configuration_interface; // Zero selects the legacy default IF1.
+    uint8_t configuration_endpoint; // Zero selects the legacy default IN2; XInput uses IN3.
     const uint8_t *secondary_report; // HID interface 1 / IN2; excludes the two options above.
     uint16_t secondary_report_length;
     uint8_t secondary_input_length;
     bool secondary_relative_mouse;
     const uint8_t *secondary_initial_input;
     void (*secondary_complete)(uint32_t cookie, uint32_t time_us, bool acked, void *context);
-    bool output_endpoint;
+    uint8_t output_endpoint; // 0=absent, 1=OUT1, 2=OUT2 (excludes auxiliary_bulk).
     bool auxiliary_bulk; // optional vendor interface 1, bulk IN2/OUT2
     const uint8_t *initial_input;
     uint16_t (*get_feature)(uint8_t *data, uint16_t capacity, void *context);

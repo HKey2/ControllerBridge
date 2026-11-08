@@ -52,7 +52,7 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r4", new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + "", new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -362,6 +362,7 @@ internal sealed partial class MainForm : Form
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
             fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
+            OutputPresentation.HostMode = read.HostMode;
             if (!retain && caps.ActiveSlot < profiles.Length) selected = caps.ActiveSlot;
             UpdateConnection();
             RefreshSlots(); BindSelected();
@@ -462,7 +463,7 @@ internal sealed partial class MainForm : Form
     private void UpdateProfileOutputStatus()
     {
         DeviceProfile p = profiles[selected];
-        string text = p.OutputMode == 0 ? L.T("出力: ゲームパッド", "Output: gamepad") : p.OutputMode == 1 ? L.T("出力: USBマウス", "Output: USB mouse") :
+        string text = p.OutputMode == 0 ? L.T($"出力: ゲームパッド ({OutputPresentation.ControllerName})", $"Output: gamepad ({OutputPresentation.ControllerName})") : p.OutputMode == 1 ? L.T("出力: USBマウス", "Output: USB mouse") :
             p.ControllerButtons ? L.T("出力: マウス移動＋コントローラー操作", "Output: mouse movement + controller inputs") : L.T("出力: マウス＋−／＋／HOME", "Output: mouse + − / + / HOME");
         if (p.OutputMode != 0 || p.Mouse.DirectionKeysEnabled)
             text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",

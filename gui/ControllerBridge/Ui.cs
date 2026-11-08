@@ -163,6 +163,29 @@ internal class DarkCheckBox : CheckBox
     }
 }
 
+// Keep disabled radio labels readable on the dark settings surface.
+internal class DarkRadioButton : RadioButton
+{
+    private static readonly Color DisabledText = Color.FromArgb(0xad, 0xad, 0xad);
+    private const TextFormatFlags DisabledGraphicsFlags = TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform;
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Enabled) { base.OnPaint(e); return; }
+        // ButtonBase is Opaque: WinForms skips OnPaintBackground. Unlike
+        // the normal adapter, this disabled path must clear its own face
+        // before drawing into a reused buffer (including the first tab show).
+        using SolidBrush background = new(BackColor);
+        e.Graphics.FillRectangle(background, ClientRectangle);
+        var state = Checked ? System.Windows.Forms.VisualStyles.RadioButtonState.CheckedDisabled : System.Windows.Forms.VisualStyles.RadioButtonState.UncheckedDisabled;
+        Size glyph = RadioButtonRenderer.GetGlyphSize(e.Graphics, state);
+        Point location = new(Padding.Left, (Height - glyph.Height) / 2);
+        RadioButtonRenderer.DrawRadioButton(e.Graphics, location, state);
+        Rectangle text = Rectangle.FromLTRB(location.X + glyph.Width + LogicalToDeviceUnits(3), Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
+        TextRenderer.DrawText(e.Graphics, Text, Font, text, DisabledText,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | DisabledGraphicsFlags);
+    }
+}
+
 internal class BufferedTableLayoutPanel : TableLayoutPanel
 {
     public BufferedTableLayoutPanel() => SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);

@@ -2,7 +2,7 @@
 #define UC_INPUT_PROTOCOL_H
 #include "controller_usb.h"
 
-enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4, UC_PROTOCOL_XBOX_ONE=8 };
+enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4, UC_PROTOCOL_XBOX_ONE=8, UC_PROTOCOL_SWITCH2=16 };
 typedef struct {
     uint8_t number,protocol;
     uint16_t report_length;

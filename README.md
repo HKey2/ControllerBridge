@@ -18,7 +18,7 @@
 
 ## Overview
 
-ControllerBridge turns USB controllers into Switch-compatible gamepad and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to the Switch 2 for play.
+ControllerBridge turns USB controllers into Switch-compatible HID, Xbox 360 XInput and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to a Switch 2 (S mode) / Windows PC (X mode) for play.
 
 [![ControllerBridge in its clear PETG case, with the LED illuminating the lid in a dark setting](docs/images/case/led-dark.jpg)](docs/case.md)
 
@@ -26,13 +26,15 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.22.0 - GUI r4 (firmware 0.22.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.23.0 (firmware 0.23.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
-**GUI r4:** The four header actions—Firmware update, Connect / Reconnect, Profile switching and Shared settings—now use equal widths, sized for their labels and the display scale.
+**0.23.0:** Shared settings now ends with **S / Auto / X**. S retains the previous output and is the default; Auto is disabled; X uses wired Xbox 360 XInput. X changes the displayed ABXY layout and sends HOME as Guide. The host mode is shared by all profiles and persists after restart. USB reconnects after a verified mode save, and settings remain accessible in X mode. Wired Switch 2 Pro input is also supported. See [XInput output and Switch 2 Pro setup](docs/xinput-output.md).
 
-**GUI r3:** Fixed flicker when switching output tabs and repeated scaling that could push shared settings out of view on high-DPI displays. Added a [sample slot configuration](samples/README.md), also included in the release ZIP.
+**0.22.0 GUI r4:** The four header actions—Firmware update, Connect / Reconnect, Profile switching and Shared settings—now use equal widths, sized for their labels and the display scale.
 
-**GUI r2:** Trackball's click-conversion mode is now named **Virtual Cursor** in Conversion mapping and Shared settings. Paddle retains **Virtual Rolling**. This is a display-name change; behavior and saved settings are unchanged.
+**0.22.0 GUI r3:** Fixed flicker when switching output tabs and repeated scaling that could push shared settings out of view on high-DPI displays. Added a [sample slot configuration](samples/README.md), also included in the release ZIP.
+
+**0.22.0 GUI r2:** Trackball's click-conversion mode is now named **Virtual Cursor** in Conversion mapping and Shared settings. Paddle retains **Virtual Rolling**. This is a display-name change; behavior and saved settings are unchanged.
 
 **0.22.0 settings UI:** Shared settings groups click conversion, Trackball Hold and Paddle Virtual Rolling, with pseudo-inertia inside Hold. Conversion mapping omits the redundant profile-only notice. Save to device and Apply to draft are disabled until settings differ from their opening values; reverting all edits disables the action again. Conversion mapping is aligned with the right-hand profile actions. The deletion confirmation explains that dragging remains disabled until all pending edits are saved to the device. Japanese board references consistently use 「デバイス」. The main profile editor now groups Trackball and Paddle in separate raised panels, enclosing each source's enable switch, gain, inversion and conversion controls.
 
@@ -82,9 +84,9 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Delete profile** clears the selected slot when you save it.
 - **LED RGB settings**, below Delete profile, selects the default dim blue (0, 0, 1) or exact R/G/B values from 0 to 255. Save the slot to apply it. Black (0, 0, 0) turns the ready LED off; status notifications still take priority. A six-digit RGB code field below the spinners accepts web colors with or without a leading # and stays synchronized with the channels. The preview uses a fixed display-only gamma of 4.0; saved RGB values remain exact.
 - Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
-- **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 4. Version-2/3 backups and individual exports are converted; version 2 has no shifted mappings. Version 1 remains unsupported.
+- **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 5. Version-2/3 backups and individual exports are converted; version 2 has no shifted mappings. Version 1 remains unsupported.
 - **Button shift…**, in the mapping editor, learns one to three physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
-- **Shared settings** saves common thresholds, timings, sensitivity and inertia tuning. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
+- **Shared settings** saves common thresholds, timings, sensitivity, inertia tuning and S/X host mode. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
 Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
@@ -141,16 +143,18 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 119,788; persistent storage 49,152 | 1,928,212 |
-| SRAM, 532,480 bytes | Static data 156,296; two stacks 8,192 | 367,992 |
+| Flash, 2,097,152 bytes | Code/initial values 123,612; persistent storage 49,152 | 1,924,388 |
+| SRAM, 532,480 bytes | Static data 157,672; two stacks 8,192 | 366,616 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
-| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 164 | 3,868 |
+| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 37,568, and BSS 118,456 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 239,616 bytes.
+Static SRAM consists of vector table 272, initialized data 38,904, and BSS 118,496 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 247,296 bytes.
 
 ## Repository contents and license
 
 Diagnostic output under `captures/`, build outputs, release binaries, and caches are ignored. Pico-PIO-USB is vendored without its Git history and verified against recorded hashes.
 
 Project code is provided under the [BSD 2-Clause License](LICENSE), copyright 2026 HKey2. Third-party code retains its own licenses under `third_party/` and `licenses/`. The remixed case STL files are separately licensed under [CC BY 4.0](hardware/case/LICENSE.md), with attribution to the original designer, barrenechea.
+
+Switch 2 initialization commands are adapted from SDL under its [zlib license](licenses/SDL-zlib.txt); see the pinned source and protocol references in [XInput output](docs/xinput-output.md).

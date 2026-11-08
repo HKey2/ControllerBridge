@@ -11,23 +11,27 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly Button save, cancel;
     private readonly TableLayoutPanel values;
     private bool saving;
+    private readonly DarkRadioButton hostS = new() { Text = "S", AutoSize = true },
+        hostAuto = new() { Text = "Auto", AutoSize = true, Enabled = false },
+        hostX = new() { Text = "X", AutoSize = true };
+    internal MouseUdlrSettings Result { get; private set; }
     private readonly NumericUpDown[] editors;
     private readonly decimal[] initialValues;
     internal bool Saved { get; private set; }
     private static NumericUpDown Number(decimal min, decimal max) => new() { Minimum = min, Maximum = max, Width = 115, Anchor = AnchorStyles.Left };
     internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist)
     {
-        original = current; this.persist = persist;
-        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(640, 700));
+        original = Result = current; this.persist = persist;
+        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(640, 800));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 4 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         Label hint = Ui.Label(L.T("全プロファイル共通です。変換先・モード・回転刻みは、各プロファイルの「方向変換の割り当て」で設定します。",
             "Shared by all profiles. Set targets, modes and rotation steps in each profile's Conversion mapping."), 9);
         hint.MaximumSize = new(560, 0); hint.ForeColor = Ui.Muted; root.Controls.Add(hint, 0, 0);
-        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty, Padding = new(0, 10, 0, 0) };
+        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty, Padding = new(0, 10, 0, 0) };
         values.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 3; i++) values.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 4; i++) values.RowStyles.Add(new(SizeType.AutoSize));
         TableLayoutPanel Group(string title, int row)
         {
             RaisedTableLayoutPanel group = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -65,6 +69,16 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             "A factor of 0.90 retains 90% of inertia each interval. Inertia ends at or below the threshold.\nEnable it in each profile's Hold settings."));
         TableLayoutPanel paddle = Group("Paddle — Virtual Rolling", 2);
         Row(paddle, L.T("回転感度", "Rotation sensitivity"), rollingGain, "°/pt");
+        TableLayoutPanel host = Group(L.T("接続先モード", "Host mode"), 3);
+        FlowLayoutPanel modes = new() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new(4, 2, 4, 6) };
+        foreach (RadioButton radio in new[] { hostS, hostAuto, hostX }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
+        hostS.AccessibleName = L.T("S：Switch互換", "S: Switch compatible");
+        hostAuto.AccessibleName = L.T("Auto：現在は使用不可", "Auto: currently unavailable");
+        hostX.AccessibleName = "X: Xbox 360 XInput";
+        hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1;
+        host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
+        Note(host, L.T("S：従来のSwitch互換出力　X：Xbox 360 XInput出力\n変更を保存するとUSBが再接続されます。Autoは準備中です。",
+            "S: Switch compatible output   X: Xbox 360 XInput output\nSaving a mode change reconnects USB. Auto is not available yet."));
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;
@@ -75,7 +89,8 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             status.Visible = true;
             status.Text = L.T("旧設定が編集範囲を超えているため、表示値を編集範囲へ収めています。デバイスへの変更は保存時に行います。", "Older values exceed the editing range. Displayed values are clamped; the device changes only when you save.");
         }
-        root.Controls.Add(values, 0, 1); root.Controls.Add(status, 0, 2);
+        Panel scroll = new() { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty, Padding = new(0, 0, 18, 0) };
+        scroll.Controls.Add(values); root.Controls.Add(scroll, 0, 1); root.Controls.Add(status, 0, 2);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         save = Ui.Button(L.T("デバイスに保存", "Save to device"), async (_, _) => await SaveSettings(), true);
         cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
@@ -87,12 +102,13 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             control.ValueChanged += (_, _) => UpdateSaveButton();
             control.TextChanged += (_, _) => UpdateSaveButton();
         }
+        hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
         FormClosing += (_, e) => { if (saving) e.Cancel = true; }; Controls.Add(root); Ui.ThemeInputs(this);
     }
     private bool HasChanges()
     {
-        bool changed = false;
+        bool changed = (hostX.Checked ? 1u : 0u) != original.HostMode;
         for (int i = 0; i < editors.Length; i++)
         {
             NumericUpDown control = editors[i];
@@ -114,11 +130,11 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         {
             MouseUdlrSettings next = original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
                 Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value, InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
-                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), Persisted = true };
+                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostX.Checked ? 1u : 0u, Persisted = true };
             saving = true; values.Enabled = save.Enabled = cancel.Enabled = false;
             MouseUdlrSettings actual = await persist(original, next);
             if (actual != next) throw new IOException(L.T("保存結果が一致しません。", "Saved values do not match."));
-            Saved = close = true;
+            Result = actual; Saved = close = true;
         }
         catch (Exception ex) { status.Text = ex.Message; status.Visible = true; }
         finally { saving = false; values.Enabled = cancel.Enabled = true; UpdateSaveButton(); }
@@ -137,7 +153,13 @@ internal sealed partial class MainForm
             MouseUdlrSettingsClient client = new(bridge.RawAsync);
             using MouseUdlrSettingsDialog dialog = new(await client.ReadAsync(), client.SaveAsync);
             if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Saved)
+            {
+                OutputPresentation.HostMode = dialog.Result.HostMode;
+                // Save/readback is complete before asking the device to detach.
+                await bridge.ApplyHostOutputAsync();
+                await RefreshDevice(); BindSelected();
                 SetText(saved, L.T("共通設定を保存しました。プロファイルの編集中の内容は保持しています。", "Saved shared settings. Profile drafts are retained."));
+            }
         }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }

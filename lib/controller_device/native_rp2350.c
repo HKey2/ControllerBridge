@@ -17,6 +17,7 @@
 #define OUT1_BIT (1u << 3)
 #define IN2_BIT (1u << 4)
 #define OUT2_BIT (1u << 5)
+#define IN3_BIT (1u << 6)
 #define ERROR_IRQS (USB_INTS_ERROR_CRC_BITS|USB_INTS_ERROR_BIT_STUFF_BITS|USB_INTS_ERROR_RX_OVERFLOW_BITS|USB_INTS_ERROR_RX_TIMEOUT_BITS|USB_INTS_ERROR_DATA_SEQ_BITS)
 typedef struct __attribute__((packed)) { uint8_t kind, request; uint16_t value, index, length; } setup_packet;
 typedef enum { C_IDLE, C_IN, C_OUT, C_STATUS_IN, C_STATUS_OUT, C_STALL } control_state;
@@ -31,7 +32,7 @@ static volatile uint8_t protocol=1;
 static bool remote_wakeup;
 static int pending_address=-1, pending_config=-1;
 static volatile bool in_busy;
-static bool halted,configuration_halted;
+static bool halted,configuration_halted,output_halted;
 static uint32_t in_cookie;
 static uint8_t aux_data[128],aux_in_pid,aux_out_pid;
 static uint16_t aux_length,aux_offset;
@@ -43,6 +44,19 @@ static volatile bool secondary_busy;
 static bool secondary_halted;
 static uint32_t secondary_cookie;
 static bool change_mouse_protocol(bool secondary,uint8_t value);
+static uint8_t configuration_interface(void) { return opt.configuration_interface?opt.configuration_interface:1; }
+static uint8_t configuration_endpoint(void) { return opt.configuration_endpoint?opt.configuration_endpoint:2; }
+static bool valid_interface(uint16_t index) {
+    return index==0 || (index==1&&(opt.auxiliary_bulk||opt.secondary_report)) ||
+        (opt.configuration_report && index==configuration_interface());
+}
+static bool valid_endpoint(uint16_t address) {
+    return address==0 || address==0x80 || address==0x81 ||
+        (opt.output_endpoint && address==opt.output_endpoint) ||
+        (opt.auxiliary_bulk && (address==2 || address==0x82)) ||
+        (opt.secondary_report && address==0x82) ||
+        (opt.configuration_report && address==(0x80u|configuration_endpoint()));
+}
 
 // USB DPRAM is Device memory: libc memcpy may emit an unaligned STRH/LDRH
 // for a three-byte tail (observed on RP2350 with a 203-byte HID descriptor).
@@ -119,13 +133,14 @@ static void reset_input(void) {
     usb_dpram->ep_buf_ctrl[1].out=0;
     usb_dpram->ep_ctrl[1].in=usb_dpram->ep_ctrl[1].out=0;
     usb_dpram->ep_buf_ctrl[2].in=usb_dpram->ep_buf_ctrl[2].out=0;
+    usb_dpram->ep_ctrl[2].in=0;usb_dpram->ep_buf_ctrl[3].in=0;
     aux_busy=false; aux_in_pid=aux_out_pid=0;
-    HW_CLR->buf_status=EP1_BIT|OUT1_BIT|IN2_BIT|OUT2_BIT;
-    ep1_pid=out1_pid=0; halted=configuration_halted=false;
+    HW_CLR->buf_status=EP1_BIT|OUT1_BIT|IN2_BIT|OUT2_BIT|IN3_BIT;
+    ep1_pid=out1_pid=0; halted=configuration_halted=output_halted=false;
     secondary_pid=0;secondary_halted=false;
 }
 static void arm_output(void) {
-    arm_buffer(&usb_dpram->ep_buf_ctrl[1].out,64|USB_BUF_CTRL_LAST|(out1_pid?USB_BUF_CTRL_DATA1_PID:0));
+    arm_buffer(&usb_dpram->ep_buf_ctrl[opt.output_endpoint].out,(opt.output_endpoint==2?32:64)|USB_BUF_CTRL_LAST|(out1_pid?USB_BUF_CTRL_DATA1_PID:0));
     out1_pid^=1;
 }
 static void arm_aux_output(void) {
@@ -145,7 +160,7 @@ static void enable_input(void) {
     usb_dpram->ep_ctrl[0].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
         EP_CTRL_INTERRUPT_ON_NAK|(3u<<EP_CTRL_BUFFER_TYPE_LSB)|offset;
     if(opt.output_endpoint) {
-        usb_dpram->ep_ctrl[0].out=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
+        usb_dpram->ep_ctrl[opt.output_endpoint-1].out=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
             (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+64);
         arm_output();
     }
@@ -155,8 +170,9 @@ static void enable_input(void) {
         arm_aux_output();
     }
     if(opt.configuration_report) {
-        usb_dpram->ep_ctrl[1].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
-            (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+128);
+        uint8_t ep=configuration_endpoint();
+        usb_dpram->ep_ctrl[ep-1].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
+            (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+(ep==3?256:128));
         // No Input reports on this interface: the endpoint always responds NAK.
     }
     if(opt.secondary_report) {
@@ -190,12 +206,12 @@ static void descriptor_request(const setup_packet *s) {
     uint8_t type=s->value>>8,index=s->value;
     if (type==1 && index==0 && s->kind==0x80) control_send(opt.device,opt.device_length,s->length);
     else if (type==2 && index==0 && s->kind==0x80) control_send(opt.configuration,opt.configuration_length,s->length);
-    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==0) control_send(opt.report,opt.report_length,s->length);
-    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==1 && opt.configuration_report)
+    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==0 && opt.report) control_send(opt.report,opt.report_length,s->length);
+    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==configuration_interface() && opt.configuration_report)
         control_send(opt.configuration_report,opt.configuration_report_length,s->length);
     else if (type==0x22 && index==0 && s->kind==0x81 && s->index==1 && opt.secondary_report)
         control_send(opt.secondary_report,opt.secondary_report_length,s->length);
-    else if (type==0x21 && index==0 && s->kind==0x81 && (s->index==0 || (s->index==1&&(opt.configuration_report||opt.secondary_report)))) {
+    else if (type==0x21 && index==0 && s->kind==0x81 && valid_interface(s->index)) {
         unsigned interface=0;
         for(unsigned offset=0;offset+2<=opt.configuration_length;) {
             unsigned n=opt.configuration[offset]; if(n<2||offset+n>opt.configuration_length)break;
@@ -246,21 +262,26 @@ static void setup_received(void) {
         if (s.kind==0x80 && s.request==8 && !s.value && !s.index) {
             uint8_t value=stat.configured; control_send(&value,1,s.length); return;
         }
-        if (s.request==0 && (s.kind==0x80 || (s.kind==0x81 && (s.index==0||(s.index==1&&(opt.auxiliary_bulk||opt.configuration_report||opt.secondary_report)))) ||
-            (s.kind==0x82 && (s.index==0 || s.index==0x80 || s.index==0x81 || (s.index==1&&opt.output_endpoint) || ((s.index==2||s.index==0x82)&&opt.auxiliary_bulk) || (s.index==0x82&&(opt.configuration_report||opt.secondary_report)))))) {
+        if(s.request==0 && (s.kind==0x80 || (s.kind==0x81 && valid_interface(s.index)) ||
+            (s.kind==0x82 && valid_endpoint(s.index)))) {
             uint8_t value[2]={s.kind==0x80?((remote_wakeup?2:0)|((opt.configuration[7]&0x40)?1:0)):
-                (s.kind==0x82 && ((s.index==0x81&&halted)||(s.index==0x82&&(configuration_halted||secondary_halted)))),0};
+                (s.kind==0x82 && ((s.index==0x81&&halted)||(s.index==opt.output_endpoint&&output_halted)||
+                (s.index==0x82&&secondary_halted)||(opt.configuration_report&&s.index==(0x80u|configuration_endpoint())&&configuration_halted))),0};
             control_send(value,2,s.length); return;
         }
-        if (s.kind==0x81 && s.request==10 && (s.index==0||(s.index==1&&(opt.auxiliary_bulk||opt.configuration_report||opt.secondary_report)))) {
+        if (s.kind==0x81 && s.request==10 && valid_interface(s.index)) {
             uint8_t alt=0; control_send(&alt,1,s.length); return;
         }
         if (s.kind==1 && s.request==11 && !s.index && !s.value && !s.length) {
-            if(opt.secondary_report) {
-                // SET_INTERFACE only resets that interface's endpoint state.
-                if(!abort_mask(EP1_BIT)) { stall_control();return; }
+            if(opt.secondary_report || opt.configuration_report) {
+                // Reset only this interface, including the XInput OUT endpoint.
+                uint32_t mask=EP1_BIT|(opt.output_endpoint?(1u<<(2*opt.output_endpoint+1)):0);
+                if(!abort_mask(mask)) { stall_control();return; }
                 notify_cancel();usb_dpram->ep_buf_ctrl[1].in=0;ep1_pid=0;halted=false;
-                HW_CLR->buf_status=EP1_BIT;release_abort(EP1_BIT);control_status();return;
+                if(opt.output_endpoint) { usb_dpram->ep_buf_ctrl[opt.output_endpoint].out=0;out1_pid=0;output_halted=false; }
+                HW_CLR->buf_status=mask;release_abort(mask);
+                if(opt.output_endpoint)arm_output();
+                control_status();return;
             }
             enable_input(); control_status(); return;
         }
@@ -270,12 +291,12 @@ static void setup_received(void) {
             HW_CLR->buf_status=IN2_BIT;release_abort(IN2_BIT);control_status();return;
         }
         if(s.kind==1&&s.request==11&&s.index==1&&opt.auxiliary_bulk&&!s.value&&!s.length) { control_status(); return; }
-        if(s.kind==1&&s.request==11&&s.index==1&&opt.configuration_report&&!s.value&&!s.length) {
-            usb_dpram->ep_buf_ctrl[2].in=0;configuration_halted=false;control_status();return;
+        if(s.kind==1&&s.request==11&&s.index==configuration_interface()&&opt.configuration_report&&!s.value&&!s.length) {
+            usb_dpram->ep_buf_ctrl[configuration_endpoint()].in=0;configuration_halted=false;control_status();return;
         }
-        if(s.kind==2 && (s.request==1||s.request==3) && s.index==0x82 && opt.configuration_report && !s.value && !s.length) {
+        if(s.kind==2 && (s.request==1||s.request==3) && s.index==(0x80u|configuration_endpoint()) && opt.configuration_report && !s.value && !s.length) {
             configuration_halted=s.request==3;
-            usb_dpram->ep_buf_ctrl[2].in=configuration_halted?USB_BUF_CTRL_STALL:0;
+            usb_dpram->ep_buf_ctrl[configuration_endpoint()].in=configuration_halted?USB_BUF_CTRL_STALL:0;
             control_status();return;
         }
         if(s.kind==2 && (s.request==1||s.request==3) && s.index==0x82 && opt.secondary_report && !s.value && !s.length) {
@@ -283,6 +304,15 @@ static void setup_received(void) {
             notify_secondary_cancel();secondary_halted=s.request==3;secondary_pid=0;
             usb_dpram->ep_buf_ctrl[2].in=secondary_halted?USB_BUF_CTRL_STALL:0;
             HW_CLR->buf_status=IN2_BIT;release_abort(IN2_BIT);control_status();return;
+        }
+        if(s.kind==2 && (s.request==1||s.request==3) && opt.output_endpoint && s.index==opt.output_endpoint && !s.value && !s.length) {
+            uint32_t mask=1u<<(2*opt.output_endpoint+1);
+            if(!abort_mask(mask)) { stall_control();return; }
+            output_halted=s.request==3;out1_pid=0;
+            usb_dpram->ep_buf_ctrl[opt.output_endpoint].out=output_halted?USB_BUF_CTRL_STALL:0;
+            HW_CLR->buf_status=mask;release_abort(mask);
+            if(!output_halted)arm_output();
+            control_status();return;
         }
         if (s.kind==2 && (s.request==1 || s.request==3) && s.index==0x81 && !s.value && !s.length) {
             if (!abort_mask(EP1_BIT)) { stall_control(); return; }
@@ -292,9 +322,9 @@ static void setup_received(void) {
             HW_CLR->buf_status=EP1_BIT; release_abort(EP1_BIT);
             control_status(); return;
         }
-    } else if ((s.kind&0x7f)==0x21 && (s.index==0 || (s.index==1&&(opt.configuration_report||opt.secondary_report)))) {
+    } else if ((s.kind&0x7f)==0x21 && (s.index==0 || (s.index==1&&opt.secondary_report) || (opt.configuration_report&&s.index==configuration_interface()))) {
         uint8_t report_type=s.value>>8,report_id=s.value;
-        bool feature_interface=s.index==(opt.configuration_report?1:0);
+        bool feature_interface=s.index==(opt.configuration_report?configuration_interface():0);
         if(s.index==1&&opt.secondary_report) {
             // The boot mouse has no report IDs, output reports or Feature protocol.
             if(s.kind==0xa1&&s.request==1&&report_type==1&&!report_id) { control_send(secondary_last,opt.secondary_input_length,s.length);return; }
@@ -343,7 +373,7 @@ static void completed_buffers(void) {
             if(aux_offset<aux_length||aux_zlp)arm_aux_input(); else aux_busy=false;
         }
     }
-    if(done&OUT2_BIT) {
+    if(opt.auxiliary_bulk && (done&OUT2_BIT)) {
         uint16_t n=usb_dpram->ep_buf_ctrl[2].out&USB_BUF_CTRL_LEN_MASK;
         HW_CLR->buf_status=OUT2_BIT;
         if(n<=64&&opt.auxiliary_output) {
@@ -351,13 +381,14 @@ static void completed_buffers(void) {
         }
         arm_aux_output();
     }
-    if(done&OUT1_BIT) {
-        uint16_t n=usb_dpram->ep_buf_ctrl[1].out&USB_BUF_CTRL_LEN_MASK;
-        HW_CLR->buf_status=OUT1_BIT;
+    uint32_t output_bit=opt.output_endpoint?(1u<<(2*opt.output_endpoint+1)):0;
+    if(done&output_bit) {
+        uint16_t n=usb_dpram->ep_buf_ctrl[opt.output_endpoint].out&USB_BUF_CTRL_LEN_MASK;
+        HW_CLR->buf_status=output_bit;
         if(n<=64 && opt.output) {
             uint8_t data[64]; dpram_read(data,usb_dpram->epx_data+64,n); opt.output(data,n,opt.context);
         }
-        arm_output();
+        if(!output_halted)arm_output();
     }
     if (done&EP1_BIT) {
         uint32_t now=time_us_32(); HW_CLR->buf_status=EP1_BIT;
@@ -449,7 +480,7 @@ static void __not_in_flash_func(usb_irq)(void) {
 void ud_init(const ud_options *options) {
     irq_set_enabled(USBCTRL_IRQ,false);
     in_busy=secondary_busy=aux_busy=false; control=C_IDLE; remote_wakeup=false; pending_address=pending_config=-1;
-    halted=configuration_halted=secondary_halted=false;
+    halted=configuration_halted=secondary_halted=output_halted=false;
     idle_rate=secondary_idle=0;protocol=secondary_protocol=1;
     opt=*options; memset(&stat,0,sizeof(stat)); memset(last_input,0,sizeof(last_input));
     memset(secondary_last,0,sizeof(secondary_last));

@@ -18,6 +18,7 @@ typedef struct {
     uint8_t paddle_mode,rolling_flags; // 0 clicks / 1 Virtual Rolling; bit 0 invert, bit 1 left stick.
     uint8_t trackball_mode,trackball_hold_threshold; // 0 legacy clicks / 1 Hold; raw points 1..127.
     uint8_t rolling_step_deg; // Legacy migration default; effective value comes from the profile.
+    uint8_t host_mode; // 0=S (Switch-compatible HID), 1=X (wired Xbox 360 XInput).
     uint16_t inertia_threshold,inertia_interval_ms;
     uint8_t inertia_decay_percent,inertia_enabled; // Enable is supplied only by the active profile.
 } udk_settings;
@@ -26,8 +27,9 @@ typedef struct {
 #define UDK_DEFAULT_WAIT_MS 20u
 #define UDK_MAX_WAIT_MS 1000u
 #define UDK_DEFAULT_ROLLING_STEP_DEG 30u
-#define UDK_DEFAULT_SETTINGS {64u,60u,15u,UDK_DEFAULT_HOLD_MS,UDK_DEFAULT_WAIT_MS,{0,0,0,0},{0,0,0,0},10u,0,0,0,1,UDK_DEFAULT_ROLLING_STEP_DEG,8,100,90,0}
+#define UDK_DEFAULT_SETTINGS {64u,60u,15u,UDK_DEFAULT_HOLD_MS,UDK_DEFAULT_WAIT_MS,{0,0,0,0},{0,0,0,0},10u,0,0,0,1,UDK_DEFAULT_ROLLING_STEP_DEG,0,8,100,90,0}
 _Static_assert(sizeof(udk_settings)==40,"cursor settings layout");
+_Static_assert(offsetof(udk_settings,host_mode)==31,"host mode uses existing padding");
 #define UDK_TARGET_COUNT 18u
 #define UDK_ROLLING_MODE 1u
 #define UDK_HOLD_MODE 1u
@@ -75,7 +77,7 @@ static inline uint8_t udk_target(uint8_t direction,const uint8_t targets[4]) {
     return targets && targets[direction]?targets[direction]:defaults[direction];
 }
 static inline bool udk_settings_valid(const udk_settings *s) {
-    return s && s->threshold && s->threshold<=65535u &&
+    return s && s->host_mode<=1 && s->threshold && s->threshold<=65535u &&
         s->inertia_threshold>=1 && s->inertia_interval_ms>=1 && s->inertia_interval_ms<=1000 &&
         s->inertia_decay_percent<=99 && s->inertia_enabled<=1 &&
         s->trackball_gain10>=10 && s->trackball_gain10<=2560 &&
@@ -102,9 +104,10 @@ static inline bool udk_settings_edit(udk_settings *s,uint32_t threshold,uint32_t
 static inline uint32_t udk_get32(const uint8_t *p) {
     return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
 }
-// UDS9 guards six old and six desired words. Per-profile routing is never edited.
+// UDSA (version 10) guards six old and six desired words, including the host mode.
+// Profile routing and all existing Flash records retain their previous layouts.
 static inline uint32_t udk_tuning_pack(const udk_settings *s) {
-    return s->rolling_gain10|((uint32_t)s->trackball_hold_threshold<<8);
+    return s->rolling_gain10|((uint32_t)s->trackball_hold_threshold<<8)|((uint32_t)s->host_mode<<16);
 }
 static inline uint32_t udk_inertia_pack(const udk_settings *s) {
     return s->inertia_threshold|((uint32_t)s->inertia_decay_percent<<16);
@@ -120,10 +123,10 @@ static inline bool udk_settings_equal(const udk_settings *a,const udk_settings *
 static inline uint8_t udk_settings_request(const udk_settings *current,const uint8_t *request,
                                          size_t length,udk_settings *candidate) {
     if(!udk_settings_valid(current) || !request || !candidate || length!=UDK_SETTINGS_REQUEST_BYTES ||
-       memcmp(request,"UDS9",4) || udk_get32(request+4)!=9)return 1;
-    uint32_t options=udk_get32(request+44);if(options&0xffff0000u)return 1;
+       memcmp(request,"UDSA",4) || udk_get32(request+4)!=10)return 1;
+    uint32_t options=udk_get32(request+44);if(options&0xfffe0000u)return 1;
     udk_settings next=*current;
-    next.rolling_gain10=(uint8_t)options;next.trackball_hold_threshold=(uint8_t)(options>>8);
+    next.rolling_gain10=(uint8_t)options;next.trackball_hold_threshold=(uint8_t)(options>>8);next.host_mode=(uint8_t)(options>>16);
     if(!udk_inertia_unpack(&next,udk_get32(request+48),udk_get32(request+52)) ||
        !udk_settings_edit(&next,udk_get32(request+32),udk_get32(request+36),udk_get32(request+40)))return 1;
     if(!udk_settings_equal(&next,current) &&

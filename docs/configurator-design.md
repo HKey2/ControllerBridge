@@ -1,6 +1,6 @@
 # Configuration and storage design
 
-This describes the current ControllerBridge configurator 0.22.0 - GUI r4 and firmware 0.22.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
+This describes the current ControllerBridge configurator 0.23.0 and firmware 0.23.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
 
 The four header actions use equal percentage columns inside an automatically sized panel. The widest label determines their shared width, with normal font and DPI scaling; the connection message occupies the remaining space.
 
@@ -81,7 +81,7 @@ The version-8 bank is 13,908 bytes: 16-byte bank header, 16 x 848-byte profiles,
 | 4 | `0x1F4000` | 16,384 | Bank A; first v5-to-v8 commit |
 | 5 | `0x1F8000` | 16,384 | Bank B; overlaps both old 8 KiB bank copies |
 | Unused | `0x1FC000` | 8,192 | Reserved; no reads or writes |
-| 0 | `0x1FE000` | 4,096 | Common settings, 228 bytes used |
+| 0 | `0x1FE000` | 4,096 | Common settings, 244 bytes used |
 | 1 | `0x1FF000` | 4,096 | Saved measurement, unchanged |
 
 The Flash header retains magic `CBST` (`0x54534243`), storage version 1, payload length and CRC-32. A valid v8 bank takes priority over any remaining v6 bank; among v8 copies the newest generation wins. Without v8, both 16 KiB areas are checked for v6, the newest valid generation is converted, and the opposite area is written and read back before adoption. Without v6, both old v5 copies at `0x1F8000`/`0x1FA000` are checked and the newest valid one is expanded and committed to Bank A. Conversion preserves generation, IDs, selection and shortcuts. The first migration commit does not increment generation.
@@ -142,8 +142,8 @@ Status values are 0 success, 1 malformed request, 2 measurement busy, 3 save fai
 | 48 | Begin registration into an empty slot, guarded by the captured input attachment and identity |
 | 49 | Read direction generation/ACK/drop counters (`DKY1`) |
 | 51 | Read actual generated-direction timing (`DPT1`, 0.20.7+) |
-| 52 | Read shared tuning and retained migration defaults (`UDS9`, 0.22.0) |
-| 53 | Validate, save and apply shared tuning and pseudo-inertia (`UDS9`, 0.22.0) |
+| 52 | Read shared tuning and retained migration defaults (`UDSA`, 0.23.0) |
+| 53 | Validate, save and apply shared tuning and pseudo-inertia (`UDSA`, 0.23.0) |
 
 The implementation is authoritative for byte-level command layouts: [`profile_runtime.c`](../lib/controller_bridge/profile_runtime.c), [`main.c`](../apps/egret_switch/main.c), [`HidBridge.cs`](../gui/ControllerBridge/HidBridge.cs).
 
@@ -243,7 +243,7 @@ A real zero-wheel report clears moving state only. Reports for another interface
 
 The normal send scheduler overlays the selected stick after ordinary mapping, combined-output routing and generated button pulses, on both new and repeated reports. Moving outputs the lookup vector; idle outputs center. The chosen stick belongs to this mode while enabled; other axes/buttons remain unchanged. The ordinary queue never stores the virtual vector. Changes to the full report, Hold mask or pulse identity cancel stale ordinary repeats so a stop can reach USB without waiting for another physical report. The optional keyboard-only UDLR build has no stick report: select Button clicks to test paddle letters.
 
-## Shared tuning, migration defaults and transaction (0.22.0)
+## Shared tuning, host mode, migration defaults and transaction (0.23.0)
 
 Common configuration slot 0 remains at `0x1FE000` (4 KiB). The original `CBST` 16-byte header and 40-byte payload remain intact. The first nine appended records are 16 bytes: magic, u32 schema=1, four data bytes and CRC32 of the first 12 bytes. INR1 is 20 bytes: magic, schema=1, packed threshold/decay, u32 interval, CRC32 of the first 16 bytes.
 
@@ -257,26 +257,27 @@ Common configuration slot 0 remains at `0x1FE000` (4 KiB). The original `CBST` 1
 | 176 | TBH1 | Hold threshold bits 0–7; retained migration Trackball mode bits 8–15; high bits zero |
 | 192 | RSD1 | retained migration rotation step |
 | 208 | INR1 (20 bytes) | u16 threshold + u8 decay percent + zero high byte; u32 interval ms |
+| 228 | HSM1 (16 bytes) | schema 1, u32 host mode S=0 / X=1, CRC32 of first 12 bytes |
 
-The prefix plus alignment and ten records uses **228 bytes**, leaving **3,868**. Common tuning edits preserve retained legacy maps/modes/step, and do not overwrite per-profile conversion. Missing/invalid records fall back independently. Missing wait inherits a valid saved hold for old shared-duration compatibility, otherwise defaults to 20; hold defaults to 30. Missing/invalid INR1 defaults to 8 / 90% / 100 ms. Bank migration runs before a boot write initializes these records. Measurements and their 3,784-byte payload are unchanged. Older firmware may erase records it does not know on common save; v8 banks require restoring a pre-upgrade backup before any downgrade.
+The prefix plus alignment and eleven records uses **244 bytes**, leaving **3,852**. Common tuning edits preserve retained legacy maps/modes/step, and do not overwrite per-profile conversion. Missing/invalid records fall back independently. Missing wait inherits a valid saved hold for old shared-duration compatibility, otherwise defaults to 20; hold defaults to 30. Missing/invalid INR1 defaults to 8 / 90% / 100 ms. Bank migration runs before a boot write initializes these records. Measurements and their 3,784-byte payload are unchanged. Older firmware may erase records it does not know on common save; v8 banks require restoring a pre-upgrade backup before any downgrade.
 
-Command 2 retains its original 40-byte prefix and appended DKC1 settings view; schema byte 2 and persisted flag stay at 52/53. Commands 52/53 use **UDS9**, schema 9. Bit **24** describes profile conversion and bit **25** identifies v8 pseudo-inertia/shared tuning. The 56-byte response is: magic/schema 0/4, u32 click threshold/hold/wait 8/12/16, persisted 20, retained migration maps 24/28, migration packed mode options 32, reserved zero 36, packed inertia threshold/decay 40, interval 44, reserved zero 48/52. The legacy mode options retain rolling gain byte 0, modes/flags byte 1, Hold threshold byte 2 and rotation step byte 3.
+Command 2 retains its original 40-byte prefix and appended DKC1 settings view; schema byte 2 and persisted flag stay at 52/53. Commands 52/53 use **UDSA**, schema 10. Host mode support is identified by this exact response schema; older UDS9 transactions are rejected. Bit **24** describes profile conversion and bit **25** identifies v8 pseudo-inertia/shared tuning. The 56-byte response is: magic/schema 0/4, u32 click threshold/hold/wait 8/12/16, persisted 20, retained migration maps 24/28, migration packed mode options 32, host mode S=0 / X=1 at 36, packed inertia threshold/decay 40, interval 44, reserved zero 48/52. The legacy mode options retain rolling gain byte 0, modes/flags byte 1, Hold threshold byte 2 and rotation step byte 3.
 
 Command 53's 56-byte request contains six expected words and six desired words, guarding every editable common value:
 
 | Offset | Contents |
 |---:|---|
-| 0 / 4 | UDS9 / u32 schema 9 |
+| 0 / 4 | UDSA / u32 schema 10 |
 | 8 / 12 / 16 | Expected click threshold / hold / wait |
-| 20 / 24 / 28 | Expected rolling gain + Hold threshold / inertia threshold + decay / interval |
+| 20 / 24 / 28 | Expected rolling gain + Hold threshold + host mode / inertia threshold + decay / interval |
 | 32 / 36 / 40 | Desired click threshold / hold / wait |
-| 44 / 48 / 52 | Desired rolling gain + Hold threshold / inertia threshold + decay / interval |
+| 44 / 48 / 52 | Desired rolling gain + Hold threshold + host mode / inertia threshold + decay / interval |
 
-Tuning packs rolling gain in byte 0 and Hold threshold in byte 1; upper bytes are zero. Inertia packs threshold in low 16 bits and decay percent in byte 2; byte 3 is zero. Enable is exclusively profile offset 553, never shared storage or this transaction.
+Tuning packs rolling gain in byte 0, Hold threshold in byte 1, and host mode in bit 16; bits 17–31 are zero. Missing or invalid HSM1 independently defaults to S without changing older records. The runtime host-mode byte occupies existing offset-31 padding, keeping udk_settings at 40 bytes. Inertia packs threshold in low 16 bits and decay percent in byte 2; byte 3 is zero. Enable is exclusively profile offset 553, never shared storage or this transaction.
 
 Old schemas, invalid ranges and nonzero reserved bytes return status 1. Stale expected tuning returns status 4 unless all desired tuning is already current, permitting lost-response retry. Busy measurement/reconnection returns 2; save failure returns 3 without applying the candidate. Hidden gains and retained migration defaults are preserved. After persistence, the firmware composes effective profile settings and clears generated state. The GUI checks the response and independent readback. Profile updates use the existing bank-generation guard.
 
-The GUI separates **Conversion mapping** (per-profile draft, then profile save) from **Shared settings** (eight common numeric controls, immediate guarded save). The conversion dialog has four Trackball targets and two Paddle targets. Trackball mode 0 is displayed as **Virtual Cursor**, while Paddle mode 1 remains **Virtual Rolling**; this naming distinction does not change stored mode values or firmware behavior. Paddle mode greys out its inactive target or rolling controls in place. The common dialog groups click conversion, Trackball Hold (including a pseudo-inertia subsection), and Paddle Virtual Rolling. It has no mode tabs and retains all eight editable values regardless of selected profile mode. The inertia explanation belongs to its group; the separate status row appears only for clamped older values or a save error. Both action buttons compare current editable values with their opening values and disable themselves when unchanged, including after a full revert. Shared numeric text is inspected without committing pending keyboard edits; comparison uses the saved precision. Out-of-range legacy display clamping does not by itself count as a user edit. Save failure retains the changed values and permits retry. Handler guards also reject unchanged actions. Cancel writes nothing. Both use the existing layout/DPI framework.
+The GUI separates **Conversion mapping** (per-profile draft, then profile save) from **Shared settings** (eight common numeric controls, immediate guarded save). The conversion dialog has four Trackball targets and two Paddle targets. Trackball mode 0 is displayed as **Virtual Cursor**, while Paddle mode 1 remains **Virtual Rolling**; this naming distinction does not change stored mode values or firmware behavior. Paddle mode greys out its inactive target or rolling controls in place. The common dialog groups click conversion, Trackball Hold (including a pseudo-inertia subsection), Paddle Virtual Rolling, and the final S/Auto/X host selector. Auto stays disabled, including after a failed save. A separate scroll host keeps the save/cancel footer reachable. Host-mode changes participate in dirty detection and the same guarded transaction. It has no mode tabs and retains all eight editable values regardless of selected profile mode. The inertia explanation belongs to its group; the separate status row appears only for clamped older values or a save error. Both action buttons compare current editable values with their opening values and disable themselves when unchanged, including after a full revert. Shared numeric text is inspected without committing pending keyboard edits; comparison uses the saved precision. Out-of-range legacy display clamping does not by itself count as a user edit. Save failure retains the changed values and permits retry. Handler guards also reject unchanged actions. Cancel writes nothing. Both use the existing layout/DPI framework.
 
 ### Bounded Elite Series 2 startup retry (0.20.21)
 
@@ -285,3 +286,7 @@ For `045E:0B00`, a GIP startup timeout after the existing recovery schedules one
 Successful initialization alone does not replenish the extra cycle. Status messages, repeated enumeration, malformed packets and a configured controller with no input cannot replenish it either. Only a fully parsed USB packet containing an accepted gamepad, Guide or paddle input clears the extra-cycle flags. This enables one future recovery for a new failure episode without resetting a working controller. Ordinary enumeration continues after an exhausted cycle, but does not repeatedly re-enable the special recovery operations. No operation-wait timeout is added, and no settings or persistent-storage formats change.
 
 The LED consumes `UC_CONFIGURED` to clear an earlier initialization fault and wait in cyan for the first input. If input has already been observed, this status does not overwrite the receiving state. The normal ready profile color is selected after accepted input.
+
+## XInput output and Switch 2 input
+
+The device-wide host preference selects the XInput report encoder and USB configuration without rewriting profile IDs or bindings. The profile format stays v8/848 bytes and bank v8/13,908 bytes. Save and independent readback finish before command 46 schedules detach/reconnect. The native device transport selects the configuration interface/endpoint explicitly, retains mouse IN2, and uses settings IN3 with wired Xbox OUT2. See [descriptor, report, initialization and verification details](xinput-output.md).

@@ -146,7 +146,7 @@ public sealed class DeviceProfile
     public const int ByteCount = 848;
     public const int LegacyByteCount = 488;
     public const int SlotCount = 16;
-    public static readonly string[] Targets = ["Y", "B", "A", "X", "L", "R", "ZL", "ZR", "−", "+", L.T("L押込", "L stick"), L.T("R押込", "R stick"), "HOME", "CAPTURE", "↑", "→", "↓", "←"];
+    public static string[] Targets => OutputPresentation.Targets;
     public static readonly string[] AxisNames = [L.T("左スティック X", "Left stick X"), L.T("左スティック Y", "Left stick Y"), L.T("右スティック X", "Right stick X"), L.T("右スティック Y", "Right stick Y")];
     public ushort Version { get; set; } = 8;
     public ConversionSettings Conversion { get; set; } = new();

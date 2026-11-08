@@ -1,6 +1,6 @@
 namespace ControllerBridge;
 
-public sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs, bool Persisted, uint ButtonMap = 0x1012110F, uint PaddleButtonMap = 0x1012110F, uint Rolling = 10, uint Trackball = 1, uint RollingStepDeg = 30, uint InertiaThreshold = 8, uint InertiaDecayPercent = 90, uint InertiaIntervalMs = 100)
+public sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs, bool Persisted, uint ButtonMap = 0x1012110F, uint PaddleButtonMap = 0x1012110F, uint Rolling = 10, uint Trackball = 1, uint RollingStepDeg = 30, uint InertiaThreshold = 8, uint InertiaDecayPercent = 90, uint InertiaIntervalMs = 100, uint HostMode = 0)
 {
     internal const uint DefaultButtonMap = 0x1012110F; // Explicit Switch Up/Down/Left/Right targets.
     internal bool VirtualRolling => ((Rolling >> 16) & 255) == 1;
@@ -72,17 +72,17 @@ public sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs,
     }
     internal static MouseUdlrSettings Read(byte[] data)
     {
-        if (data.Length != 56 || !data.AsSpan(0, 4).SequenceEqual("UDS9"u8) || Wire.U32(data, 4) != 9)
+        if (data.Length != 56 || !data.AsSpan(0, 4).SequenceEqual("UDSA"u8) || Wire.U32(data, 4) != 10)
             throw new InvalidDataException(L.T("共通設定を読み込めません。デバイスのファームウェアを更新してください。", "Cannot read shared settings. Update the device firmware."));
         uint threshold = Wire.U32(data, 8), hold = Wire.U32(data, 12), wait = Wire.U32(data, 16), flags = Wire.U32(data, 20);
         uint buttonMap = Wire.U32(data, 24), paddleButtonMap = Wire.U32(data, 28); ValidateTargets(buttonMap); ValidateTargets(paddleButtonMap);
-        if (threshold is < 1 or > 65535 || hold is < 1 or > 1000 || wait is < 1 or > 1000 || flags > 1 || Wire.U32(data, 36) != 0 ||
+        if (threshold is < 1 or > 65535 || hold is < 1 or > 1000 || wait is < 1 or > 1000 || flags > 1 || Wire.U32(data, 36) > 1 ||
             (Wire.U32(data, 40) & 0xFF000000u) != 0 || Wire.U32(data, 48) != 0 || Wire.U32(data, 52) != 0)
             throw new InvalidDataException(L.T("デバイスから受信した共通設定が不正です。", "The device returned invalid shared settings."));
         uint start = Wire.U32(data, 40) & 65535, decay = (Wire.U32(data, 40) >> 16) & 255, interval = Wire.U32(data, 44);
         ValidateInertia(start, decay, interval);
         return new MouseUdlrSettings(threshold, hold, wait, flags == 1, buttonMap, paddleButtonMap,
-            InertiaThreshold: start, InertiaDecayPercent: decay, InertiaIntervalMs: interval).WithModeOptions(Wire.U32(data, 32));
+            InertiaThreshold: start, InertiaDecayPercent: decay, InertiaIntervalMs: interval, HostMode: Wire.U32(data, 36)).WithModeOptions(Wire.U32(data, 32));
     }
 }
 
@@ -94,11 +94,12 @@ internal sealed class MouseUdlrSettingsClient(Func<byte, byte[]?, Task<byte[]>> 
         MouseUdlrSettings.ValidateEdit(edited.Threshold, edited.HoldMs, edited.WaitMs);
         MouseUdlrSettings.ValidateRolling(edited.Rolling); MouseUdlrSettings.ValidateTrackball(edited.Trackball);
         MouseUdlrSettings.ValidateInertia(edited.InertiaThreshold, edited.InertiaDecayPercent, edited.InertiaIntervalMs);
-        byte[] args = new byte[56]; "UDS9"u8.CopyTo(args); Wire.W32(args, 4, 9);
+        if (edited.HostMode > 1) throw new InvalidDataException("Unsupported host mode");
+        byte[] args = new byte[56]; "UDSA"u8.CopyTo(args); Wire.W32(args, 4, 10);
         static void Values(byte[] b, int at, MouseUdlrSettings s)
         {
             Wire.W32(b, at, s.Threshold); Wire.W32(b, at + 4, s.HoldMs); Wire.W32(b, at + 8, s.WaitMs);
-            Wire.W32(b, at + 12, s.RollingGain10 | s.TrackballHoldThreshold << 8);
+            Wire.W32(b, at + 12, s.RollingGain10 | s.TrackballHoldThreshold << 8 | s.HostMode << 16);
             Wire.W32(b, at + 16, s.InertiaOptions); Wire.W32(b, at + 20, s.InertiaIntervalMs);
         }
         Values(args, 8, original); Values(args, 32, edited);

@@ -16,6 +16,7 @@ add_library(controller_usb STATIC
     lib/controller_usb/bootsel.c
     lib/controller_usb/transport_pio.c
     lib/controller_usb/input_protocol.c
+    lib/controller_usb/switch2.c
     lib/controller_usb/xbox_one.c
     lib/controller_usb/hid_layout.c)
 target_include_directories(controller_usb PUBLIC lib/controller_usb/include PRIVATE lib/controller_usb)
@@ -24,7 +25,7 @@ target_compile_options(controller_usb PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_device STATIC
     lib/controller_device/native_rp2350.c lib/controller_device/switch_wired.c lib/controller_device/switch_protocols.c
-    lib/controller_device/usb_mouse.c)
+    lib/controller_device/usb_mouse.c lib/controller_device/xinput_wired.c)
 target_include_directories(controller_device PUBLIC lib/controller_device/include)
 target_link_libraries(controller_device PUBLIC pico_stdlib PRIVATE hardware_irq hardware_resets hardware_sync)
 target_compile_options(controller_device PRIVATE -Wall -Wextra -Werror)
