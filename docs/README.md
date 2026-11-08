@@ -1,8 +1,8 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator v0.22.0 - GUI r3 and normal firmware 0.22.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator v0.22.0 - GUI r4 and normal firmware 0.22.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
-The current configurator is **v0.22.0 - GUI r3**; its bundled firmware remains **0.22.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
+The current configurator is **v0.22.0 - GUI r4**; its bundled firmware remains **0.22.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
 
 | Document | Contents |
 |---|---|

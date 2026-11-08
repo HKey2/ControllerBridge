@@ -1,6 +1,14 @@
 # Verification record
 
-Applies to configurator **0.22.0 - GUI r3** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+Applies to configurator **0.22.0 - GUI r4** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+
+## 2026-11-09 — Equal header action widths (GUI r4)
+
+Firmware update, Connect / Reconnect, Profile switching and Shared settings now occupy four equal percentage columns in an automatically sized panel. Their labels determine the required shared width, and the connection message uses the remaining header width. Event handlers and button behavior are unchanged. The previous GUI r3 change set is committed, so this separate GUI-only update uses GUI r4.
+
+The existing main-window DPI layout checks pass in Japanese and English, covering all output tabs, text fit and reachable controls, 96→120→144→192→96 DPI transitions, and a bounded 1,920×1,040 work area. Captured widths are identical across all four buttons at every sampled scale; the initial 96-DPI width is 168 pixels in both languages. The DPI messages are simulated and do not change OS display settings. Japanese 96-DPI and English 192-DPI captures were visually inspected. Test-only capture metadata records the measured header geometry; no verification code is added to the product.
+
+Firmware remains 0.22.0 with byte-identical UF2, manifest and application icon. The Release build uses the existing .NET SDK 9.0.319 and runtime 9.0.21. Memory remains Flash 119,788 plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 stacks (367,992 remaining), and common settings 228 (3,868 free). Host-console detection was researched, not added to firmware; see compatibility.md. Evidence: test/development/results/header-width-r4-20261109. The committed GUI r3 release ZIP is retained.
 
 ## 2026-11-08 — Stable output-tab content and bundled sample slots (GUI r3)
 

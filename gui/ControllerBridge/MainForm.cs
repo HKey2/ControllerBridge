@@ -52,22 +52,27 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r3", new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r4", new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
         BufferedTableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16, 12, 16, 12), ColumnCount = 1, RowCount = 3 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel header = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5, RowCount = 1, Padding = new(2, 0, 2, 8) };
-        header.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 4; i++) header.ColumnStyles.Add(new(SizeType.AutoSize));
+        BufferedTableLayoutPanel header = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, Padding = new(2, 0, 2, 8) };
+        header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.AutoSize));
         header.RowStyles.Add(new(SizeType.AutoSize));
         connection.Dock = DockStyle.Fill; connection.ForeColor = Ui.Muted;
         header.Controls.Add(connection, 0, 0);
-        firmwareUpdate = Ui.Button(L.T("ファームウェア更新", "Firmware update"), async (_, _) => await UpdateFirmware()); firmwareUpdate.Dock = DockStyle.Fill; header.Controls.Add(firmwareUpdate, 1, 0);
-        connect = Ui.Button(L.T("接続 / 再接続", "Connect / Reconnect"), async (_, _) => await Connect()); connect.Dock = DockStyle.Fill; header.Controls.Add(connect, 2, 0);
-        switchMethod = Ui.Button(L.T("プロファイル切替方法…", "Profile switching…"), async (_, _) => await ConfigureSwitchMethod()); switchMethod.Dock = DockStyle.Fill; header.Controls.Add(switchMethod, 3, 0);
-        mouseUdlrSettings = Ui.Button(L.T("共通設定", "Shared settings"), async (_, _) => await ConfigureMouseUdlr()); mouseUdlrSettings.Dock = DockStyle.Fill; header.Controls.Add(mouseUdlrSettings, 4, 0);
+        BufferedTableLayoutPanel headerActions = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 4, RowCount = 1, Margin = Padding.Empty };
+        for (int i = 0; i < 4; i++) headerActions.ColumnStyles.Add(new(SizeType.Percent, 25));
+        headerActions.RowStyles.Add(new(SizeType.AutoSize));
+        header.Controls.Add(headerActions, 1, 0);
+        firmwareUpdate = Ui.Button(L.T("ファームウェア更新", "Firmware update"), async (_, _) => await UpdateFirmware()); firmwareUpdate.Dock = DockStyle.Fill; headerActions.Controls.Add(firmwareUpdate, 0, 0);
+        connect = Ui.Button(L.T("接続 / 再接続", "Connect / Reconnect"), async (_, _) => await Connect()); connect.Dock = DockStyle.Fill; headerActions.Controls.Add(connect, 1, 0);
+        switchMethod = Ui.Button(L.T("プロファイル切替方法…", "Profile switching…"), async (_, _) => await ConfigureSwitchMethod()); switchMethod.Dock = DockStyle.Fill; headerActions.Controls.Add(switchMethod, 2, 0);
+        mouseUdlrSettings = Ui.Button(L.T("共通設定", "Shared settings"), async (_, _) => await ConfigureMouseUdlr()); mouseUdlrSettings.Dock = DockStyle.Fill; headerActions.Controls.Add(mouseUdlrSettings, 3, 0);
         root.Controls.Add(header, 0, 0);
 
         body = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
