@@ -21,8 +21,7 @@ internal sealed partial class MainForm : Form
     private readonly SlotList slots = new();
     private readonly MappingEditor editor = new(), mouseEditor = new(true), combinedEditor = new();
     private readonly DarkTabControl outputTabs = new() { Dock = DockStyle.Fill, Padding = new(23, 12) };
-    private readonly BufferedTableLayoutPanel[] tabContents = new BufferedTableLayoutPanel[3];
-    private readonly BufferedTableLayoutPanel mouseContent, timing;
+    private readonly BufferedTableLayoutPanel outputContent, timing;
     private readonly BufferedTableLayoutPanel body, details;
     private readonly TextBox name = new() { Dock = DockStyle.Fill, MaxLength = 47 };
     private readonly NumericUpDown interval = new() { Minimum = 0, Maximum = 255, Width = 78, Anchor = AnchorStyles.Left };
@@ -53,7 +52,7 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r2", new(1290, 1100), new(1290, 700));
+        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + " - GUI r3", new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -126,27 +125,24 @@ internal sealed partial class MainForm : Form
         details.RowStyles.Add(new(SizeType.Percent, 100)); details.RowStyles.Add(new(SizeType.AutoSize));
         identity.Dock = outputStatus.Dock = live.Dock = DockStyle.Fill;
         identity.ForeColor = outputStatus.ForeColor = live.ForeColor = Ui.Muted;
-        details.Controls.Add(outputTabs, 0, 0); details.Controls.Add(live, 0, 1); right.Controls.Add(details, 0, 1);
+        details.Controls.Add(live, 0, 1); right.Controls.Add(details, 0, 1);
         outputTabs.ShowToolTips = true;
         string[] titles = [L.T("ゲームパッド", "Gamepad"), L.T("USBマウス", "USB mouse"), L.T("マウス＋ゲームパッド", "Mouse + Gamepad")];
         for (int i = 0; i < 3; i++)
         {
-            TabPage page = new(titles[i]) { BackColor = Ui.Surface, Padding = new(5) };
-            BufferedTableLayoutPanel content = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
-            content.ColumnStyles.Add(new(SizeType.Percent, 100));
-            for (int row = 0; row < 2; row++) content.RowStyles.Add(new(SizeType.AutoSize));
-            content.RowStyles.Add(new(SizeType.Percent, 100));
-            tabContents[i] = content; page.Controls.Add(content); outputTabs.TabPages.Add(page);
+            outputTabs.TabPages.Add(new TabPage(titles[i]) { BackColor = Ui.Surface });
         }
+        outputContent = new() { ColumnCount = 1, RowCount = 3, Margin = Padding.Empty, BackColor = Ui.Surface };
+        outputContent.ColumnStyles.Add(new(SizeType.Percent, 100));
+        outputContent.RowStyles.Add(new(SizeType.AutoSize)); outputContent.RowStyles.Add(new(SizeType.AutoSize));
+        outputContent.RowStyles.Add(new(SizeType.Percent, 100));
+        details.Controls.Add(new SharedTabContentHost(outputTabs, outputContent), 0, 0);
         timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new(10, 4, 8, 4) };
         timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.Percent, 100));
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
         Label intervalHelp = Ui.Label(L.T("0 = コントローラーの標準値", "0 = controller default"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
-        tabContents[0].Controls.Add(editor, 0, 2);
-        mouseContent = new() { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, Margin = Padding.Empty };
-        mouseContent.ColumnStyles.Add(new(SizeType.Percent, 100));
-        mouseContent.RowStyles.Add(new(SizeType.Percent, 100));
+        outputContent.Controls.Add(timing, 0, 0);
         BufferedTableLayoutPanel tuning = pointingTuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
         tuning.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) tuning.RowStyles.Add(new(SizeType.AutoSize));
@@ -166,10 +162,10 @@ internal sealed partial class MainForm : Form
         // Keep both editors in the control tree while hidden so they receive
         // the same font and monitor-DPI changes as the visible editor.
         Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
-        mappingPages.Controls.Add(mouseEditor); mappingPages.Controls.Add(combinedEditor);
+        mappingPages.Controls.Add(editor); mappingPages.Controls.Add(mouseEditor); mappingPages.Controls.Add(combinedEditor);
         combinedEditor.Visible = false;
-        mouseContent.Controls.Add(mappingPages, 0, 0);
-        tabContents[1].Controls.Add(mouseContent, 0, 2);
+        outputContent.Controls.Add(pointingTuning, 0, 1);
+        outputContent.Controls.Add(mappingPages, 0, 2);
         body.Controls.Add(left, 0, 0); body.Controls.Add(right, 1, 0); root.Controls.Add(body, 0, 1);
         BufferedTableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(0, 12, 0, 0) };
         footer.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) footer.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -618,13 +614,11 @@ internal sealed partial class MainForm : Form
     private void SyncMousePage()
     {
         int index = Math.Max(0, outputTabs.SelectedIndex);
-        if (timing.Parent != tabContents[index]) tabContents[index].Controls.Add(timing, 0, 0);
-        if (pointingTuning.Parent != tabContents[index]) tabContents[index].Controls.Add(pointingTuning, 0, 1);
-        if (index > 0 && mouseContent.Parent != tabContents[index]) tabContents[index].Controls.Add(mouseContent, 0, 2);
         bool combined = index == 2; buttonBehavior.Visible = combined;
         bool controller = combined && gamepadButtons.Checked;
-        mouseEditor.Visible = !controller; combinedEditor.Visible = controller;
-        (controller ? combinedEditor : mouseEditor).BringToFront();
+        editor.Visible = index == 0;
+        mouseEditor.Visible = index > 0 && !controller; combinedEditor.Visible = controller;
+        ActiveEditor.BringToFront();
         mouseEditor.SetNavigationMode(combined);
         string mouseHint = combined && gamepadButtons.Checked ? L.T("マウス移動と、下のボタン・方向・スティックを送信します。マウスクリックは出力しません。", "Sends mouse movement and the buttons, D-pad and sticks below. No mouse clicks.") :
             combined ? L.T("B→左クリック、A→右クリック。コントローラー側は−／＋／HOMEのみ送信します。", "B → left click, A → right click. The controller sends only − / + / HOME.") :

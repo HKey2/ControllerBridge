@@ -196,6 +196,15 @@ internal sealed class DarkTabControl : TabControl
         bool changed = muted ? mutedTabs.Add(index) : mutedTabs.Remove(index);
         if (changed && IsHandleCreated && index >= 0 && index < TabCount) Invalidate(GetTabRect(index));
     }
+    internal void SelectAdjacentAvailableTab(int direction)
+    {
+        if (TabCount == 0) return;
+        for (int step = 1; step <= TabCount; step++)
+        {
+            int next = (Math.Max(0, SelectedIndex) + direction * step % TabCount + TabCount) % TabCount;
+            if (!mutedTabs.Contains(next)) { SelectedIndex = next; return; }
+        }
+    }
     public DarkTabControl() => SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {

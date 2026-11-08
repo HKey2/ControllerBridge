@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.22.0 - GUI r2 and RP2350-USB-A firmware 0.22.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.22.0 - GUI r3 and RP2350-USB-A firmware 0.22.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -98,7 +98,11 @@ Save pending edits before reordering. A completed move is saved immediately and 
 
 Per-profile output modes, button behavior, shift settings, and LED colors are included. Common diagnostic settings and saved measurements are separate. Save or discard drafts before either operation.
 
-New backups use `ControllerBridge.Slots`, JSON version 4, with a SHA-256 checksum. JSON v2/v3 backups are verified and converted; v2/v5 has shift disabled and v3/v6 retains its first three modifiers. Missing shared conversion settings use the import defaults described under [compatibility](#import-and-upgrade-compatibility). JSON v1 remains unsupported. Keep a pre-upgrade backup if returning to old firmware: it cannot read v8 banks or JSON v5. The board validates payload, generation, CRC and profiles before writing the inactive copy; an interrupted transfer before commit leaves the active bank intact.
+New backups use `ControllerBridge.Slots`, JSON version 5, with a SHA-256 checksum. JSON v2/v3 backups are verified and converted; v2/v5 has shift disabled and v3/v6 retains its first three modifiers. Missing shared conversion settings use the import defaults described under [compatibility](#import-and-upgrade-compatibility). JSON v1 remains unsupported. Keep a pre-upgrade backup if returning to old firmware: it cannot read v8 banks or JSON v5. The board validates payload, generation, CRC and profiles before writing the inactive copy; an interrupted transfer before commit leaves the active bank intact.
+
+### Included sample slots
+
+The repository and release ZIP include [samples/ControllerBridge-Config-Sample_v0.22.0.json](../samples/ControllerBridge-Config-Sample_v0.22.0.json). Back up your current slots first, then choose **Restore all slots** to load it. This replaces the complete bank, including unused slots; it is not an individual-profile import. Review controller identities and mappings for your hardware. See the [sample instructions](../samples/README.md).
 
 ### Individual profile files
 

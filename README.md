@@ -26,7 +26,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.22.0 - GUI r2 (firmware 0.22.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.22.0 - GUI r3 (firmware 0.22.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**GUI r3:** Fixed flicker when switching output tabs and repeated scaling that could push shared settings out of view on high-DPI displays. Added a [sample slot configuration](samples/README.md), also included in the release ZIP.
 
 **GUI r2:** Trackball's click-conversion mode is now named **Virtual Cursor** in Conversion mapping and Shared settings. Paddle retains **Virtual Rolling**. This is a display-name change; behavior and saved settings are unchanged.
 

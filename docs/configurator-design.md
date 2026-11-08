@@ -1,8 +1,10 @@
 # Configuration and storage design
 
-This describes the current ControllerBridge configurator 0.22.0 - GUI r2 and firmware 0.22.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
+This describes the current ControllerBridge configurator 0.22.0 - GUI r3 and firmware 0.22.0. It is an implementation reference, not a release history. See the [user guide](configurator-guide.md) for normal operations.
 
 The four profile actions share one compact, equal-width column on the right: Duplicate profile, Delete profile, LED RGB settings and Conversion mapping. The existing default client size retains the full combined-output editor without scrolling. Delete confirmation states the existing all-drafts-saved requirement for dragging; its save and reorder logic is unchanged. Japanese board references use 「デバイス」 throughout the interface. The shared pointing-row factory uses the existing RaisedTableLayoutPanel for separate Trackball and Paddle groups, with compact padding and a gap between their borders. Existing controls, event handlers and enabled-state behavior are retained.
+
+The output-mode headers select among three editors within one fixed content host. Input interval and pointing settings retain the same parent across tab changes, avoiding repeated ambient-font/DPI scaling and hide/show repaint cycles. Standard Ctrl+Tab and Ctrl+PageUp/PageDown navigation is forwarded by the shared host.
 
 ## Architecture and capabilities
 

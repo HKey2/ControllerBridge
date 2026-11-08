@@ -1,6 +1,20 @@
 # Verification record
 
-Applies to configurator **0.22.0 - GUI r2** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+Applies to configurator **0.22.0 - GUI r3** and normal firmware **0.22.0**. Profile/bank formats are v8 (848 / 13,908 bytes), exports are JSON v5, and shared settings use 228 bytes. Dated entries describe their own versions. Current memory is recorded at the end.
+
+## 2026-11-08 — Stable output-tab content and bundled sample slots (GUI r3)
+
+The user accepted the tested layout candidate, confirming that output-tab flicker was gone. GUI r3 adopts the same three-file structural fix: shared input-interval and pointing settings keep a permanent parent, and tab selection changes only editor visibility. Ctrl+Tab / Ctrl+PageUp / Ctrl+PageDown retain output-tab navigation. The diagnostic/candidate title and test instrumentation are absent from the product.
+
+The preceding investigation reproduced repeated width doubling on a real 192-DPI desktop (156 to 9,984 pixels after six tab changes); the accepted candidate held 156 pixels with no parent, font or row-visibility changes on those switches. Japanese/English mode changes, rebinding after a simulated registration/modal operation, preserved edit values, keyboard selection and simulated 125/150/200% transitions passed. Separate 96-DPI logical windows spanning 1,024×768 through 1,920×1,080 retained 78-pixel input controls and reachable content. These viewport checks did not change physical display resolution and are not a claim that every display configuration has been tested.
+
+The adopted GUI r3 source passes the existing output-tab suite in Japanese and English: 128 checks each, 256 total. Captures identify GUI r3 and were visually inspected. Local DrawToBitmap capture support explicitly composites the shared panel because native tab-page rendering otherwise overwrites sibling content in off-screen bitmaps. This capture adjustment exists only under ignored test/development.
+
+The supplied sample is stored byte-for-byte in samples/ControllerBridge-Config-Sample_v0.22.0.json and included in the release ZIP. The product SlotBackup.Load path validates JSON v5, the SHA-256, all 16 v8 slots and their IDs/switching settings; Encode returns exactly the original 13,908-byte bank. Five slots are enabled. Bilingual instructions explain backing up first and replacing the complete bank through Restore all slots.
+
+The normal self-contained Release build uses existing .NET SDK 9.0.319 and runtime 9.0.21. It contains 213 product types, including SharedTabContentHost, without development launch options or diagnostic/probe classes. Embedded firmware, manifest and icon match the previous release exactly. Firmware remains 0.22.0 and was not rebuilt. Memory remains Flash 119,788 plus 49,152 reserved (1,928,212 free), static SRAM 156,296 plus 8,192 stacks (367,992 remaining), and common settings 228 (3,868 free). The r3 metadata identifies the uncommitted source delta from commit 215e74415cc7e45586fe2fbaebd540e087bb34bb; it does not label this a clean committed build.
+
+Evidence: test/development/results/spinner-adoption-r3-20261108; preceding DPI/viewport evidence: the local spinner-root-fix-20261108 investigation. Older release archives are retained.
 
 ## 2026-11-06 — Retain GUI r2 for the uncommitted change set
 
