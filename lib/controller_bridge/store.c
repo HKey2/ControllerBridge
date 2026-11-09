@@ -153,7 +153,7 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
         inertia->crc==crc32((const uint8_t *)inertia,16) && udk_inertia_unpack(&candidate,inertia->options,inertia->interval_ms);
     if(inertia_valid)*settings=candidate;
     const rolling_setting *host=(const rolling_setting *)(inertia+1);
-    bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=1 &&
+    bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=2 &&
         host->crc==crc32((const uint8_t *)host,12);
     if(host_valid)settings->host_mode=(uint8_t)host->value;
     return host_valid && inertia_valid && threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;

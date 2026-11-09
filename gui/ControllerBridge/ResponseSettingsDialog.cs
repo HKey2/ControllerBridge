@@ -12,7 +12,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly TableLayoutPanel values;
     private bool saving;
     private readonly DarkRadioButton hostS = new() { Text = "S", AutoSize = true },
-        hostAuto = new() { Text = "Auto", AutoSize = true, Enabled = false },
+        hostAuto = new() { Text = "Auto", AutoSize = true },
         hostX = new() { Text = "X", AutoSize = true };
     internal MouseUdlrSettings Result { get; private set; }
     private readonly NumericUpDown[] editors;
@@ -69,16 +69,16 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             "A factor of 0.90 retains 90% of inertia each interval. Inertia ends at or below the threshold.\nEnable it in each profile's Hold settings."));
         TableLayoutPanel paddle = Group("Paddle — Virtual Rolling", 2);
         Row(paddle, L.T("回転感度", "Rotation sensitivity"), rollingGain, "°/pt");
-        TableLayoutPanel host = Group(L.T("接続先モード", "Host mode"), 3);
+        TableLayoutPanel host = Group(L.T("出力モード", "Host mode"), 3);
         FlowLayoutPanel modes = new() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new(4, 2, 4, 6) };
         foreach (RadioButton radio in new[] { hostS, hostAuto, hostX }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
         hostS.AccessibleName = L.T("S：Switch互換", "S: Switch compatible");
-        hostAuto.AccessibleName = L.T("Auto：現在は使用不可", "Auto: currently unavailable");
-        hostX.AccessibleName = "X: Xbox 360 XInput";
-        hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1;
+        hostAuto.AccessibleName = L.T("Auto：Xを優先し、不成立ならSへ一度だけ切替", "Auto: try X first, then S once if needed");
+        hostX.AccessibleName = L.T("X : Xbox360互換", "X: Xbox 360 XInput");
+        hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1; hostAuto.Checked = current.HostMode == 2;
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
-        Note(host, L.T("S：従来のSwitch互換出力　X：Xbox 360 XInput出力\n変更を保存するとUSBが再接続されます。Autoは準備中です。",
-            "S: Switch compatible output   X: Xbox 360 XInput output\nSaving a mode change reconnects USB. Auto is not available yet."));
+        Note(host, L.T("S：従来のSwitch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nモードの変更を保存するとUSBが再接続されます。",
+            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nSaving a mode change reconnects USB."));
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;
@@ -102,13 +102,13 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             control.ValueChanged += (_, _) => UpdateSaveButton();
             control.TextChanged += (_, _) => UpdateSaveButton();
         }
-        hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton();
+        hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton(); hostAuto.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
         FormClosing += (_, e) => { if (saving) e.Cancel = true; }; Controls.Add(root); Ui.ThemeInputs(this);
     }
     private bool HasChanges()
     {
-        bool changed = (hostX.Checked ? 1u : 0u) != original.HostMode;
+        bool changed = (hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode;
         for (int i = 0; i < editors.Length; i++)
         {
             NumericUpDown control = editors[i];
@@ -130,7 +130,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         {
             MouseUdlrSettings next = original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
                 Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value, InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
-                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostX.Checked ? 1u : 0u, Persisted = true };
+                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
             saving = true; values.Enabled = save.Enabled = cancel.Enabled = false;
             MouseUdlrSettings actual = await persist(original, next);
             if (actual != next) throw new IOException(L.T("保存結果が一致しません。", "Saved values do not match."));
@@ -154,7 +154,6 @@ internal sealed partial class MainForm
             using MouseUdlrSettingsDialog dialog = new(await client.ReadAsync(), client.SaveAsync);
             if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Saved)
             {
-                OutputPresentation.HostMode = dialog.Result.HostMode;
                 // Save/readback is complete before asking the device to detach.
                 await bridge.ApplyHostOutputAsync();
                 await RefreshDevice(); BindSelected();

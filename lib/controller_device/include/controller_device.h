@@ -11,12 +11,15 @@ typedef struct {
     uint16_t device_length, configuration_length, report_length;
     const char *manufacturer, *product, *serial;
     uint8_t input_length;
+    uint32_t short_string_stall_mask; // Reference quirks: selected strings STALL instead of a terminating ZLP.
     bool relative_mouse; // GET_REPORT returns buttons with zero relative movement.
     const uint8_t *configuration_report; // Optional Feature-only HID interface 1, IN2 stays NAK.
     uint16_t configuration_report_length; // Mutually exclusive with auxiliary_bulk.
     uint8_t configuration_interface; // Zero selects the legacy default IF1.
-    uint8_t configuration_endpoint; // Zero selects the legacy default IN2; XInput uses IN3.
+    uint8_t configuration_endpoint; // Zero selects the legacy default IN2; XInput uses IN5/IN6.
     const uint8_t *secondary_report; // HID interface 1 / IN2; excludes the two options above.
+    uint8_t secondary_interface; // Zero selects IF1; XInput appends mouse at IF4.
+    uint8_t secondary_endpoint; // Zero selects IN2; XInput appends mouse at IN5.
     uint16_t secondary_report_length;
     uint8_t secondary_input_length;
     bool secondary_relative_mouse;
@@ -29,7 +32,7 @@ typedef struct {
     void (*set_feature)(const uint8_t *data, uint16_t length, void *context);
     void (*output)(const uint8_t *data, uint16_t length, void *context);
     void (*auxiliary_output)(const uint8_t *data, uint16_t length, void *context);
-    // Optional read-only control request. Return -1 to use standard handling.
+    // Optional read-only control request. -1 uses standard handling; -2 explicitly stalls.
     int (*control_read)(const uint8_t setup[8], uint8_t *data, uint16_t capacity, void *context);
     void (*observe_setup)(const uint8_t setup[8], void *context);
     void (*observe_event)(uint32_t event, uint32_t detail, void *context);

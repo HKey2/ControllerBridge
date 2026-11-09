@@ -6,6 +6,7 @@
 #include "hardware/watchdog.h"
 #include "controller_bridge.h"
 #include "xinput_wired.h"
+#include "host_output.h"
 #include "egret_switch_profile.h"
 #include "profile_runtime.h"
 #include "profile_button.h"
@@ -17,7 +18,7 @@
 
 #define EVENT_COUNT 128
 enum { CMD_INFO=1,CMD_GET_CONFIG,CMD_SET_CONFIG,CMD_SAVE_CONFIG,CMD_START,CMD_STOP,
-       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53 };
+       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53,CMD_HOST_OUTPUT=54 };
 _Static_assert(UPR_CMD_PROFILE_ID>CMD_LED,"Profile identity command must not overlap application commands");
 enum { MEASURE_IDLE,MEASURE_STARTING,MEASURE_RUNNING,MEASURE_STOPPING };
 static uc_event events[EVENT_COUNT];
@@ -26,8 +27,11 @@ static ub_configuration config;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool direction_setting_saved;
 static uint8_t active_output_interval;
+static uint32_t xinput_next_report;
 static uint8_t active_output_options;
 static uint8_t active_host_mode;
+static uh_output host_output;
+static atomic_bool xinput_accepted;
 static um_queue mouse_queue;
 static um_flight mouse_flight;
 static uint8_t last_mouse_output[UM_REPORT_BYTES];
@@ -100,10 +104,20 @@ static void set_feature(const uint8_t *data,uint16_t length,void *context) {
     if(length!=64 || memcmp(data,"UC2C",4) || data[4]!=1 || atomic_load_explicit(&command_pending,memory_order_relaxed))return;
     memcpy(command,data,64); atomic_store_explicit(&command_pending,true,memory_order_release);
 }
+static int host_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capacity,void *context) {
+    int result=xw_control_read(setup,data,capacity,context);
+    if(result>=0 && uh_xinput_control(setup))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
+    return result;
+}
+static void host_output_received(const uint8_t *data,uint16_t length,void *context) {
+    (void)context;
+    if(uh_xinput_output(data,length))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
+}
 static void input_complete(uint32_t cookie,uint32_t time_us,bool acked,void *context) {
     (void)context;
     // Only one hardware packet can be outstanding. Main consumes this event
     // before arming another, so the mailbox cannot overwrite an earlier ACK.
+    if(acked && active_host_mode==UH_XINPUT)atomic_store_explicit(&xinput_accepted,true,memory_order_release);
     ack_cookie=cookie; ack_time=time_us; ack_success=acked;
     atomic_store_explicit(&ack_pending,true,memory_order_release);
 }
@@ -227,6 +241,7 @@ static void schedule_output(void) {
         if(pad_was_ready && upr_direction_enabled())reset_output(time_us_32());
         pad_was_ready=false;return;
     }
+    if(!pad_was_ready)xinput_next_report=time_us_32();
     pad_was_ready=true;
     // Expiration is an ordered input edge, even while earlier frames wait for ACK.
     // Never replace the historical masks already queued for quick reversals.
@@ -237,6 +252,9 @@ static void schedule_output(void) {
         ub_queue_push(&outgoing,&release);
     }
     if(atomic_load_explicit(&ack_pending,memory_order_acquire))return;
+    // Reference: 11 ms report production sampled by a 4 ms USB poll. Keeping
+    // the producer clock independent of ACK time gives the measured 8/12 ms gaps.
+    if(active_host_mode && (int32_t)(time_us_32()-xinput_next_report)<0)return;
     bool from_queue=ub_queue_depth(&outgoing)!=0;
     ub_frame next;
     if(from_queue)next=outgoing.pending[outgoing.read];
@@ -273,6 +291,10 @@ static void schedule_output(void) {
     bool sent=ud_send(active_host_mode?xinput:(const uint8_t *)&flight.report,
         active_host_mode?XW_REPORT_BYTES:sizeof(flight.report),flight.sequence,&armed);
     if(sent) {
+        if(active_host_mode) {
+            xinput_next_report+=XW_REPORT_PERIOD_US;
+            if((int32_t)(armed-xinput_next_report)>=0)xinput_next_report=armed+XW_REPORT_PERIOD_US;
+        }
         if(from_queue) { ub_frame consumed; ub_queue_pop(&outgoing,&consumed); }
         ub_direction_sent(&direction_pulse,flight.direction_key,flight.sequence);
         flight_valid=true;
@@ -351,7 +373,7 @@ static void reset_output(uint32_t timestamp) {
 }
 static bool request_profile_output(uint32_t now) {
     uint8_t desired=upr_output_options();
-    if(phase==MEASURE_IDLE && !output_disconnected && active_host_mode==direction_settings.host_mode && (desired&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
+    if(phase==MEASURE_IDLE && !output_disconnected && host_output.selected==direction_settings.host_mode && active_host_mode==host_output.active && (desired&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
         // Button routing does not change USB descriptors. Release the old
         // interpretation before accepting reports under the new one.
         if(desired!=active_output_options) { active_output_options=desired;reset_output(now); }
@@ -641,6 +663,10 @@ static void handle_command(void) {
         put32(payload+32,mouse_queue.input_x);put32(payload+36,mouse_queue.input_y);
         put32(payload+40,mouse_queue.acked_x);put32(payload+44,mouse_queue.acked_y);
         put32(payload+48,mouse_queue.pending_sources);put32(payload+52,mouse_queue.flushes);break;
+    case CMD_HOST_OUTPUT:
+        memcpy(payload,"HOS1",4);payload[4]=direction_settings.host_mode;payload[5]=active_host_mode;
+        payload[6]=host_output.state;payload[7]=!mouse_mode() || combined_mode();
+        put32(payload+8,UH_PROBE_US/1000u);break;
     case CMD_MOUSE_WIRE:
         memcpy(payload,"MWR1",4);payload[4]=ud_mouse_protocol(combined_mode());payload[5]=UM_REPORT_BYTES;
         payload[6]=mouse_mode();payload[7]=combined_mode();
@@ -670,7 +696,9 @@ static void handle_command(void) {
     publish_response(reply);
 }
 static void start_usb_output(uint8_t options) {
-    active_output_options=options;active_host_mode=direction_settings.host_mode;
+    uh_select(&host_output,direction_settings.host_mode);
+    active_output_options=options;active_host_mode=host_output.active;
+    atomic_store_explicit(&xinput_accepted,false,memory_order_release);
     flight_valid=mouse_flight_valid=mouse_was_ready=pad_was_ready=false;
     atomic_store_explicit(&ack_pending,false,memory_order_release);
     atomic_store_explicit(&mouse_ack_pending,false,memory_order_release);
@@ -722,22 +750,33 @@ static void start_usb_output(uint8_t options) {
         output.configuration_length=combined?XW_COMBINED_CONFIGURATION_BYTES:XW_CONFIGURATION_BYTES;
         output.report=NULL;output.report_length=0;
         output.configuration_report=um_feature_descriptor;output.configuration_report_length=sizeof(um_feature_descriptor);
-        output.configuration_interface=combined?2:1;output.configuration_endpoint=3;
-        output.output_endpoint=2;output.control_read=xw_control_read;
-        output.manufacturer="ControllerBridge";output.product="ControllerBridge XInput";
-        output.input_length=XW_REPORT_BYTES;active_output_interval=1;
+        output.configuration_interface=combined?5:4;output.configuration_endpoint=combined?6:5;
+        output.secondary_interface=4;output.secondary_endpoint=5;
+        output.output_endpoint=1;output.control_read=host_control_read;output.output=host_output_received;
+        output.short_string_stall_mask=(1u<<1)|(1u<<3);
+        output.manufacturer=NULL;output.product=NULL;output.serial=NULL; // Exact raw strings in xw_control_read.
+        output.input_length=XW_REPORT_BYTES;active_output_interval=XW_POLL_INTERVAL_MS;
         // ud_init copies the initial report before this local buffer expires.
         uint8_t initial_xinput[XW_REPORT_BYTES];xw_encode(&initial,initial_xinput);
         output.initial_input=initial_xinput;
-        if(combined)output_configuration[73]=config.output_interval_ms;
+        if(combined)output_configuration[177]=config.output_interval_ms;
         ud_init(&output);return;
     }
     ud_init(&output);
 }
+static void host_auto_task(uint32_t now) {
+    if(!uh_pending(&host_output) || output_disconnected || output_change_requested ||
+       (mouse_mode() && !combined_mode()))return;
+    ud_statistics device;ud_statistics_get(&device);
+    bool accepted=atomic_load_explicit(&xinput_accepted,memory_order_acquire);
+    if(uh_poll(&host_output,now,device.resets || device.setups || device.sof,device.configured,accepted)) {
+        output_change_requested=true;output_change_at=now;
+    }
+}
 static void output_change_task(uint32_t now) {
     if(!output_change_requested || phase!=MEASURE_IDLE || (int32_t)(now-output_change_at)<0)return;
     if(!output_disconnected) {
-        if(active_host_mode==direction_settings.host_mode && (upr_output_options()&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
+        if(host_output.selected==direction_settings.host_mode && active_host_mode==host_output.active && (upr_output_options()&(UM_MOUSE|UM_COMBINED))==(active_output_options&(UM_MOUSE|UM_COMBINED))) {
             request_profile_output(now);return;
         }
         ud_disconnect();output_disconnected=true;output_change_at=now+250000;
@@ -822,7 +861,7 @@ int __not_in_flash_func(main)(void) {
         uint32_t now=time_us_32();
         boot_button_task(now);
         now=time_us_32();
-        if(!reboot_at)output_change_task(now);
+        if(!reboot_at) { host_auto_task(now);output_change_task(now); }
         status_led_task(now,input_ready,ud_ready(),upr_led_rgb());
         if(boot_capture_ms && input_ready && ud_ready() && !output_change_requested) {
             if(!ready_since)ready_since=now;

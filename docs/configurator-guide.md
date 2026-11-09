@@ -144,17 +144,17 @@ See [Button shift](button-shift.md) for an example, the difference between overr
 
 ## S / Auto / X host mode
 
-Open **Shared settings** and use the last group. **S** is the default and retains Switch-compatible output. **Auto** is grey and cannot be selected. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference.
+Open **Shared settings** and use the last group. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference.
 
-Choose **Save to device** to persist a change and reconnect USB. The configurator reconnects through its separate settings interface, preserving all profile drafts. The face-button grid becomes Y at the top, X at the left, B at the right and A at the bottom. Existing mappings retain their physical positions. HOME becomes Guide; Capture has no Xbox 360 counterpart and is unavailable in X. See [wire mapping, Windows behavior and Switch 2 Pro setup](xinput-output.md).
+Choose **Save to device** to persist a change and reconnect USB. The configurator reconnects through its separate settings interface, preserving all profile drafts. When the active output is X, the face-button grid becomes Y at the top, X at the left, B at the right and A at the bottom. Existing mappings retain their physical positions. HOME becomes Guide; Capture has no Xbox 360 counterpart and is unavailable in X. See [wire mapping, Windows behavior and Switch 2 Pro setup](xinput-output.md).
 
 ## Output modes
 
 | Tab | Output |
 |---|---|
-| Gamepad | Mapped buttons, directions, and stick axes as a Switch-compatible gamepad |
+| Gamepad | Mapped buttons, directions, and stick axes using the active S or X protocol |
 | USB mouse | Relative movement and buttons as a standard USB mouse |
-| Mouse + Gamepad | Separate mouse and gamepad HID interfaces on one USB device |
+| Mouse + Gamepad | Separate USB mouse and gamepad interfaces, with the gamepad using the active S or X protocol |
 
 Selecting an available tab edits the profile. Save the slot to persist it. Unavailable tabs appear dimmed. Hover over a dimmed tab to see the reason and how to enable it in a tooltip. No permanent explanation occupies space inside another tab. Clicking an unavailable tab keeps the current tab and settings and does not create an unsaved edit. Keyboard tab navigation skips unavailable modes. If the bridge is disconnected or its firmware does not support profile output modes, the tooltip explains how to reconnect or update it. Only the combined tab shows **Button behavior**:
 

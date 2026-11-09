@@ -478,11 +478,19 @@ static bool enumerate(void) {
             // A stall is optional on other pads; input itself remains authoritative.
             uint8_t identity[20];uint16_t actual;
             ut_result identification=control(1,0xc1,1,0x0100,iface->number,sizeof(identity),identity,&actual);
-            // Standard player-one LED command, also sent by desktop Xbox drivers.
+            // Complete the wired startup: LED, controller start, LED, steady LED.
+            // A single blinking-LED packet leaves 8BitDo Arcade Stick waiting.
+            // One open pipe preserves DATA0/DATA1 across the four OUT packets.
+            static const uint8_t startup[][3]={{1,3,2},{2,8,3},{1,3,2},{1,3,6}};
             ut_result led=UT_PENDING;
-            if(iface->output_descriptor[0]) {
-                uint8_t command[]={1,3,2};
-                led=ut_interrupt_out(1,iface->output_descriptor,command,sizeof(command));
+            if(iface->output_descriptor[0] && ut_open(1,iface->output_descriptor)) {
+                for(unsigned step=0;step<sizeof(startup)/sizeof(startup[0]);++step) {
+                    uint8_t command[3];memcpy(command,startup[step],sizeof(command));
+                    led=ut_submit(1,iface->output_descriptor[2],command,sizeof(command))?
+                        ut_transfer_wait(1,iface->output_descriptor[2]):UT_ERROR;
+                    if(led!=UT_OK)break;
+                }
+                ut_close_endpoint(1,iface->output_descriptor[2]);
             }
             status(UC_INPUT_INIT,(uint32_t)identification|((uint32_t)led<<8)|((uint32_t)actual<<16));
             const uint8_t *schema=uc_xbox360_layout(&iface->report_length);

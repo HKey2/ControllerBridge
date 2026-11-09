@@ -152,7 +152,9 @@ internal sealed class HidBridge : IDisposable
                     if (!path.Contains("vid_20d6&pid_a713", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4004", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4005", StringComparison.OrdinalIgnoreCase) &&
-                        !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase)) continue;
+                        !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase) &&
+                        !path.Contains("vid_045e&pid_4005", StringComparison.OrdinalIgnoreCase) &&
+                        !path.Contains("vid_045e&pid_4006", StringComparison.OrdinalIgnoreCase)) continue;
                     SafeFileHandle h = CreateFileW(path, 0xc0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
                     if (h.IsInvalid) { h.Dispose(); continue; }
                     bool keep = false;
@@ -214,6 +216,7 @@ internal sealed class HidBridge : IDisposable
         if (!b.AsSpan(0, 4).SequenceEqual("MSE1"u8)) throw new InvalidDataException(L.T("出力切替にはファームウェア0.9.0-dev以降が必要です。", "Output switching requires firmware 0.9.0-dev or later."));
         return new OutputState(OutputSettings.Decode(b[4]), OutputSettings.Decode(b[5]), b[6] != 0);
     });
+    internal Task<HostOutputState> ReadHostOutputAsync() => Run(() => HostOutputState.Read(Command(54)));
     internal Task ApplyHostOutputAsync() => Run(() => { ApplyProfileOutput(Caps().BankGeneration); return true; });
     private void ApplyProfileOutput(uint expectedGeneration)
     {

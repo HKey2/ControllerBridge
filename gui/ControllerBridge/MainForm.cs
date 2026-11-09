@@ -362,7 +362,7 @@ internal sealed partial class MainForm : Form
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
             fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
-            OutputPresentation.HostMode = read.HostMode;
+            OutputPresentation.HostMode = read.HostMode; OutputPresentation.SelectedHostMode = read.SelectedHostMode;
             if (!retain && caps.ActiveSlot < profiles.Length) selected = caps.ActiveSlot;
             UpdateConnection();
             RefreshSlots(); BindSelected();
@@ -421,6 +421,8 @@ internal sealed partial class MainForm : Form
         }
         DeviceState device = await bridge.ReadDeviceAsync(); caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
         fields.Clear(); fields.AddRange(device.Fields); outputState = caps.SupportsMouseOutput ? await bridge.ReadOutputStateAsync() : null;
+        HostOutputState host = await bridge.ReadHostOutputAsync();
+        OutputPresentation.HostMode = host.Active; OutputPresentation.SelectedHostMode = host.Selected;
         SyncOutputControls(); UpdateConnection();
     }
     internal static bool NoInput(Capabilities? value) => value is { Connected: false, Vid: 0, FieldCount: 0 };
@@ -434,6 +436,7 @@ internal sealed partial class MainForm : Form
         string connectionText = caps.Connected ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel} {caps.FieldCount}項目", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel}, {caps.FieldCount} fields") :
             caps.Vid != 0 ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4} を検出", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4} detected") :
             L.T("デバイス 接続済み  •  入力コントローラーをUSB-Aへ接続してください。", "Device connected  •  Connect an input controller to USB-A.");
+        connectionText += L.T("  •  出力 ", "  •  Output ") + OutputPresentation.ModeLabel;
         string stateText = !caps.Connected ? WaitingState(caps) : caps.InvalidBinding ? L.T("入力形式が保存済みの割り当てと一致しません。再登録してください。", "The input layout does not match the saved mapping. Register the controller again.") :
             caps.ActiveSlot < profiles.Length ? L.T($"スロット {caps.ActiveSlot + 1} を使用中", $"Slot {caps.ActiveSlot + 1} is active") :
             L.T("このコントローラーに一致するプロファイルがありません。未使用スロットから追加してください。", "This controller has no matching profile. Use an empty slot to add it.");

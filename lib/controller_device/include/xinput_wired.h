@@ -5,8 +5,18 @@
 #include "switch_wired.h"
 
 #define XW_REPORT_BYTES 20u
-#define XW_CONFIGURATION_BYTES 74u
-#define XW_COMBINED_CONFIGURATION_BYTES 99u
+// Default PIDs retain Windows composite/configuration access. The reference
+// PID 0x028e can be selected explicitly at build time for a dedicated host.
+#ifndef XW_GAMEPAD_PID
+#define XW_GAMEPAD_PID 0x4005u
+#endif
+#ifndef XW_COMBINED_PID
+#define XW_COMBINED_PID 0x4006u
+#endif
+#define XW_POLL_INTERVAL_MS 4u
+#define XW_REPORT_PERIOD_US 11000u
+#define XW_CONFIGURATION_BYTES 178u
+#define XW_COMBINED_CONFIGURATION_BYTES 203u
 extern const uint8_t xw_device_descriptor[18];
 extern const uint8_t xw_combined_device_descriptor[18];
 extern const uint8_t xw_configuration_descriptor[XW_CONFIGURATION_BYTES];

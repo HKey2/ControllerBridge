@@ -29,6 +29,12 @@ add_library(controller_device STATIC
 target_include_directories(controller_device PUBLIC lib/controller_device/include)
 target_link_libraries(controller_device PUBLIC pico_stdlib PRIVATE hardware_irq hardware_resets hardware_sync)
 target_compile_options(controller_device PRIVATE -Wall -Wextra -Werror)
+# Keep normal Windows configuration access. Override only for a dedicated
+# compatibility build; 0x028e selects the retail whole-device Windows driver.
+set(CONTROLLER_XINPUT_PID "0x4005" CACHE STRING "XInput gamepad product ID")
+set(CONTROLLER_XINPUT_COMBINED_PID "0x4006" CACHE STRING "XInput gamepad plus mouse product ID")
+target_compile_definitions(controller_device PUBLIC
+    XW_GAMEPAD_PID=${CONTROLLER_XINPUT_PID} XW_COMBINED_PID=${CONTROLLER_XINPUT_COMBINED_PID})
 
 add_library(controller_bridge STATIC lib/controller_bridge/queue.c lib/controller_bridge/store.c
     lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c

@@ -26,7 +26,7 @@ static ud_statistics stat;
 static control_state control;
 static uint8_t control_data[512], last_input[64];
 static uint16_t control_length, control_offset, control_expected;
-static bool control_zlp, feature_out;
+static bool control_zlp, control_stall_zlp, feature_out;
 static uint8_t ep0_pid, ep1_pid, out1_pid, idle_rate;
 static volatile uint8_t protocol=1;
 static bool remote_wakeup;
@@ -46,16 +46,29 @@ static uint32_t secondary_cookie;
 static bool change_mouse_protocol(bool secondary,uint8_t value);
 static uint8_t configuration_interface(void) { return opt.configuration_interface?opt.configuration_interface:1; }
 static uint8_t configuration_endpoint(void) { return opt.configuration_endpoint?opt.configuration_endpoint:2; }
+static uint8_t secondary_interface(void) { return opt.secondary_interface?opt.secondary_interface:1; }
+static uint8_t secondary_endpoint(void) { return opt.secondary_endpoint?opt.secondary_endpoint:2; }
+static uint32_t secondary_bit(void) { return 1u<<(2*secondary_endpoint()); }
+static uint8_t control_packet_size(void) { return opt.device[7]; }
 static bool valid_interface(uint16_t index) {
-    return index==0 || (index==1&&(opt.auxiliary_bulk||opt.secondary_report)) ||
-        (opt.configuration_report && index==configuration_interface());
+    for(unsigned offset=9;offset+2<=opt.configuration_length;) {
+        unsigned n=opt.configuration[offset];if(n<2||offset+n>opt.configuration_length)break;
+        if(opt.configuration[offset+1]==4 && n>=9 && opt.configuration[offset+2]==index)return true;
+        offset+=n;
+    }
+    return false;
+}
+static uint16_t endpoint_packet_size(uint16_t address) {
+    for(unsigned offset=9;offset+2<=opt.configuration_length;) {
+        unsigned n=opt.configuration[offset];if(n<2||offset+n>opt.configuration_length)break;
+        if(opt.configuration[offset+1]==5 && n>=7 && opt.configuration[offset+2]==address)
+            return opt.configuration[offset+4]|((uint16_t)opt.configuration[offset+5]<<8);
+        offset+=n;
+    }
+    return 0;
 }
 static bool valid_endpoint(uint16_t address) {
-    return address==0 || address==0x80 || address==0x81 ||
-        (opt.output_endpoint && address==opt.output_endpoint) ||
-        (opt.auxiliary_bulk && (address==2 || address==0x82)) ||
-        (opt.secondary_report && address==0x82) ||
-        (opt.configuration_report && address==(0x80u|configuration_endpoint()));
+    return address==0 || address==0x80 || endpoint_packet_size(address)!=0;
 }
 
 // USB DPRAM is Device memory: libc memcpy may emit an unaligned STRH/LDRH
@@ -127,20 +140,17 @@ static void notify_secondary_cancel(void) {
 static void reset_input(void) {
     notify_cancel();
     notify_secondary_cancel();
-    usb_dpram->ep_ctrl[0].in=0;
-    usb_dpram->ep_buf_ctrl[1].in=0;
-    usb_dpram->ep_ctrl[0].out=0;
-    usb_dpram->ep_buf_ctrl[1].out=0;
-    usb_dpram->ep_ctrl[1].in=usb_dpram->ep_ctrl[1].out=0;
-    usb_dpram->ep_buf_ctrl[2].in=usb_dpram->ep_buf_ctrl[2].out=0;
-    usb_dpram->ep_ctrl[2].in=0;usb_dpram->ep_buf_ctrl[3].in=0;
+    for(unsigned ep=1;ep<16;++ep) {
+        usb_dpram->ep_ctrl[ep-1].in=usb_dpram->ep_ctrl[ep-1].out=0;
+        usb_dpram->ep_buf_ctrl[ep].in=usb_dpram->ep_buf_ctrl[ep].out=0;
+    }
     aux_busy=false; aux_in_pid=aux_out_pid=0;
-    HW_CLR->buf_status=EP1_BIT|OUT1_BIT|IN2_BIT|OUT2_BIT|IN3_BIT;
+    HW_CLR->buf_status=0xfffffffcu;
     ep1_pid=out1_pid=0; halted=configuration_halted=output_halted=false;
     secondary_pid=0;secondary_halted=false;
 }
 static void arm_output(void) {
-    arm_buffer(&usb_dpram->ep_buf_ctrl[opt.output_endpoint].out,(opt.output_endpoint==2?32:64)|USB_BUF_CTRL_LAST|(out1_pid?USB_BUF_CTRL_DATA1_PID:0));
+    arm_buffer(&usb_dpram->ep_buf_ctrl[opt.output_endpoint].out,endpoint_packet_size(opt.output_endpoint)|USB_BUF_CTRL_LAST|(out1_pid?USB_BUF_CTRL_DATA1_PID:0));
     out1_pid^=1;
 }
 static void arm_aux_output(void) {
@@ -172,23 +182,28 @@ static void enable_input(void) {
     if(opt.configuration_report) {
         uint8_t ep=configuration_endpoint();
         usb_dpram->ep_ctrl[ep-1].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
-            (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+(ep==3?256:128));
+            (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+256);
         // No Input reports on this interface: the endpoint always responds NAK.
     }
     if(opt.secondary_report) {
-        usb_dpram->ep_ctrl[1].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
+        usb_dpram->ep_ctrl[secondary_endpoint()-1].in=EP_CTRL_ENABLE_BITS|EP_CTRL_INTERRUPT_PER_BUFFER|
             (3u<<EP_CTRL_BUFFER_TYPE_LSB)|(offset+128);
     }
+    // The reference advertises accessory pipes but returns transfer errors on
+    // all five. Leave them inactive; only gamepad and appended HID pipes are armed.
+
 }
 static void control_next_in(void) {
     if(opt.observe_event)opt.observe_event(3,((uint32_t)control_length<<16)|control_offset,opt.context);
     uint16_t left=control_length-control_offset;
     if (left) {
-        uint16_t n=left>64?64:left;
+        uint16_t n=left>control_packet_size()?control_packet_size():left;
         ep0_in(control_data+control_offset,n,ep0_pid);
         ep0_pid^=1; control_offset+=n;
     } else if (control_zlp) {
-        control_zlp=false; ep0_in(NULL,0,ep0_pid); ep0_pid^=1;
+        control_zlp=false;
+        if(control_stall_zlp) { stall_control();return; }
+        ep0_in(NULL,0,ep0_pid); ep0_pid^=1;
     } else {
         control=C_STATUS_OUT; ep0_out(0,1);
     }
@@ -198,18 +213,25 @@ static void control_send(const void *data, uint16_t available, uint16_t requeste
     if (control_length>sizeof(control_data)) { stall_control(); return; }
     if (data!=control_data && control_length) memcpy(control_data,data,control_length);
     control_offset=0; ep0_pid=1; control=C_IN;
-    control_zlp=available<requested && (control_length%64)==0;
+    control_zlp=available<requested && (control_length%control_packet_size())==0;
     control_next_in();
 }
 static void control_status(void) { control=C_STATUS_IN; ep0_in(NULL,0,1); }
 static void descriptor_request(const setup_packet *s) {
     uint8_t type=s->value>>8,index=s->value;
-    if (type==1 && index==0 && s->kind==0x80) control_send(opt.device,opt.device_length,s->length);
+    if (type==1 && index==0 && s->kind==0x80) {
+        // Before SET_ADDRESS the host has not learned our EP0 packet size.
+        // Its oversized discovery read ends after one short-to-the-host packet.
+        uint16_t requested=s->length;
+        if(!usb_hw->dev_addr_ctrl && control_packet_size()<opt.device_length && requested>opt.device_length)
+            requested=control_packet_size();
+        control_send(opt.device,opt.device_length,requested);
+    }
     else if (type==2 && index==0 && s->kind==0x80) control_send(opt.configuration,opt.configuration_length,s->length);
     else if (type==0x22 && index==0 && s->kind==0x81 && s->index==0 && opt.report) control_send(opt.report,opt.report_length,s->length);
     else if (type==0x22 && index==0 && s->kind==0x81 && s->index==configuration_interface() && opt.configuration_report)
         control_send(opt.configuration_report,opt.configuration_report_length,s->length);
-    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==1 && opt.secondary_report)
+    else if (type==0x22 && index==0 && s->kind==0x81 && s->index==secondary_interface() && opt.secondary_report)
         control_send(opt.secondary_report,opt.secondary_report_length,s->length);
     else if (type==0x21 && index==0 && s->kind==0x81 && valid_interface(s->index)) {
         unsigned interface=0;
@@ -244,8 +266,11 @@ static void setup_received(void) {
     release_abort(3);
     control=C_IDLE; ep0_pid=1; pending_address=pending_config=-1; feature_out=false;
     HW_CLR->sie_status=USB_SIE_STATUS_SETUP_REC_BITS;
+    control_stall_zlp=s.kind==0x80 && s.request==6 && (s.value>>8)==3 &&
+        (s.value&255)<32 && (opt.short_string_stall_mask&(1u<<(s.value&255)));
     if((s.kind&0x80)&&opt.control_read) {
         int n=opt.control_read((const uint8_t *)&s,control_data,sizeof(control_data),opt.context);
+        if(n==-2) { stall_control();return; }
         if(n>=0) { if(n>(int)sizeof(control_data))stall_control(); else control_send(control_data,n,s.length); return; }
     }
     if ((s.kind&0x60)==0) {
@@ -266,7 +291,7 @@ static void setup_received(void) {
             (s.kind==0x82 && valid_endpoint(s.index)))) {
             uint8_t value[2]={s.kind==0x80?((remote_wakeup?2:0)|((opt.configuration[7]&0x40)?1:0)):
                 (s.kind==0x82 && ((s.index==0x81&&halted)||(s.index==opt.output_endpoint&&output_halted)||
-                (s.index==0x82&&secondary_halted)||(opt.configuration_report&&s.index==(0x80u|configuration_endpoint())&&configuration_halted))),0};
+                (s.index==(0x80u|secondary_endpoint())&&secondary_halted)||(opt.configuration_report&&s.index==(0x80u|configuration_endpoint())&&configuration_halted))),0};
             control_send(value,2,s.length); return;
         }
         if (s.kind==0x81 && s.request==10 && valid_interface(s.index)) {
@@ -285,10 +310,11 @@ static void setup_received(void) {
             }
             enable_input(); control_status(); return;
         }
-        if(s.kind==1&&s.request==11&&s.index==1&&opt.secondary_report&&!s.value&&!s.length) {
-            if(!abort_mask(IN2_BIT)) { stall_control();return; }
-            notify_secondary_cancel();usb_dpram->ep_buf_ctrl[2].in=0;secondary_pid=0;secondary_halted=false;
-            HW_CLR->buf_status=IN2_BIT;release_abort(IN2_BIT);control_status();return;
+        if(s.kind==1&&s.request==11&&s.index==secondary_interface()&&opt.secondary_report&&!s.value&&!s.length) {
+            uint32_t mask=secondary_bit();
+            if(!abort_mask(mask)) { stall_control();return; }
+            notify_secondary_cancel();usb_dpram->ep_buf_ctrl[secondary_endpoint()].in=0;secondary_pid=0;secondary_halted=false;
+            HW_CLR->buf_status=mask;release_abort(mask);control_status();return;
         }
         if(s.kind==1&&s.request==11&&s.index==1&&opt.auxiliary_bulk&&!s.value&&!s.length) { control_status(); return; }
         if(s.kind==1&&s.request==11&&s.index==configuration_interface()&&opt.configuration_report&&!s.value&&!s.length) {
@@ -299,11 +325,12 @@ static void setup_received(void) {
             usb_dpram->ep_buf_ctrl[configuration_endpoint()].in=configuration_halted?USB_BUF_CTRL_STALL:0;
             control_status();return;
         }
-        if(s.kind==2 && (s.request==1||s.request==3) && s.index==0x82 && opt.secondary_report && !s.value && !s.length) {
-            if(!abort_mask(IN2_BIT)) { stall_control();return; }
+        if(s.kind==2 && (s.request==1||s.request==3) && s.index==(0x80u|secondary_endpoint()) && opt.secondary_report && !s.value && !s.length) {
+            uint32_t mask=secondary_bit();
+            if(!abort_mask(mask)) { stall_control();return; }
             notify_secondary_cancel();secondary_halted=s.request==3;secondary_pid=0;
-            usb_dpram->ep_buf_ctrl[2].in=secondary_halted?USB_BUF_CTRL_STALL:0;
-            HW_CLR->buf_status=IN2_BIT;release_abort(IN2_BIT);control_status();return;
+            usb_dpram->ep_buf_ctrl[secondary_endpoint()].in=secondary_halted?USB_BUF_CTRL_STALL:0;
+            HW_CLR->buf_status=mask;release_abort(mask);control_status();return;
         }
         if(s.kind==2 && (s.request==1||s.request==3) && opt.output_endpoint && s.index==opt.output_endpoint && !s.value && !s.length) {
             uint32_t mask=1u<<(2*opt.output_endpoint+1);
@@ -322,10 +349,10 @@ static void setup_received(void) {
             HW_CLR->buf_status=EP1_BIT; release_abort(EP1_BIT);
             control_status(); return;
         }
-    } else if ((s.kind&0x7f)==0x21 && (s.index==0 || (s.index==1&&opt.secondary_report) || (opt.configuration_report&&s.index==configuration_interface()))) {
+    } else if ((s.kind&0x7f)==0x21 && ((s.index==0&&opt.report) || (s.index==secondary_interface()&&opt.secondary_report) || (opt.configuration_report&&s.index==configuration_interface()))) {
         uint8_t report_type=s.value>>8,report_id=s.value;
         bool feature_interface=s.index==(opt.configuration_report?configuration_interface():0);
-        if(s.index==1&&opt.secondary_report) {
+        if(s.index==secondary_interface()&&opt.secondary_report) {
             // The boot mouse has no report IDs, output reports or Feature protocol.
             if(s.kind==0xa1&&s.request==1&&report_type==1&&!report_id) { control_send(secondary_last,opt.secondary_input_length,s.length);return; }
             if(s.kind==0x21&&s.request==10&&!report_id&&!s.length) { secondary_idle=s.value>>8;control_status();return; }
@@ -346,7 +373,7 @@ static void setup_received(void) {
         }
         if (s.kind==0x21 && s.request==9 && ((report_type==2&&s.index==0)||(report_type==3&&feature_interface&&report_id==0)) && s.length<=64) {
             control=C_OUT; control_offset=0; control_expected=s.length; feature_out=report_type==3;
-            if (s.length) ep0_out(s.length,1); else control_status();
+            if (s.length) ep0_out(s.length<control_packet_size()?s.length:control_packet_size(),1); else control_status();
             return;
         }
         if (s.kind==0x21 && s.request==10 && !s.length) { if(!s.index)idle_rate=s.value>>8;control_status();return; }
@@ -362,8 +389,9 @@ static void setup_received(void) {
 static void completed_buffers(void) {
     uint32_t done=usb_hw->buf_status;
     if(opt.observe_event)opt.observe_event(2,done,opt.context);
-    if(done&IN2_BIT) {
-        HW_CLR->buf_status=IN2_BIT;
+    uint32_t second_bit=opt.secondary_report?secondary_bit():IN2_BIT;
+    if(done&second_bit) {
+        HW_CLR->buf_status=second_bit;
         if(opt.secondary_report) {
             if(secondary_busy) {
                 secondary_busy=false;
@@ -413,13 +441,17 @@ static void completed_buffers(void) {
         uint16_t n=usb_dpram->ep_buf_ctrl[0].out&USB_BUF_CTRL_LEN_MASK;
         HW_CLR->buf_status=2;
         if (control==C_OUT) {
-            if (n>control_expected-control_offset) { stall_control(); return; }
+            if (n>control_packet_size() || n>control_expected-control_offset) { stall_control(); return; }
             dpram_read(control_data+control_offset,usb_dpram->ep0_buf_a,n);
             control_offset+=n;
             if (control_offset==control_expected) {
                 if (feature_out && opt.set_feature) opt.set_feature(control_data,control_offset,opt.context);
                 if (!feature_out && opt.output) opt.output(control_data,control_offset,opt.context);
                 control_status();
+            } else if(n==control_packet_size()) {
+                uint16_t left=control_expected-control_offset;
+                ep0_pid^=1;
+                ep0_out(left<control_packet_size()?left:control_packet_size(),ep0_pid);
             } else stall_control();
         } else if (control==C_STATUS_OUT) control=C_IDLE;
     }
@@ -427,14 +459,14 @@ static void completed_buffers(void) {
 static bool change_mouse_protocol(bool secondary,uint8_t value) {
     if((secondary?secondary_protocol:protocol)==value)return true;
     bool busy=secondary?secondary_busy:in_busy;
-    uint32_t mask=secondary?IN2_BIT:EP1_BIT;
+    uint32_t mask=secondary?secondary_bit():EP1_BIT;
     if(busy) {
         // Retire or cancel the old-format packet before acknowledging the
         // host's protocol change. Never reinterpret an outstanding transfer.
         if(!abort_mask(mask))return false;
         if(usb_hw->buf_status&mask)completed_buffers();
         else if(secondary) {
-            usb_dpram->ep_buf_ctrl[2].in=0;secondary_pid^=1;notify_secondary_cancel();
+            usb_dpram->ep_buf_ctrl[secondary_endpoint()].in=0;secondary_pid^=1;notify_secondary_cancel();
         } else {
             usb_dpram->ep_buf_ctrl[1].in=0;ep1_pid^=1;notify_cancel();
         }
@@ -528,19 +560,20 @@ bool ud_secondary_send(const uint8_t *data,uint16_t length,uint32_t cookie,uint3
     memcpy(secondary_last,data,length);dpram_write(usb_dpram->epx_data+128,data,length);
     if(opt.secondary_relative_mouse&&length>1)memset(secondary_last+1,0,length-1);
     secondary_cookie=cookie;secondary_busy=true;
-    arm_buffer(&usb_dpram->ep_buf_ctrl[2].in,length|USB_BUF_CTRL_FULL|USB_BUF_CTRL_LAST|(secondary_pid?USB_BUF_CTRL_DATA1_PID:0));
+    arm_buffer(&usb_dpram->ep_buf_ctrl[secondary_endpoint()].in,length|USB_BUF_CTRL_FULL|USB_BUF_CTRL_LAST|(secondary_pid?USB_BUF_CTRL_DATA1_PID:0));
     secondary_pid^=1;
     if(armed_us)*armed_us=time_us_32();
     restore_interrupts(irq);return true;
 }
 bool ud_secondary_cancel_repeat(void) {
     uint32_t irq=save_and_disable_interrupts();
-    if(!secondary_busy||!abort_mask(IN2_BIT)) { restore_interrupts(irq);return false; }
-    if(usb_hw->buf_status&IN2_BIT) {
-        completed_buffers();release_abort(IN2_BIT);restore_interrupts(irq);return false;
+    uint32_t mask=secondary_bit();
+    if(!secondary_busy||!abort_mask(mask)) { restore_interrupts(irq);return false; }
+    if(usb_hw->buf_status&mask) {
+        completed_buffers();release_abort(mask);restore_interrupts(irq);return false;
     }
-    usb_dpram->ep_buf_ctrl[2].in=0;secondary_pid^=1;secondary_busy=false;
-    release_abort(IN2_BIT);restore_interrupts(irq);return true;
+    usb_dpram->ep_buf_ctrl[secondary_endpoint()].in=0;secondary_pid^=1;secondary_busy=false;
+    release_abort(mask);restore_interrupts(irq);return true;
 }
 void ud_statistics_get(ud_statistics *out) {
     uint32_t irq=save_and_disable_interrupts(); *out=stat; restore_interrupts(irq);

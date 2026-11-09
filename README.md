@@ -26,7 +26,13 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.23.0 (firmware 0.23.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.24.0 (firmware 0.24.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.24.0:** Auto is now selectable alongside fixed S and X. Auto tries X first and switches to S once if X is not accepted within five seconds. It never cycles back or retries the other mode during that selection. The configurator shows the active result as Auto (X) or Auto (S); profiles and numeric shared settings are retained.
+
+**0.23.2:** Fixed wired 8BitDo Arcade Stick initialization. X output now follows the connected reference’s USB packet sizes, endpoint numbers, interface descriptors, strings, short capability replies and report timing. Settings remain accessible with the existing PIDs; a dedicated build can override the PIDs if needed. Saved profile and shared-settings formats are unchanged. See [XInput compatibility and remaining differences](docs/xinput-output.md).
+
+**0.23.1:** X output now uses VID `045E`, retaining PIDs `4005` (gamepad) and `4006` (gamepad + mouse). The firmware answers wired Xbox 360 input/motor capability requests used during initialization. Configuration access supports both the old and new identities. Japanese Shared settings now labels the selector **出力モード** and X as **X : Xbox360互換**. See [XInput compatibility and supported scope](docs/xinput-output.md).
 
 **0.23.0:** Shared settings now ends with **S / Auto / X**. S retains the previous output and is the default; Auto is disabled; X uses wired Xbox 360 XInput. X changes the displayed ABXY layout and sends HOME as Guide. The host mode is shared by all profiles and persists after restart. USB reconnects after a verified mode save, and settings remain accessible in X mode. Wired Switch 2 Pro input is also supported. See [XInput output and Switch 2 Pro setup](docs/xinput-output.md).
 
@@ -143,13 +149,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 123,612; persistent storage 49,152 | 1,924,388 |
-| SRAM, 532,480 bytes | Static data 157,672; two stacks 8,192 | 366,616 |
+| Flash, 2,097,152 bytes | Code/initial values 125,272; persistent storage 49,152 | 1,922,728 |
+| SRAM, 532,480 bytes | Static data 158,596; two stacks 8,192 | 365,692 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 38,904, and BSS 118,496 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 247,296 bytes.
+Static SRAM consists of vector table 272, initialized data 39,608, and BSS 118,620 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 249,856 bytes.
 
 ## Repository contents and license
 
