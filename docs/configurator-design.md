@@ -290,7 +290,7 @@ The LED consumes `UC_CONFIGURED` to clear an earlier initialization fault and wa
 
 ## XInput output and Switch 2 input
 
-The device-wide host preference selects the XInput report encoder and USB configuration without rewriting profile IDs or bindings. The profile format stays v8/848 bytes and bank v8/13,908 bytes. Save and independent readback finish before command 46 schedules detach/reconnect. The native device transport selects the configuration interface/endpoint explicitly, retains mouse IN2, and uses settings IN3 with wired Xbox OUT2. See [descriptor, report, initialization and verification details](xinput-output.md).
+The device-wide host preference selects the XInput report encoder and USB configuration without rewriting profile IDs or bindings. The profile format stays v8/848 bytes and bank v8/13,908 bytes. Save and independent readback finish before command 46 schedules detach/reconnect. X gamepad output uses the four reference interfaces without a configuration HID. The Windows configurator reaches the existing command handler through unadvertised EP0 string requests via the standard USB hub driver. Other output layouts retain their HID configuration transport. See [USB layout and configuration access](xinput-output.md).
 
 ### Runtime host result (0.24.0)
 

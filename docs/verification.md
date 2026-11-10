@@ -769,20 +769,20 @@ Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`
 
 Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.25.0. The original source-separation work did not write a device. Later physical updates are described in their dated entries.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.25.1. The original source-separation work did not write a device. Later physical updates are described in their dated entries.
 
 ## Current normal-build memory
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 124,864; persistent storage 49,152 | 1,923,136 |
-| SRAM, 532,480 bytes | Static data 158,328; two stacks 8,192 | 365,960 |
+| Flash, 2,097,152 bytes | Code/initial values 128,528; persistent storage 49,152 | 1,919,472 |
+| SRAM, 532,480 bytes | Static data 158,464; two stacks 8,192 | 365,824 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 39,392, and BSS 118,664 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 249,856 bytes.
+Static SRAM consists of vector table 272, initialized data 39,416, and BSS 118,776 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 257,536 bytes.
 
-The current normal firmware is 0.25.0. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes.
+The current normal firmware is 0.25.1. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes.
 
 The archived local UDLR variant was not rebuilt; its memory figures in dated entries describe those artifacts. GUI buffers use PC memory outside the board totals. Button shift and inertia transitions do not write Flash.

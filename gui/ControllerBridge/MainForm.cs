@@ -45,6 +45,7 @@ internal sealed partial class MainForm : Form
     private readonly Label identity = Ui.Label("", 9);
     private readonly Label saved = Ui.Label(L.T("16スロットをデバイスに保存できます。", "Store up to 16 profiles on the bridge."), 9);
     private readonly Label outputStatus = Ui.Label("", 9);
+    private readonly Label combinedXNotice = Ui.Label(L.T("Xモードでは接続出来なくなります", "Cannot connect in X mode."), 9);
     private readonly Button connect, reload, saveButton, useProfile, switchMethod, mouseUdlrSettings, delete, duplicate, ledSettings, conversionSettings, backup, restore, firmwareUpdate;
     private MappingEditor ActiveEditor => outputTabs.SelectedIndex == 0 ? editor :
         outputTabs.SelectedIndex == 2 && gamepadButtons.Checked ? combinedEditor : mouseEditor;
@@ -142,8 +143,12 @@ internal sealed partial class MainForm : Form
         outputContent.RowStyles.Add(new(SizeType.AutoSize)); outputContent.RowStyles.Add(new(SizeType.AutoSize));
         outputContent.RowStyles.Add(new(SizeType.Percent, 100));
         details.Controls.Add(new SharedTabContentHost(outputTabs, outputContent), 0, 0);
-        timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new(10, 4, 8, 4) };
+        timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, RowCount = 1, Padding = new(10, 4, 8, 4) };
         timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.Percent, 100));
+        timing.ColumnStyles.Add(new(SizeType.AutoSize));
+        combinedXNotice.Anchor = AnchorStyles.Right; combinedXNotice.ForeColor = Ui.Muted;
+        combinedXNotice.Margin = new(12, 0, 2, 0); combinedXNotice.Visible = false;
+        timing.Controls.Add(combinedXNotice, 3, 0);
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
         Label intervalHelp = Ui.Label(L.T("0 = 標準値（X出力は互換動作）", "0 = default (X: compatibility)"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
@@ -635,7 +640,7 @@ internal sealed partial class MainForm : Form
     private void SyncMousePage()
     {
         int index = Math.Max(0, outputTabs.SelectedIndex);
-        bool combined = index == 2; buttonBehavior.Visible = combined;
+        bool combined = index == 2; buttonBehavior.Visible = combined; combinedXNotice.Visible = combined;
         bool controller = combined && gamepadButtons.Checked;
         editor.Visible = index == 0;
         mouseEditor.Visible = index > 0 && !controller; combinedEditor.Visible = controller;

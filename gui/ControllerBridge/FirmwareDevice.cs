@@ -21,7 +21,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
         {
             using HidBridge device = await HidBridge.ConnectAsync();
             probePath = device.DevicePath;
-            probeUsb = UsbDeviceLocation.ForHid(device.DevicePath);
+            probeUsb = device.UsbLocation;
             FirmwareInfo? current = await device.ReadFirmwareAsync();
             if (current is not null) RequiresDataUpgrade = await FirmwareDataMigration.ReadAsync(device.RawAsync);
             return current;
@@ -87,7 +87,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
                 throw new IOException(L.T("別のRP2350がBOOT接続されています。更新する基板以外を取り外して、もう一度実行してください。", "Another RP2350 is in BOOT mode. Disconnect other boards and try again."));
             using HidBridge device = await HidBridge.ConnectAsync();
             FirmwareInfo? now = FirmwareInfo.Read(await device.RawAsync(47));
-            if (probeUsb is null || device.DevicePath != probePath || now != original || UsbDeviceLocation.ForHid(device.DevicePath) != probeUsb)
+            if (probeUsb is null || device.DevicePath != probePath || now != original || device.UsbLocation != probeUsb)
                 throw new IOException(L.T("確認中に接続先が変わりました。もう一度実行してください。", "The connected device changed during confirmation. Try again."));
             await device.RawAsync(9);
         }
@@ -156,7 +156,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
                 {
                     using HidBridge device = await HidBridge.ConnectAsync();
                     FirmwareInfo? info = FirmwareInfo.Read(await device.RawAsync(47));
-                    if (info is not null && UsbDeviceLocation.ForHid(device.DevicePath)?.Location == target?.Usb.Location) return info;
+                    if (info is not null && device.UsbLocation?.Location == target?.Usb.Location) return info;
                 }
                 catch (BridgeDiscoveryException ex) when (ex.Matches == 0) { }
                 catch (BridgeCommandException ex) when (ex.Status == 1) { }

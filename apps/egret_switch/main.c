@@ -1,11 +1,13 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/bootrom.h"
+#include "pico/unique_id.h"
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
 #include "controller_bridge.h"
 #include "xinput_wired.h"
+#include "xinput_portal.h"
 #include "host_output.h"
 #include "egret_switch_profile.h"
 #include "profile_runtime.h"
@@ -28,6 +30,8 @@ static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool direction_setting_saved;
 static uint8_t active_output_interval;
 static xw_clock xinput_clock;
+static xw_portal configuration_portal;
+static pico_unique_board_id_t configuration_device_id;
 static uint8_t active_output_options;
 static uint8_t active_host_mode;
 static uh_output host_output;
@@ -57,6 +61,7 @@ static uint32_t mouse_ack_cookie,mouse_ack_time;
 static bool ack_success;
 static bool mouse_ack_success;
 static uint8_t command[64],response[64]={'U','C','2','R',1};
+static uint32_t response_revision;
 static ub_snapshot measurement,selected_snapshot;
 static bool measurement_valid,selected_valid,saved_valid,save_pending;
 static uint32_t phase,duration_us,drops_begin,last_poll_ack,boot_capture_ms,ready_since;
@@ -105,7 +110,10 @@ static void set_feature(const uint8_t *data,uint16_t length,void *context) {
     memcpy(command,data,64); atomic_store_explicit(&command_pending,true,memory_order_release);
 }
 static int host_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capacity,void *context) {
-    int result=xw_control_read(setup,data,capacity,context);
+    int result=-1;
+    if(!combined_mode())result=xw_portal_read(&configuration_portal,setup,data,capacity,time_us_32(),
+        atomic_load_explicit(&command_pending,memory_order_relaxed),response,response_revision,set_feature,context);
+    if(result==-1)result=(combined_mode()?xw_composite_control_read:xw_control_read)(setup,data,capacity,context);
     if(result>=0 && uh_xinput_control(setup))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
     return result;
 }
@@ -522,7 +530,7 @@ static bool configuration_valid(const ub_configuration *c) {
     return true;
 }
 static void publish_response(const uint8_t *reply) {
-    uint32_t irq=save_and_disable_interrupts(); memcpy(response,reply,64); restore_interrupts(irq);
+    uint32_t irq=save_and_disable_interrupts(); memcpy(response,reply,64);response_revision++;restore_interrupts(irq);
 }
 static void handle_command(void) {
     if(!atomic_load_explicit(&command_pending,memory_order_acquire))return;
@@ -704,6 +712,8 @@ static void start_usb_output(uint8_t options) {
     uh_select(&host_output,direction_settings.host_mode);
     active_output_options=options;active_host_mode=host_output.active;
     xinput_clock=(xw_clock){.requested_interval=upr_input_interval()};
+    configuration_portal=(xw_portal){0};
+    memcpy(configuration_portal.device_id,configuration_device_id.id,sizeof(configuration_portal.device_id));
     atomic_store_explicit(&xinput_accepted,false,memory_order_release);
     flight_valid=mouse_flight_valid=mouse_was_ready=pad_was_ready=false;
     atomic_store_explicit(&ack_pending,false,memory_order_release);
@@ -757,6 +767,7 @@ static void start_usb_output(uint8_t options) {
         output.report=NULL;output.report_length=0;
         output.configuration_report=um_feature_descriptor;output.configuration_report_length=sizeof(um_feature_descriptor);
         output.configuration_interface=combined?5:4;output.configuration_endpoint=combined?6:5;
+        if(!combined) { output.configuration_report=NULL;output.configuration_report_length=0; }
         output.secondary_interface=4;output.secondary_endpoint=5;
         output.output_endpoint=1;output.control_read=host_control_read;output.output=host_output_received;
         output.short_string_stall_mask=(1u<<1)|(1u<<3);
@@ -801,6 +812,7 @@ static void output_change_task(uint32_t now) {
 // Run dispatch from SRAM so UI/configuration code growth cannot evict this loop from XIP cache.
 int __not_in_flash_func(main)(void) {
     set_sys_clock_khz(120000,true);
+    pico_get_unique_board_id(&configuration_device_id);
     status_led_init();
     bool config_valid=ub_store_load(0,&config,sizeof(config)) && configuration_valid(&config);
     if(!config_valid)egret_default_configuration(&config);

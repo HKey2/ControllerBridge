@@ -73,4 +73,4 @@ The native driver already exposes observe_setup/observe_event hooks. A diagnosti
 
 ## XInput output on Windows
 
-In X mode, the tested Windows PC binds its installed Xbox 360 driver and identifies the gamepad function as **XBOX 360 Controller For Windows**. No driver package was installed. Gamepad, combined mouse + XInput, S/X transitions and warm restart were checked with the real Switch 2 Pro attached. The configuration HID remains accessible. This establishes Windows input operation, not Xbox-console authentication, headset audio or rumble forwarding. See [implementation and references](xinput-output.md).
+In X mode, Windows uses its installed Xbox 360 driver for game input. Since 0.25.1, Gamepad output uses 045E:028E and the reference four-interface configuration without a configuration HID. The matching configurator uses Windows' standard USB hub driver to access settings and firmware updates while the Xbox driver remains attached. Xbox-console authentication, headset audio and rumble forwarding are not implemented. See [X output and configuration access](xinput-output.md).

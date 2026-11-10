@@ -1,6 +1,6 @@
 # Latency and polling policy
 
-Current normal firmware: 0.25.0. The input and X output scheduling changes described below were introduced in 0.24.1.
+Current normal firmware: 0.25.1. The input and X output scheduling changes described below were introduced in 0.24.1.
 
 The target is the interval from a physical switch changing state to the host's input library accepting that state. It does not include the game's simulation or display. ControllerBridge can timestamp received USB reports and its own output completion, but cannot observe the controller's contacts or the host library. Consequently, the total-latency conclusions below are conditional deductions, not new end-to-end measurements.
 

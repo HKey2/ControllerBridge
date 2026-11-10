@@ -111,12 +111,15 @@ internal sealed class BridgeDiscoveryException(int matches, string message) : IO
 internal sealed class HidBridge : IDisposable
 {
     internal bool OutputReconnectPending { get; private set; }
-    private readonly SafeFileHandle handle;
+    private readonly SafeFileHandle? handle;
+    private readonly XInputPortal? portal;
+    internal UsbDeviceLocation? UsbLocation => portal?.UsbLocation ?? UsbDeviceLocation.ForHid(DevicePath);
     internal string DevicePath { get; private init; } = "";
     private byte sequence;
     private readonly SemaphoreSlim gate = new(1, 1);
     private InputEventPump? inputEvents;
     private HidBridge(SafeFileHandle handle, byte sequence) { this.handle = handle; this.sequence = sequence; }
+    private HidBridge(XInputPortal portal) { this.portal = portal; sequence = portal.Sequence; DevicePath = portal.DevicePath; }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public int Size; public Guid Guid; public uint Flags; public IntPtr Reserved; }
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr SetupDiGetClassDevsW(ref Guid guid, string? enumerator, IntPtr parent, uint flags);
     [DllImport("setupapi.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetupDiEnumDeviceInterfaces(IntPtr set, IntPtr device, ref Guid guid, uint index, ref DeviceInterface iface);
@@ -173,6 +176,7 @@ internal sealed class HidBridge : IDisposable
                 }
                 finally { Marshal.FreeHGlobal(detail); }
             }
+            foreach (XInputPortal portal in XInputPortal.Find()) matches.Add(new(portal));
             if (matches.Count != 1) throw new BridgeDiscoveryException(matches.Count, matches.Count == 0 ? L.T("変換デバイスが見つかりません。USB-CをPCへ接続し、再接続を押してください。", "No bridge was found. Connect USB-C to this PC and choose Reconnect.") : L.T("変換デバイスが複数あります。設定するデバイスを1台だけ接続してください。", "Multiple bridges were found. Connect only the bridge you want to configure."));
             HidBridge result = matches[0]; matches.Clear(); return result;
         }
@@ -187,11 +191,13 @@ internal sealed class HidBridge : IDisposable
     {
         if (payload?.Length > 56) throw new ArgumentException("payload");
         byte[] b = new byte[65]; "UC2C"u8.CopyTo(b.AsSpan(1)); b[5] = 1; b[6] = cmd; b[7] = ++sequence; payload?.CopyTo(b, 9);
-        if (!HidD_SetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスへ送信できません。接続を確認してください。", "Could not send to the device. Check the connection."));
+        using IDisposable? transaction = portal?.BeginCommand();
+        if (portal is not null) portal.Send(b[1..]);
+        else if (!HidD_SetFeature(handle!, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスへ送信できません。接続を確認してください。", "Could not send to the device. Check the connection."));
         Stopwatch watch = Stopwatch.StartNew();
         do
         {
-            byte[] r = Feature(handle);
+            byte[] r = portal?.Receive() ?? Feature(handle!);
             if (r.AsSpan(0, 5).SequenceEqual("UC2R\x01"u8) && r[5] == cmd && r[6] == sequence)
             {
                 if (r[7] != 0) throw new BridgeCommandException(r[7], r[7] switch
@@ -378,7 +384,7 @@ internal sealed class HidBridge : IDisposable
     public void Dispose()
     {
         Interlocked.Exchange(ref inputEvents, null)?.Dispose();
-        handle.Dispose();
+        handle?.Dispose(); portal?.Dispose();
     }
 
     private SlotBank ReadBank()

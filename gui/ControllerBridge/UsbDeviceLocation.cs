@@ -36,7 +36,7 @@ internal sealed record UsbDeviceLocation(string InstanceId, string Location)
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool DeviceIoControl(SafeFileHandle handle, uint code, IntPtr input, uint inputLength, out DeviceNumber output, uint outputLength, out uint returned, IntPtr overlapped);
 
-    private static List<(string Path, uint Node)> Interfaces(Guid guid)
+    internal static List<(string Path, uint Node)> Interfaces(Guid guid)
     {
         IntPtr set = SetupDiGetClassDevsW(ref guid, IntPtr.Zero, IntPtr.Zero, 0x12);
         if (set == new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -84,6 +84,22 @@ internal sealed record UsbDeviceLocation(string InstanceId, string Location)
                 return location.Length == 0 ? null : new(text, location);
             }
             if (CM_Get_Parent(out node, node, 0) != 0) return null;
+        }
+        return null;
+    }
+
+    internal static UsbDeviceLocation? ForHubPort(string hubPath, uint port)
+    {
+        var hub = Interfaces(new("f18a0e88-c30c-11d0-8815-00a0c906bed8"))
+            .FirstOrDefault(item => item.Path.Equals(hubPath, StringComparison.OrdinalIgnoreCase));
+        if (hub.Path is null) return null;
+        foreach (var item in Interfaces(new("a5dcbf10-6530-11d2-901f-00c04fb951ed")))
+        {
+            if (CM_Get_Parent(out uint parent, item.Node, 0) != 0 || parent != hub.Node) continue;
+            PropertyKey key = new() { Guid = new("a45c254e-df1c-4efd-8020-67d146a850e0"), Id = 30 };
+            byte[] address = new byte[4]; uint length = 4;
+            if (CM_Get_DevNode_PropertyW(item.Node, ref key, out uint type, address, ref length, 0) == 0 &&
+                (type == 6 || type == 7) && length == 4 && BitConverter.ToUInt32(address) == port) return ParentUsb(item.Node);
         }
         return null;
     }

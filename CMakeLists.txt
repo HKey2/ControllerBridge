@@ -25,16 +25,10 @@ target_compile_options(controller_usb PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_device STATIC
     lib/controller_device/native_rp2350.c lib/controller_device/switch_wired.c lib/controller_device/switch_protocols.c
-    lib/controller_device/usb_mouse.c lib/controller_device/xinput_wired.c)
+    lib/controller_device/usb_mouse.c lib/controller_device/xinput_wired.c lib/controller_device/xinput_portal.c)
 target_include_directories(controller_device PUBLIC lib/controller_device/include)
 target_link_libraries(controller_device PUBLIC pico_stdlib PRIVATE hardware_irq hardware_resets hardware_sync)
 target_compile_options(controller_device PRIVATE -Wall -Wextra -Werror)
-# Keep normal Windows configuration access. Override only for a dedicated
-# compatibility build; 0x028e selects the retail whole-device Windows driver.
-set(CONTROLLER_XINPUT_PID "0x4005" CACHE STRING "XInput gamepad product ID")
-set(CONTROLLER_XINPUT_COMBINED_PID "0x4006" CACHE STRING "XInput gamepad plus mouse product ID")
-target_compile_definitions(controller_device PUBLIC
-    XW_GAMEPAD_PID=${CONTROLLER_XINPUT_PID} XW_COMBINED_PID=${CONTROLLER_XINPUT_COMBINED_PID})
 
 add_library(controller_bridge STATIC lib/controller_bridge/queue.c lib/controller_bridge/store.c
     lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c
@@ -47,7 +41,7 @@ add_executable(ControllerBridge apps/egret_switch/main.c apps/egret_switch/egret
     apps/egret_switch/status_led.c)
 target_include_directories(ControllerBridge PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 pico_generate_pio_header(ControllerBridge ${CMAKE_CURRENT_LIST_DIR}/apps/egret_switch/status_led.pio)
-target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore hardware_watchdog hardware_pio)
+target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore pico_unique_id hardware_watchdog hardware_pio)
 target_compile_options(ControllerBridge PRIVATE -Wall -Wextra -Werror)
 target_compile_definitions(ControllerBridge PRIVATE PICO_STACK_SIZE=4096 PICO_CORE1_STACK_SIZE=4096)
 pico_enable_stdio_usb(ControllerBridge 0)

@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.25.0 and RP2350-USB-A firmware 0.25.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.25.1 and RP2350-USB-A firmware 0.25.1. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -140,7 +140,7 @@ In the circle, positive Y points upward and negative Y points downward. The dete
 
 If input events are missed, measurement continues with the values received, preserving completed directions, confirmed axes and your inversion choices. The wizard stays open. Release a held confirmation button before continuing.
 
-**One-sided pedals:** the released position becomes neutral (zero stick deflection), and travel produces only one side of the output axis. A pedal whose raw values decrease can be reversed with **Invert direction**. Move it through its intended full travel before confirming. Install the firmware bundled with the 0.25.0 configurator before saving endpoint-neutral mappings; earlier firmware rejects a center equal to the minimum or maximum. Existing centered mappings retain their behavior. The profile and bank sizes are unchanged.
+**One-sided pedals:** the released position becomes neutral (zero stick deflection), and travel produces only one side of the output axis. A pedal whose raw values decrease can be reversed with **Invert direction**. Move it through its intended full travel before confirming. Install firmware 0.25.0 or later before saving endpoint-neutral mappings; earlier firmware rejects a center equal to the minimum or maximum. Existing centered mappings retain their behavior. The profile and bank sizes are unchanged.
 
 ### Individual axis settings
 

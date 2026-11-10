@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.25.0. Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.25.1. Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -8,7 +8,7 @@ ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of 
 | **Auto** | Tries X first; if acceptance is not observed within five seconds, reconnects as S once. No further mode retries. |
 | **X** | Uses the wired Xbox 360 XInput gamepad protocol for Gamepad and Mouse + Gamepad. |
 
-Choose **Save to device**. The configurator verifies the saved value, asks the board to reconnect USB, and reconnects through the configuration interface. All profile mappings and unsaved drafts retain their physical positions. The selected mode persists after restart. USB mouse-only output remains a mouse while retaining the S/Auto/X preference for the gamepad modes.
+Choose **Save to device**. The configurator verifies the saved value, asks the board to reconnect USB, and reconnects automatically. All profile mappings and unsaved drafts retain their physical positions. The selected mode persists after restart. USB mouse-only output remains a mouse while retaining the S/Auto/X preference for the gamepad modes.
 
 ![Shared settings with Auto selected](gui-mouse-udlr-settings-en.png)
 
@@ -46,7 +46,7 @@ Guide is sent using the established Xbox 360 wire bit. Windows' ordinary documen
 
 ## USB and report format
 
-The gamepad interface uses class/subclass/protocol **FF/5D/01**, the published 17-byte Xbox gamepad descriptor, interrupt IN **0x81**, interrupt OUT **0x01**, and 32-byte endpoint reservations. These match the connected 8BitDo Arcade Stick in X mode. EP0 uses 8-byte packets and OUT01 declares 8 ms. With profile Input interval 0, IN81 requests the reference 4 ms period; with values 1–255, it requests that value instead. Actual polling remains host-controlled. The first oversized device-descriptor read at address zero completes after its first 8-byte packet; addressed reads return the complete descriptor. Configuration Feature reports are assembled across eight 8-byte packets.
+The gamepad interface uses class/subclass/protocol **FF/5D/01**, the published 17-byte Xbox gamepad descriptor, interrupt IN **0x81**, interrupt OUT **0x01**, and 32-byte endpoint reservations. These match the connected 8BitDo Arcade Stick in X mode. EP0 uses 8-byte packets and OUT01 declares 8 ms. With profile Input interval 0, IN81 requests the reference 4 ms period; with values 1–255, it requests that value instead. Actual polling remains host-controlled. The first oversized device-descriptor read at address zero completes after its first 8-byte packet; addressed reads return the complete descriptor. Configuration commands use the same EP0 packet size.
 
 With profile Input interval 0, input reports retain the 11 ms producer clock independently of host ACK time. A 4 ms polling host consequently observes the measured 8/12 ms spacing. This is the cadence inferred from the reference’s timestamps, not a claim of cycle-exact electrical equivalence. Since 0.24.1, an explicit value 1–255 removes that software wait and arms changes immediately through the existing ordered queue, while requesting that interval in IN81's descriptor. Only the gamepad IN interval changes; the combined mouse retains its own interval. Applying a changed active X interval reconnects USB after profile verification, and retains Auto's current result. See [latency and polling policy](latency-scheduling.md). Each input packet is exactly 20 bytes:
 
@@ -60,11 +60,11 @@ With profile Input interval 0, input reports retain the 11 ms producer clock ind
 
 Stick center is 0, with endpoints −32768 and +32767; positive Y is up. The existing mapper produces 8-bit axis positions, which this encoder scales into the signed XInput range. This release retains that conversion resolution. Trigger outputs are digital because the established profile targets ZL/ZR are digital bindings. Bit 0x0800 stays zero.
 
-Since 0.23.1, X output uses VID **045E** with separate PIDs **4005/4006** and a separate HID Feature configuration interface. The configurator also recognizes the earlier CAFE:4005/4006 identities for updates. It advertises the Microsoft OS 1.0 compatible ID **XUSB10** for interface 0, allowing the installed Windows Xbox driver to bind to that function without hiding configuration access. The real test required no driver installation.
+Since 0.25.1, X gamepad output uses VID **045E**, PID **028E**, device class/subclass/protocol **FF/FF/FF**, and the reference four-interface configuration. It has no configuration HID and does not advertise Microsoft OS descriptors or an XUSB10 compatible ID. The Windows configurator remains accessible through the standard USB hub driver while the Xbox driver handles game input. Earlier CAFE:4005/4006 and 045E:4005/4006 firmware identities remain recognized for updates.
 
 | Output layout | Device identity | Interfaces / endpoints |
 |---|---|---|
-| X gamepad | 045E:4005 | XUSB IF0 IN81/OUT01; reference accessory IF1–3; configuration IF4 IN85 |
+| X gamepad | 045E:028E | XUSB IF0 IN81/OUT01; reference accessory IF1–3 |
 | X gamepad + mouse | 045E:4006 | XUSB IF0 IN81/OUT01; reference accessory IF1–3; mouse IF4 IN85; configuration IF5 IN86 |
 | Mouse only | CAFE:4004 | Existing mouse layout; host preference retained |
 
@@ -72,11 +72,13 @@ At profile Input interval 0, the first four interface descriptors, including the
 
 The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Rumble and player-LED output packets are acknowledged and the gamepad OUT endpoint is rearmed, but forwarding them to the input controller is not implemented.
 
-### Retained differences and optional PID build
+### Configurator connection
 
-To retain the Windows configurator, the default device class remains **00/00/00**, PIDs remain **4005/4006**, a configuration HID is appended, and the Microsoft **XUSB10** compatible-ID response is retained. The reference uses device class **FF/FF/FF**, PID **028E**, and four interfaces. Configuration length/interface count therefore differ; combined mouse mode also appends a mouse. The mapper still uses the existing 8-bit axis resolution and digital trigger bindings. Nonzero profile Input interval additionally opts into a different gamepad polling/production cadence. These are explicit differences, so this build is not presented as an identical clone of every reference behavior.
+Use the matching 0.25.1 or later configurator and firmware. Connecting USB-C to Windows and choosing **Connect / Reconnect** works in X just as in S. Profile editing, live inputs, slot backup/restore, host-mode changes and firmware updates use the existing controls. No BOOT-button operation, custom driver, elevated application launch, or manual mode change is needed for an installed ControllerBridge.
 
-The CMake cache settings `CONTROLLER_XINPUT_PID` and `CONTROLLER_XINPUT_COMBINED_PID` allow a dedicated build to change either PID; defaults are `0x4005` and `0x4006`. For example, `-DCONTROLLER_XINPUT_PID=0x028e` selects the reference gamepad PID. This is a last-resort build option, not a change made by the normal configurator. Windows may bind its whole-device retail driver to 028E and hide the configuration HID. The normal release keeps the existing configuration-accessible PIDs. A PID change alone does not remove the other differences above or establish POLYMEGA compatibility.
+The configurator discovers ControllerBridge using an unadvertised USB string request. A handshake checks a fresh random value and the board's unique identifier before exchanging the existing configuration commands over EP0. Ordinary device/configuration/string requests retain their reference responses. The application does not detach the Xbox driver or replace the USB configuration to communicate. The old optional PID build settings have been removed; the normal gamepad identity is fixed at 045E:028E.
+
+The mapper retains the existing 8-bit axis resolution and digital trigger bindings. A nonzero profile Input interval opts into the requested gamepad polling/production cadence. The inactive accessory functions and absent Xbox-console authentication described above remain outside the supported feature set.
 
 ## Linux xpad selection and initialization
 

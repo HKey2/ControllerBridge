@@ -7,10 +7,10 @@
 #include <string.h>
 
 // The measured Arcade Stick identity is 045E:028E, revision 0114, EP0=8.
-// Device class 00 and the default non-retail PIDs keep configuration HID
-// available through Windows' composite driver. IF0 binds via XUSB10.
+// Gamepad-only output keeps this identity and its four interfaces intact.
+// Explicit combined mouse output keeps its separate composite identity.
 const uint8_t xw_device_descriptor[18]={
-    18,1,0x00,0x02,0,0,0,8,0x5e,0x04,XW_GAMEPAD_PID&255,XW_GAMEPAD_PID>>8,0x14,0x01,1,2,3,1
+    18,1,0x00,0x02,0xff,0xff,0xff,8,0x5e,0x04,XW_GAMEPAD_PID&255,XW_GAMEPAD_PID>>8,0x14,0x01,1,2,3,1
 };
 const uint8_t xw_combined_device_descriptor[18]={
     18,1,0x00,0x02,0,0,0,8,0x5e,0x04,XW_COMBINED_PID&255,XW_COMBINED_PID>>8,0x14,0x01,1,2,3,1
@@ -37,10 +37,9 @@ const uint8_t xw_combined_device_descriptor[18]={
     9,0x21,0x11,1,0,1,0x22,sizeof(um_feature_descriptor),0, \
     7,5,endpoint,3,8,0,16
 const uint8_t xw_configuration_descriptor[XW_CONFIGURATION_BYTES]={
-    9,2,XW_CONFIGURATION_BYTES,0,5,1,0,0xa0,0xfa,
+    9,2,XW_CONFIGURATION_BYTES,0,4,1,0,0xa0,0xfa,
     XW_GAMEPAD_INTERFACE,
-    XW_ACCESSORY_INTERFACES,
-    XW_CONFIG_INTERFACE(4,0x85)
+    XW_ACCESSORY_INTERFACES
 };
 const uint8_t xw_combined_configuration_descriptor[XW_COMBINED_CONFIGURATION_BYTES]={
     9,2,XW_COMBINED_CONFIGURATION_BYTES,0,6,1,0,0xa0,0xfa,
@@ -83,7 +82,7 @@ void xw_encode(const sw_report *r,uint8_t wire[XW_REPORT_BYTES]) {
     put16(wire+6,(uint16_t)stick(r->lx,false));put16(wire+8,(uint16_t)stick(r->ly,true));
     put16(wire+10,(uint16_t)stick(r->rx,false));put16(wire+12,(uint16_t)stick(r->ry,true));
 }
-int xw_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capacity,void *context) {
+int xw_composite_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capacity,void *context) {
     (void)context;
     // Exact strings from the connected reference, including the manufacturer's
     // terminal UTF-16 NUL. Their 16-byte over-reads STALL after the payload.
@@ -121,4 +120,10 @@ int xw_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capacity,void 
     // Unknown requests still stall; never claim unimplemented controls or motors.
     if(!reply || capacity<length)return -1;
     memcpy(data,reply,length);return length;
+}
+
+int xw_control_read(const uint8_t s[8],uint8_t *data,uint16_t capacity,void *context) {
+    if((s[0]==0x80 && s[1]==6 && s[2]==0xee && s[3]==3) ||
+       ((s[0]==0xc0 || s[0]==0xc1) && s[1]==0x20))return -2;
+    return xw_composite_control_read(s,data,capacity,context);
 }
