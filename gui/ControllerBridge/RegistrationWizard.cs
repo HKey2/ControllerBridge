@@ -23,7 +23,7 @@ internal sealed partial class RegistrationWizard : Form
         this.caps = caps; this.save = save; this.fields = fields;
         profile = new() { Flags = 3, Vid = caps.Vid, Pid = caps.Pid, Revision = caps.Revision, DescriptorHash = caps.DescriptorHash,
             Name = $"{(caps.InputProtocol == 2 ? "XInput" : caps.InputProtocol == 4 ? "Switch" : caps.InputProtocol == 16 ? "Switch 2" : caps.InputProtocol == 8 ? "MS-GIPUSB" : "HID")} {caps.Vid:X4}:{caps.Pid:X4}", InputInterval = 0 };
-        using IDisposable formLayout = Ui.Form(this, L.T("コントローラーを追加", "Add controller"), new(1000, 680));
+        using IDisposable formLayout = Ui.Form(this, L.T("コントローラーを追加", "Add controller"), new(1000, 740));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(22), RowCount = 4, ColumnCount = 1 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
@@ -108,6 +108,8 @@ internal sealed partial class RegistrationWizard : Form
         catch (Exception ex) { saving = false; next.Enabled = page.Enabled = true; back.Enabled = step > 0; Ui.Error(this, ex); hint.Text = L.T("保存できませんでした。内容はこの画面に保持されています。", "Could not save. Your edits remain on this page."); }
     }
     public void OnInput(InputField f, int value) { if (step == 1) editor.OnInput(f, value); }
+    public void ObserveAxisWizard(InputField f, int value, uint time) { if (step == 1) editor.ObserveAxisWizard(f, value, time); }
+    public void RefreshAxisWizard() { if (step == 1) editor.RefreshAxisWizard(); }
     internal void ShowInputLog()
     {
         if (inputLog is { IsDisposed: false }) { inputLog.Activate(); return; }
@@ -118,6 +120,7 @@ internal sealed partial class RegistrationWizard : Form
         log.Show(Owner ?? this);
     }
     public void ObserveInput(InputField? field, InputChange change) => inputLog?.Observe(field, change);
+    internal void InputEventsLost(string reason) { editor.InputEventsLost(reason); hint.Text = reason; }
     public void ConnectionLost()
     {
         logEndReason = L.T("接続・使用中のプロファイル・入力履歴が変わったため、登録を中止しました。", "Registration stopped because the connection, active profile, or input history changed.");

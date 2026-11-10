@@ -9,7 +9,13 @@ Thank you for your interest in this project!
 
 Keep verification code, synthetic UI data, capture runners, diagnostic firmware variants, measurement scripts and generated test evidence in the Git-ignored `test/` directory. Do not add them to product source files, product command-line options, or the repository. Normal firmware and configurator builds must succeed without `test/` being present. Keep operational input logging and validation required for normal use in product code.
 
-README release notes describe user-visible changes, such as UI bug fixes and setting changes. Put verification procedures, counts and investigation details in local evidence or the dedicated verification record, not in README release notes.
+Repository documentation is for the tool's end users: describe features, operation, settings, supported scope, relevant limitations and user-visible changes. Keep all verification procedures, counts, results, reports and evidence under the Git-ignored `test/` directory. Do not include them in README files, public documentation or commit messages/comments. A dedicated verification document outside `test/` is not an exception.
+
+## Routine updates and release packages
+
+Update `dist/ControllerBridge.exe` during normal project work, and update `dist/ControllerBridge.uf2` only when a firmware update is needed. Create or refresh a distribution ZIP only when explicitly requested by the user, in conjunction with a Release. An ordinary edit, build or EXE update does not authorize packaging, committing or publishing a Release.
+
+Except for special changes, advance versions per commit, not per request or build. Keep one version throughout the same uncommitted change set. GUI-only versions that do not affect firmware retain the numeric main version and use the GUI revision policy below.
 
 ## Version labels
 

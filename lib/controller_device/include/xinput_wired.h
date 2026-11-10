@@ -17,6 +17,24 @@
 #define XW_REPORT_PERIOD_US 11000u
 #define XW_CONFIGURATION_BYTES 178u
 #define XW_COMBINED_CONFIGURATION_BYTES 203u
+// Zero preserves the reference producer cadence. Explicit profile intervals
+// only set bInterval; state changes are armed as soon as the endpoint permits.
+typedef struct { uint32_t next_report; uint8_t requested_interval; } xw_clock;
+static inline uint8_t xw_poll_interval(uint8_t requested) {
+    return requested?requested:XW_POLL_INTERVAL_MS;
+}
+static inline bool xw_report_due(const xw_clock *clock,uint32_t now) {
+    return clock->requested_interval || (int32_t)(now-clock->next_report)>=0;
+}
+static inline void xw_report_sent(xw_clock *clock,uint32_t armed) {
+    if(clock->requested_interval)return;
+    clock->next_report+=XW_REPORT_PERIOD_US;
+    if((int32_t)(armed-clock->next_report)>=0)clock->next_report=armed+XW_REPORT_PERIOD_US;
+}
+// Both X layouts place gamepad IN81's bInterval at byte 41. Other endpoints,
+// including the separate relative mouse, retain their own polling periods.
+void xw_set_poll_interval(uint8_t *configuration,uint8_t requested);
+
 extern const uint8_t xw_device_descriptor[18];
 extern const uint8_t xw_combined_device_descriptor[18];
 extern const uint8_t xw_configuration_descriptor[XW_CONFIGURATION_BYTES];

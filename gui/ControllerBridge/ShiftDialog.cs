@@ -99,4 +99,8 @@ internal sealed partial class ShiftDialog : Form
     {
         StopLearning(); canLearn = false; editor.AbortLearning(); editor.Bind(draft, fields, false, true); RefreshKeys();
     }
+    internal void InputEventsLost(string reason)
+    {
+        StopLearning(); editor.InputEventsLost(reason); status.Text = reason;
+    }
 }

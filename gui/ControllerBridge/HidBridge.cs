@@ -92,7 +92,11 @@ public sealed class InputField
             Minimum = minimum, Center = center, Maximum = maximum, Deadzone = deadzone };
 }
 
-internal sealed record InputChange(ushort Index, int Value, uint Time, bool Lost);
+internal sealed record InputChange(ushort Index, int Value, uint Time, bool Lost)
+{
+    // Cursor immediately after this event, including gaps in device history.
+    internal uint Cursor { get; init; }
+}
 internal sealed record DeviceState(Capabilities Caps, List<InputField> Fields, uint Cursor);
 internal sealed record PollResult(Capabilities Caps, uint Cursor, List<InputChange> Changes, bool GenerationChanged);
 internal sealed class BridgeCommandException(byte status, string message) : IOException(message)
@@ -111,6 +115,7 @@ internal sealed class HidBridge : IDisposable
     internal string DevicePath { get; private init; } = "";
     private byte sequence;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private InputEventPump? inputEvents;
     private HidBridge(SafeFileHandle handle, byte sequence) { this.handle = handle; this.sequence = sequence; }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public int Size; public Guid Guid; public uint Flags; public IntPtr Reserved; }
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr SetupDiGetClassDevsW(ref Guid guid, string? enumerator, IntPtr parent, uint flags);
@@ -204,8 +209,8 @@ internal sealed class HidBridge : IDisposable
     }
     private async Task<T> Run<T>(Func<T> work)
     {
-        await gate.WaitAsync();
-        try { return await Task.Run(work); }
+        await gate.WaitAsync().ConfigureAwait(false);
+        try { return await Task.Run(work).ConfigureAwait(false); }
         finally { gate.Release(); }
     }
     private Capabilities Caps() => Capabilities.Read(Command(20));
@@ -272,11 +277,18 @@ internal sealed class HidBridge : IDisposable
             }
             Capabilities after = Caps();
             if (!restart && after.ConnectionGeneration == before.ConnectionGeneration && after.FieldCount == before.FieldCount && after.DescriptorHash == before.DescriptorHash)
-                return new DeviceState(after, fields, before.EventHead);
+            {
+                DeviceState state = new(after, fields, before.EventHead);
+                InputEventPump next = new(state, PollDeviceAsync);
+                Interlocked.Exchange(ref inputEvents, next)?.Dispose();
+                return state;
+            }
         }
         throw new IOException(L.T("入力コントローラーの接続が安定していません。接続後に再試行してください。", "The input controller connection is unstable. Try again after it connects."));
     });
-    public Task<PollResult> PollAsync(uint cursor, uint generation) => Run(() =>
+    public Task<PollResult> PollAsync(uint cursor, uint generation) =>
+        Volatile.Read(ref inputEvents) is { } events ? events.ReadAsync(cursor, generation) : PollDeviceAsync(cursor, generation);
+    private Task<PollResult> PollDeviceAsync(uint cursor, uint generation) => Run(() =>
     {
         Capabilities caps = Caps(); List<InputChange> changes = [];
         if (caps.ConnectionGeneration != generation) return new PollResult(caps, cursor, changes, true);
@@ -285,10 +297,13 @@ internal sealed class HidBridge : IDisposable
             byte[] args = new byte[4]; Wire.W32(args, 0, cursor); byte[] b = Command(22, args);
             if (Wire.U32(b, 4) != generation) return new PollResult(caps, cursor, [], true);
             uint next = Wire.U32(b, 0);
+            int remaining = 0;
+            for (int i = 0; i < 4; i++) if ((Wire.U16(b, 10 + 12 * i) & 1) != 0) remaining++;
             for (int i = 0; i < 4; i++)
             {
                 int p = 8 + 12 * i; ushort flags = Wire.U16(b, p + 2);
-                if ((flags & 1) != 0) changes.Add(new(Wire.U16(b, p), Wire.I32(b, p + 4), Wire.U32(b, p + 8), (flags & 2) != 0));
+                if ((flags & 1) != 0) changes.Add(new(Wire.U16(b, p), Wire.I32(b, p + 4), Wire.U32(b, p + 8), (flags & 2) != 0)
+                    { Cursor = unchecked(next - (uint)--remaining) });
             }
             if (next == cursor) break;
             cursor = next;
@@ -360,7 +375,11 @@ internal sealed class HidBridge : IDisposable
         if (Wire.U32(check, 0) != keys || Wire.U32(check, 4) != generation) throw new IOException(L.T("切替方法の保存照合に失敗しました。", "The saved switching method could not be verified."));
         return generation;
     });
-    public void Dispose() => handle.Dispose();
+    public void Dispose()
+    {
+        Interlocked.Exchange(ref inputEvents, null)?.Dispose();
+        handle.Dispose();
+    }
 
     private SlotBank ReadBank()
     {

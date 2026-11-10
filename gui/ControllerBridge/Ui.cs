@@ -86,6 +86,56 @@ internal static class Ui
         }
         finally { form.ResumeLayout(true); }
     }
+    // Text and visibility changes invalidate nested AutoSize tables. Suspend
+    // the whole subtree while binding, then lay out children before parents.
+    internal static IDisposable BatchLayout(Control root, bool deferPaint = false) => new LayoutBatch(root, deferPaint);
+    private sealed class LayoutBatch : IDisposable
+    {
+        private readonly List<Control> controls = [];
+        private readonly Control root;
+        private readonly nint redrawHandle;
+        private bool disposed;
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+        private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(nint window);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool RedrawWindow(nint window, nint rectangle, nint region, uint flags);
+        internal LayoutBatch(Control root, bool deferPaint)
+        {
+            this.root = root;
+            void Add(Control control)
+            {
+                if (!control.HasChildren && control != root) return;
+                control.SuspendLayout(); controls.Add(control);
+                foreach (Control child in control.Controls) Add(child);
+            }
+            Add(root);
+            // Only suppress an already-visible window. Enabling redraw on a
+            // hidden window would make it visible (WM_SETREDRAW semantics).
+            if (deferPaint && root.IsHandleCreated && IsWindowVisible(root.Handle))
+            {
+                redrawHandle = root.Handle; SendMessage(redrawHandle, 0x000b, 0, 0);
+            }
+        }
+        public void Dispose()
+        {
+            if (disposed) return; disposed = true;
+            try
+            {
+                for (int i = controls.Count - 1; i >= 0; i--)
+                    if (!controls[i].IsDisposed) controls[i].ResumeLayout(true);
+            }
+            finally
+            {
+                if (redrawHandle != 0 && !root.IsDisposed && root.IsHandleCreated && root.Handle == redrawHandle)
+                {
+                    SendMessage(redrawHandle, 0x000b, 1, 0);
+                    RedrawWindow(redrawHandle, 0, 0, 0x0485); // FRAME | ALLCHILDREN | ERASE | INVALIDATE
+                }
+            }
+        }
+    }
     public static void ThemeInputs(Control root)
     {
         switch (root)

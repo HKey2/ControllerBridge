@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.23.0 and RP2350-USB-A firmware 0.23.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.25.0 and RP2350-USB-A firmware 0.25.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -65,7 +65,7 @@ Two rows named **Button 1** can still be distinguished by their Index and IF/ID/
 
 **Pause recording** stops only logging; mapping and live input continue. Resuming marks the omitted interval and adds a new current-state snapshot. **Follow latest** controls scrolling. **Clear** starts a fresh history with current values. **Copy all** copies the retained log, and **Save log…** writes a UTF-8 tab-separated `.tsv` or `.txt` file.
 
-The window retains the latest 2,000 rows and reports how many older rows were discarded. A firmware event-ring overrun is explicitly marked and stops registration through the existing input-loss guard. Closing, cancelling, or completing the wizard stops recording but leaves an already-open log available for copying or saving. Closing and reopening the log during registration starts a new history. Viewing and recording inputs never saves a profile.
+Input reception continues while windows are opening or redrawing. The PC temporarily retains up to 8,192 input changes, while the log window keeps the latest 2,000 rows and reports how many older rows were discarded. If retained input history is exceeded, the tool silently continues with the received values. It does not cancel learning, clear analog detection, or add a missing-event warning; omitted values cannot be recovered in the log. A disconnection or change of controller still cancels registration. Closing, cancelling, or completing the wizard stops recording but leaves an already-open log available for copying or saving. Closing and reopening the log during registration starts a new history. Viewing and recording inputs never saves a profile.
 
 ### LED color
 
@@ -118,9 +118,35 @@ Select an output control, release the physical input, and perform the action to 
 
 Analog axes support measured minimum, center, maximum, a 0-50% dead zone, and inversion. Alternatively, use two digital inputs for negative and positive movement; pressing both produces center.
 
+### Analog stick setup wizard
+
+Choose **Setup wizard** at the left of the four individual axis buttons in the **Analog sticks** group, either while editing a profile or adding a controller. The individual buttons remain available for manual settings.
+
+The bands use red, green, yellow and magenta tones from [Paul Tol's bright colour scheme](https://sronpersonalpages.nl/~pault/#sec:qualitative), selected for easier distinction with common red–green colour-vision differences. On Switch 2 Pro's standard input layout these correspond to left X, left Y, right X and right Y. Colours continue to identify the source input when you remap an axis. Active bands are wider than confirmed reference lines, and the graph position stays fixed when the final review replaces the two-line instructions.
+
+1. Release the controls to their resting positions before opening the wizard. It immediately starts **Left stick X** setup; there is no separate Start step. If an input has not arrived yet, its first valid value establishes its resting position.
+2. Assign **Left stick X**, **Left stick Y**, **Right stick X**, then **Right stick Y**. Move the control you want to use for the selected output through its intended travel. Input names such as X, Y, Rz or Slider do not determine the destination; flight controls, pedals and swapped X/Y assignments work the same way.
+3. Watch the colored detection band. Analog inputs, ordered by their internal input ID, use **red, green, yellow, magenta**; additional inputs repeat those four colors. The color follows the source input, including when X/Y assignments are swapped or a different output axis is selected. Each direction grows independently from the center. A short, faint band is still being detected. A solid band that stays fixed means that direction is ready; one-sided movement produces a half-axis, while movement in both directions can fill the diameter. **Invert direction** starts off for each axis and changes only when you operate the checkbox. Switching to another input preserves your inversion choice but starts a fresh detection band; returning to an earlier input also requires a new measurement.
+4. Press a controller face button or **Confirm and next**. You can release the control first: completed directions remain visible at rest. After advancing, each confirmed axis remains in its input color as a thin line at about half brightness. The current axis keeps its wider detection band. All axes confirmed in this wizard remain visible together on the final review. A held confirmation button does not advance several steps.
+5. Use **Back** or a visited axis button to revise a mapping, then move the intended input to measure it again. There is no separate restart button. **Keep this axis unchanged** preserves the existing mapping. Finish with **Apply settings**, then **Save profile to device**. Canceling or losing the connection discards the wizard's pending changes.
+
+The movement history keeps the latest **180 valid analog value changes**. Sustained-hold timing is tracked separately. Duplicate values, invalid values and buttons do not advance it. Incomplete excursions fade as subsequent analog changes arrive, including changes on other axes. A single brief spike cannot complete a direction. You can also hold an axis well away from its center for about 0.4 seconds: the band continues growing even when the value stops changing. Small jitter does not interrupt this hold. Hold timing advances only while input communication is current; a pause in reception restarts incomplete hold timing. Completed directions stay visible at rest while the same source is selected. For 250 ms after a source becomes ready, another input cannot cancel it. After that, source switching uses a signed buffer average and a sustained outward gesture to suppress brief release rebounds; holding another input steadily away from center also selects it. A clear movement on another input switches the source and clears the previous measurement; the new band grows from the center without reusing that input's earlier completed range. Small jitter does not switch the source, and similarly strong simultaneous movement does not select an arbitrary new input. Each next output axis begins with an empty detection band, alongside the thin reference lines for previously confirmed axes. Returning through the step buttons restores the selected axis to the wider active display; new movement remeasures that axis without erasing the other confirmed lines.
+
+Source switching uses a short signed average of up to **six changed values per input**, with unused positions treated as rest. Positive and negative motion cancel before its magnitude is evaluated. Values older than half a second are excluded. A moving replacement also needs substantial movement on the same side of center for at least **0.1 seconds**. Returning toward center or crossing it restarts this switching check, so a quick release rebound cannot replace an already detected source just by producing many reports. Continue moving the intended replacement through its travel, or hold it steadily away from center for about 0.4 seconds, to grow its fresh band. Initial detection does not have this switching delay. This filtering affects source selection in the wizard; raw limits, the current-position dot and gameplay output are not averaged.
+
+The wizard starts detection without using any previous axis assignments, including when you reopen it for an existing profile. The circle describes the selected **output** axis, not a controller's internal naming or physical layout. Its band length indicates detection progress; raw recorded limits are saved separately. A white current-position dot appears for a stick only after you have confirmed both its X and Y axes in this wizard. It follows those confirmed assignments and their inversion settings; an unconfirmed candidate does not move it. A single axis or pedal has a detection band but no two-dimensional dot until its partner axis is also confirmed. **Keep this axis unchanged** preserves its saved mapping without treating it as a new measurement. Digital hats and button-only inputs are outside this wizard; use individual axis settings for a two-button axis.
+
+In the circle, positive Y points upward and negative Y points downward. The detection band, confirmed reference line and white dot use the same orientation. This display convention does not change the saved axis inversion setting or the device's output mapping; use **Invert direction** when the assigned control itself needs reversing.
+
+If input events are missed, measurement continues with the values received, preserving completed directions, confirmed axes and your inversion choices. The wizard stays open. Release a held confirmation button before continuing.
+
+**One-sided pedals:** the released position becomes neutral (zero stick deflection), and travel produces only one side of the output axis. A pedal whose raw values decrease can be reversed with **Invert direction**. Move it through its intended full travel before confirming. Install the firmware bundled with the 0.25.0 configurator before saving endpoint-neutral mappings; earlier firmware rejects a center equal to the minimum or maximum. Existing centered mappings retain their behavior. The profile and bank sizes are unchanged.
+
+### Individual axis settings
+
 The live **Input value** readout reserves enough width for a signed 32-bit value. **Record center** and **Use descriptor range** keep their positions when the value changes sign or number of digits.
 
-The analog dialog displays all candidate axes with live centered meters and raw values. Move the physical control to identify its axis, then select the matching row. Unselected axes update too. Large sets use multiple columns when needed.
+The analog dialog displays all candidate axes with live centered meters and raw values. Move the physical control to identify its axis, then select the matching row. Unselected axes update too. Large sets use multiple columns when needed. If input events are missed, automatic detection and range recording continue with the values received. A disconnection still closes the dialog.
 
 ![Saved Left stick X settings for the disconnected Cyber analog profile](gui-axis-en.png)
 
@@ -128,11 +154,13 @@ The screenshot shows the saved **Cyber analog** profile's **Left stick X** setti
 
 The meter uses the descriptor range before calibration, inversion, or dead zone. A range crossing zero uses zero as its reference; other ranges use their midpoint. Missing input shows a waiting state; out-of-range values appear gray. Select the source, measure its travel, record the released center, and apply the result.
 
+### Rapid fire
+
 The **Rapid fire settings** dialog sets assigned buttons to Off or **1–60 press/release cycles per second**, in steps of one, while held. An output currently set to Off shows **20** as its new rate; turning it On uses that value unless you edit it. Existing saved rates, including 10 and 30, remain unchanged. Opening or applying the dialog without enabling an Off output leaves it Off. Apply the dialog, then save the slot. Rapid fire is unavailable for unassigned buttons or digital pairs used as analog axes. Install the matching 0.22.0 firmware for the expanded range; the storage format is unchanged. Rapid fire, LED RGB, button shift and axis settings share the reminder that changes are not written until you choose **Save profile to device** on the profile screen.
 
 ![Rapid fire settings with new default 20 and preserved saved values](gui-rapid-fire-en.png)
 
-**Input interval (ms)** belongs to the profile. `0` uses the controller descriptor's interval; `1` requests a transfer every millisecond. The controller can answer NAK when no data is ready. Request rate does not establish its internal scan rate or the game's sampling rate.
+**Input interval (ms)** belongs to the profile. `0` uses the controller descriptor's interval; `1` requests a transfer every millisecond. Since 0.24.1, the same setting also controls X gamepad output, including Auto (X): `0` retains the reference-compatible 4 ms poll / 11 ms producer, while `1–255` requests that output period with no extra producer wait. Applying a changed active X interval reconnects USB after saved-data verification. S and mouse output retain their separate default 1 ms period. A controller can answer NAK when no data is ready, and the host may choose a different output polling cadence. Request rate does not establish internal scan rate or library/game sampling rate. See [latency and polling policy](latency-scheduling.md).
 
 ## Button shift
 

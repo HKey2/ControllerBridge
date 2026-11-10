@@ -79,8 +79,8 @@ public sealed class AnalogBinding
     internal void Write(byte[] b, int p)
     {
         Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
-        if (Flags > 7 || Minimum >= Center || Center >= Maximum || Deadzone > 50 ||
-            !Wire.Fits(Minimum, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags)) throw new InvalidDataException(L.T("アナログの最小 < 中心 < 最大、デッドゾーン0～50%を確認してください。", "Check that minimum < center < maximum, with a dead zone of 0–50%."));
+        if (Flags > 7 || Minimum >= Maximum || Minimum > Center || Center > Maximum || Deadzone > 50 ||
+            !Wire.Fits(Minimum, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags)) throw new InvalidDataException(L.T("アナログの最小 < 最大、最小 ≤ 中心 ≤ 最大、デッドゾーン0～50%を確認してください。", "Check that minimum < maximum and minimum ≤ center ≤ maximum, with a dead zone of 0–50%."));
         b[p] = Interface; b[p + 1] = ReportId; Wire.W16(b, p + 2, BitOffset); b[p + 4] = Bits; b[p + 5] = Flags;
         Wire.WI32(b, p + 8, Minimum); Wire.WI32(b, p + 12, Center); Wire.WI32(b, p + 16, Maximum); Wire.W16(b, p + 20, Deadzone);
     }

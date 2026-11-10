@@ -6,6 +6,9 @@ internal sealed class AxisSourceList : ListBox
 {
     public AxisSourceList()
     {
+        // Keep native selection/accessibility, but paint the complete visible
+        // rows into one buffer. Native owner-draw erases before drawing rows.
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         DrawMode = DrawMode.OwnerDrawFixed; IntegralHeight = false;
         BorderStyle = BorderStyle.FixedSingle; Dock = DockStyle.Fill;
         HorizontalScrollbar = false;
@@ -36,6 +39,19 @@ internal sealed class AxisSourceList : ListBox
     {
         int index = Items.IndexOf(field);
         if (index >= 0 && IsHandleCreated) Invalidate(GetItemRectangle(index));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        for (int i = 0; i < Items.Count; i++)
+        {
+            Rectangle row = GetItemRectangle(i);
+            if (!row.IntersectsWith(e.ClipRectangle)) continue;
+            DrawItemState state = GetSelected(i) ? DrawItemState.Selected : DrawItemState.None;
+            if (Focused && ShowFocusCues && i == SelectedIndex) state |= DrawItemState.Focus;
+            OnDrawItem(new(e.Graphics, Font, row, i, state, ForeColor, BackColor));
+        }
+        base.OnPaint(e);
     }
 
     protected override void OnDrawItem(DrawItemEventArgs e)

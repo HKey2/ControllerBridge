@@ -66,6 +66,8 @@ internal sealed partial class MappingEditor : UserControl
     private DeviceProfile profile = new();
     private List<InputField> fields = [];
     private AxisDialog? axisDialog;
+    private AnalogStickWizard? stickWizard;
+    private readonly Button axisWizard;
     private int learningRequest;
     public event EventHandler? Modified;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -78,11 +80,11 @@ internal sealed partial class MappingEditor : UserControl
         AutoScaleDimensions = new(96, 96); AutoScaleMode = AutoScaleMode.Dpi; AutoScroll = true;
         // Keep complete controls at their preferred height, even when the host
         // window is small or an instruction wraps. The editor scrolls as needed.
-        TableLayoutPanel root = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 6 };
+        TableLayoutPanel root = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
+        root.RowStyles.Add(new(SizeType.AutoSize));
         TableLayoutPanel heading = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1 };
         heading.ColumnStyles.Add(new(SizeType.Percent, 100)); heading.ColumnStyles.Add(new(SizeType.AutoSize));
         outputHeading = Ui.Label(mouseMode ? L.T("1  マウスの出力ボタンを選択", "1  Select a mouse output button") : L.T("1. コンソール側の対応ボタンを選択", "1. Select the corresponding console button"), 12, true);
@@ -131,22 +133,42 @@ internal sealed partial class MappingEditor : UserControl
         FlowLayoutPanel mappingActions = new() { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         mappingActions.Controls.Add(clear); mappingActions.Controls.Add(inherit);
         guide.Controls.Add(mappingActions, 1, 0); guide.SetRowSpan(mappingActions, 2); root.Controls.Add(guide, 0, 2);
-        Label axisHeading = Ui.Label(L.T("アナログ・スティック（必要な軸だけ設定）", "Analog sticks (configure only the axes you need)"), 11, true);
-        axisHeading.Visible = !mouseMode && !shiftPage; root.Controls.Add(axisHeading, 0, 3);
-        TableLayoutPanel axisRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 4, RowCount = 1 };
+        RaisedTableLayoutPanel axisGroup = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1, RowCount = 2, Padding = new(6, 4, 6, 4), Margin = new(0, 6, 0, 4) };
+        axisGroup.ColumnStyles.Add(new(SizeType.Percent, 100));
+        axisGroup.RowStyles.Add(new(SizeType.AutoSize)); axisGroup.RowStyles.Add(new(SizeType.AutoSize));
+        Label axisHeading = Ui.Label(L.T("アナログスティック", "Analog sticks"), 11, true);
+        axisHeading.Anchor = AnchorStyles.Left;
+        axisGroup.Controls.Add(axisHeading, 0, 0);
+        axisGroup.Visible = !mouseMode && !shiftPage; root.Controls.Add(axisGroup, 0, 3);
+        TableLayoutPanel axisRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5, RowCount = 1 };
+        axisRow.ColumnStyles.Add(new(SizeType.AutoSize));
+        axisWizard = Ui.Button(L.T("設定ウィザード", "Setup wizard"), (_, _) => EditSticks());
+        axisWizard.Dock = DockStyle.Fill; axisRow.Controls.Add(axisWizard, 0, 0);
         for (int i = 0; i < 4; i++)
         {
             axisRow.ColumnStyles.Add(new(SizeType.Percent, 25)); int axis = i;
-            Button b = Ui.Button(""); b.Dock = DockStyle.Fill; b.Click += (_, _) => EditAxis(axis); axes[i] = b; axisRow.Controls.Add(b, i, 0);
+            Button b = Ui.Button(""); b.Dock = DockStyle.Fill; b.Click += (_, _) => EditAxis(axis); axes[i] = b; axisRow.Controls.Add(b, i + 1, 0);
         }
-        root.Controls.Add(axisRow, 0, 4);
-        axisRow.Visible = !mouseMode && !shiftPage;
+        axisGroup.Controls.Add(axisRow, 0, 1);
+        axisRow.Layout += (_, _) =>
+        {
+            foreach (Button button in axisRow.Controls)
+            {
+                int width = button.ClientSize.Width - button.Padding.Horizontal;
+                if (width <= 0) continue;
+                Size text = TextRenderer.MeasureText(button.Text, button.Font, new(width, int.MaxValue),
+                    TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+                int height = Math.Max(button.LogicalToDeviceUnits(40), text.Height + button.Padding.Vertical + button.LogicalToDeviceUnits(2));
+                if (button.MinimumSize.Height != height) button.MinimumSize = new(button.MinimumSize.Width, height);
+            }
+        };
         Label axisHelp = Ui.Label(L.T("出力軸: Xは左→右、Yは上→下。2つのボタンからスティック軸も作れます。", "Output axes: X is left → right; Y is up → down. Two buttons can also control an axis."), 9);
         mouseHelp = axisHelp;
         axisHelp.Dock = DockStyle.Fill; axisHelp.ForeColor = Ui.Muted;
         if (mouseMode) {
             axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save profile to device” to apply your changes.");
-            root.Controls.Add(axisHelp, 0, 5);
+            root.Controls.Add(axisHelp, 0, 4);
         } else {
             foreach (Button axis in axes) tips.SetToolTip(axis, axisHelp.Text);
             axisHelp.Dispose();
@@ -165,6 +187,7 @@ internal sealed partial class MappingEditor : UserControl
     }
     public void Bind(DeviceProfile value, List<InputField> source, bool allowLearn, bool allowRapid = false)
     {
+        using IDisposable layout = Ui.BatchLayout(this);
         detail.Visible = true;
         AbortLearning(); profile = value; fields = source; canLearn = allowLearn; supportsRapid = allowRapid; selected = -1;
         instruction.Text = allowLearn ? L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller") : L.T("2. 対象機器をUSB-Aへ接続して割り当てたい操作を行う", "Connect this profile’s controller to USB-A to learn inputs");
@@ -176,6 +199,7 @@ internal sealed partial class MappingEditor : UserControl
         learningRequest++;
         learner = null;
         if (axisDialog is not null) axisDialog.ConnectionLost();
+        stickWizard?.ConnectionLost();
         shiftDialog?.ConnectionLost();
         if (reason is not null) { instruction.Text = reason; detail.Text = L.T("入力を離してから、出力ボタンを選び直してください。", "Release all inputs, then select the output button again."); }
     }
@@ -193,6 +217,13 @@ internal sealed partial class MappingEditor : UserControl
         detail.Text = ""; detail.Visible = false;
         ScrollControlIntoView(instruction.Parent!);
     }
+    internal void InputEventsLost(string reason)
+    {
+        learningRequest++; learner = null;
+        axisDialog?.InputEventsLost(); stickWizard?.InputEventsLost(); shiftDialog?.InputEventsLost(reason);
+        instruction.Text = reason;
+        detail.Text = L.T("入力を離してから、もう一度割り当ててください。", "Release the input and start the assignment again.");
+    }
     public void OnInput(InputField field, int value)
     {
         axisDialog?.OnInput(field, value); shiftDialog?.OnInput(field, value);
@@ -203,6 +234,23 @@ internal sealed partial class MappingEditor : UserControl
         instruction.Text = L.T($"{TargetName(selected)} ← {learned.Field.Label} を割り当てました", $"Assigned {TargetName(selected)} ← {learned.Field.Label}");
         detail.Text = learned.Binding + L.T("　／　デバイスに保存すると反映されます。", " / Save to the device to apply it.");
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
+    }
+    public void ObserveAxisWizard(InputField field, int value, uint time) => stickWizard?.OnInput(field, value, time);
+    public void RefreshAxisWizard() => stickWizard?.OnInputRefresh();
+    private async void EditSticks()
+    {
+        if (!profile.Enabled || !canLearn) return;
+        int request = ++learningRequest; learner = null;
+        if (PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
+        if (request != learningRequest || IsDisposed) return;
+        using AnalogStickWizard dialog = new(profile, fields); stickWizard = dialog;
+        try
+        {
+            if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+            DeviceProfile before = profile.Clone(); profile.Axes = dialog.Result;
+            if (!before.SameContent(profile)) { UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty); }
+        }
+        finally { stickWizard = null; }
     }
     private async void EditAxis(int axis)
     {
@@ -278,6 +326,9 @@ internal sealed partial class MappingEditor : UserControl
         clear.Enabled = selected >= 0 && profile.Enabled;
         inherit.Enabled = shiftPage && selected >= 0 && profile.Enabled;
         shift.Enabled = profile.Enabled;
+        axisWizard.Enabled = profile.Enabled && canLearn && fields.Any(StickCalibration.IsAnalog);
+        tips.SetToolTip(axisWizard, canLearn ? L.T("左X、左Y、右X、右Yの順に操作して設定します。", "Configure left X, left Y, right X, then right Y by moving each axis.") :
+            L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."));
         shift.Text = profile.Shift.Keys.Count == 0 ? L.T("シフト設定…", "Button shift…") : L.T($"シフト設定…（{profile.Shift.Keys.Count}キー）", $"Button shift… ({profile.Shift.Keys.Count} {(profile.Shift.Keys.Count == 1 ? "key" : "keys")})");
         int rapidCount = Enumerable.Range(0, 18).Count(i => Binding(i).RapidHz != 0);
         rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（デバイスの更新が必要）", "Rapid fire (update required)");

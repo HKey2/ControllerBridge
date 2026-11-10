@@ -145,8 +145,11 @@ internal sealed partial class MainForm : Form
         timing = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new(10, 4, 8, 4) };
         timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.AutoSize)); timing.ColumnStyles.Add(new(SizeType.Percent, 100));
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
-        Label intervalHelp = Ui.Label(L.T("0 = コントローラーの標準値", "0 = controller default"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
+        Label intervalHelp = Ui.Label(L.T("0 = 標準値（X出力は互換動作）", "0 = default (X: compatibility)"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
+        string intervalTip = L.T("入力間隔を指定します。X出力にも適用し、0は従来の互換動作、1～255は指定したms間隔を要求します。X出力の間隔変更を保存・適用するとUSBが再接続されます。実際の取得周期は接続先にも依存します。",
+            "Sets the input interval and X gamepad output polling. Zero retains compatibility timing; 1–255 requests that interval in ms. Applying a changed X interval reconnects USB. The host also determines the actual polling cadence.");
+        SetTip(interval, intervalTip); SetTip(intervalHelp, intervalTip);
         outputContent.Controls.Add(timing, 0, 0);
         BufferedTableLayoutPanel tuning = pointingTuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
         tuning.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -268,10 +271,10 @@ internal sealed partial class MainForm : Form
     }
     private void BindSelected()
     {
+        using IDisposable layout = Ui.BatchLayout(this, deferPaint: true);
         loading = true; DeviceProfile p = profiles[selected];
         SyncOutputControls();
         name.Text = p.Enabled ? p.Name : L.T("未使用", "Unused"); name.ReadOnly = !p.Enabled;
-        details.Visible = identity.Visible = outputStatus.Visible = p.Enabled; duplicate.Visible = ledSettings.Visible = p.Enabled;
         delete.Text = p.Enabled ? L.T("プロファイル削除", "Delete profile") : L.T("コントローラーを追加", "Add controller"); Ui.ButtonColors(delete, !p.Enabled);
         interval.Value = p.InputInterval; trackballOn.Checked = p.Mouse.TrackballEnabled; paddleOn.Checked = p.Mouse.PaddleEnabled;
         mouseGain.Value = p.Mouse.TrackballGain; paddleGain.Value = p.Mouse.PaddleGain; paddleAxis.SelectedIndex = (int)p.Mouse.PaddleAxis;
@@ -282,6 +285,7 @@ internal sealed partial class MainForm : Form
         foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) mapping.Bind(p, fields, learn, caps?.SupportsRapidFire == true);
         UpdateProfileOutputStatus();
         UpdateEnabled();
+        details.Visible = identity.Visible = outputStatus.Visible = p.Enabled; duplicate.Visible = ledSettings.Visible = p.Enabled;
     }
     private void MarkDirty()
     {
@@ -480,14 +484,18 @@ internal sealed partial class MainForm : Form
         foreach (InputChange change in changes)
         {
             InputField? f = fields.FirstOrDefault(f => f.Index == change.Index);
-            // Observe every received change, including baseline draining and a
-            // final overrun event, independently of whether learning accepts it.
-            wizard?.ObserveInput(f, change);
-            if (change.Lost) { AbortLearning(L.T("入力の観測が追いつかなかったため、割り当てを中止しました。", "Assignment stopped because input events were missed.")); wizard?.ConnectionLost(); deliver = false; }
+            // A PC-side backlog may overwrite device history. Continue with
+            // received values without interrupting learning or its axis range.
+            // Baseline draining still reaches the log but not learning.
+            wizard?.ObserveInput(f, change with { Lost = false });
             if (f is null) continue;
             f.Value = change.Value; f.Valid = true;
             latest = L.T($"入力: {f.Label} = {change.Value}", $"Input: {f.Label} = {change.Value}");
-            if (deliver) { ActiveEditor.OnInput(f, change.Value); wizard?.OnInput(f, change.Value); }
+            if (deliver)
+            {
+                ActiveEditor.OnInput(f, change.Value); wizard?.OnInput(f, change.Value);
+                ActiveEditor.ObserveAxisWizard(f, change.Value, change.Time); wizard?.ObserveAxisWizard(f, change.Value, change.Time);
+            }
         }
         // Deliver every event to learning, but paint only the final visible value.
         if (latest is not null) SetText(live, latest);
@@ -527,6 +535,10 @@ internal sealed partial class MainForm : Form
                 }
                 if (rebind) BindSelected();
                 if (!emptyRetry) ApplyChanges(result.Changes, !activeChanged);
+                if (!emptyRetry && !activeChanged && unchecked((int)(cursor - caps.EventHead)) >= 0)
+                {
+                    ActiveEditor.RefreshAxisWizard(); wizard?.RefreshAxisWizard();
+                }
                 UpdateConnection();
             }
         }

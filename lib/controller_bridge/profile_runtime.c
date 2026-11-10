@@ -20,6 +20,8 @@ static field_change changes[CHANGE_COUNT];
 static uint8_t descriptor[UC_REPORT_DESCRIPTOR_CAPACITY];
 static uint8_t device_descriptor[18],configuration_descriptor[UC_CONFIG_CAPACITY];
 static uint16_t device_descriptor_size,configuration_descriptor_size;
+// Index by IN endpoint number; high byte is the owning interface.
+static uint16_t pointing_intervals[16];
 static uc_hid_layout layout;
 static unsigned received,field_count;
 static uint32_t connection_generation,head,descriptor_crc;
@@ -150,17 +152,26 @@ uint8_t upr_hold_directions(uint32_t now_us) {
        (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return 0;
     return um_hold_directions(&hold_state,now_us,hold_idle_us);
 }
+static void cache_pointing_intervals(void) {
+    memset(pointing_intervals,0,sizeof(pointing_intervals));
+    unsigned iface=256;bool alternate_zero=false;
+    for(unsigned pos=0;pos+2<=configuration_descriptor_size;) {
+        const uint8_t *d=configuration_descriptor+pos;unsigned length=d[0];
+        if(length<2 || pos+length>configuration_descriptor_size)break;
+        if(d[1]==4) {
+            iface=length>=9?d[2]:256;alternate_zero=length>=9 && !d[3];
+        }
+        if(d[1]==5 && length>=7 && iface<256 && alternate_zero &&
+           (d[2]&0xf0)==0x80 && (d[2]&15) && (d[3]&3)==3)
+            pointing_intervals[d[2]&15]=(uint16_t)((iface<<8)|d[6]);
+        pos+=length;
+    }
+}
 static uint32_t pointing_timeout(const uc_event *e) {
     unsigned interval=bank.profiles[active].input_interval_ms;
-    if(!interval) {
-        unsigned iface=255;
-        for(unsigned pos=0;pos+2<=configuration_descriptor_size;) {
-            const uint8_t *d=configuration_descriptor+pos;unsigned length=d[0];
-            if(length<2 || pos+length>configuration_descriptor_size)break;
-            if(d[1]==4 && length>=9)iface=d[2];
-            if(d[1]==5 && length>=7 && iface==e->interface_number && d[2]==e->endpoint && (d[3]&3)==3) { interval=d[6];break; }
-            pos+=length;
-        }
+    if(!interval && (e->endpoint&0xf0)==0x80) {
+        uint16_t cached=pointing_intervals[e->endpoint&15];
+        if((cached>>8)==e->interface_number)interval=(uint8_t)cached;
     }
     // Zero reports stop immediately. A change-only device gets a bounded fallback
     // of at least 20 ms or two configured input polls, whichever is longer.
@@ -211,6 +222,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     return true;
 }
 void upr_init(const udk_settings *common) {
+    memset(pointing_intervals,0,sizeof(pointing_intervals));
     rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};hold_idle_us=20000u;
     direction_settings=*common;
     bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
@@ -286,6 +298,7 @@ bool upr_event(const uc_event *e) {
             group_count=profile_number=0;
             vid=pid=revision=0;descriptor_crc=~0u;connection_generation++;
             device_descriptor_size=configuration_descriptor_size=0;
+            memset(pointing_intervals,0,sizeof(pointing_intervals));
             input_protocol=0;memset(&last_input,0,sizeof(last_input));
             input_initialization=0;
             memset(fields,0,sizeof(fields));up_mapper_attach(&mapper,NULL);return true;
@@ -305,13 +318,15 @@ bool upr_event(const uc_event *e) {
                 crc_add(configuration_descriptor,configuration_descriptor_size);
             }
         }
-        if(e->code==UC_CONFIGURED) { connected=true;select_profile();return true; }
+        if(e->code==UC_CONFIGURED) { cache_pointing_intervals();connected=true;select_profile();return true; }
     } else if(e->type==UC_DESCRIPTOR && e->code==1 && e->length>=14) {
         vid=get16(e->data+8);pid=get16(e->data+10);revision=get16(e->data+12);
         if(!e->offset && e->length==sizeof(device_descriptor)) {
             memcpy(device_descriptor,e->data,sizeof(device_descriptor));device_descriptor_size=sizeof(device_descriptor);
         }
     } else if(e->type==UC_DESCRIPTOR && e->code==2) {
+        // A diagnostic descriptor replay is not a new attachment. Keep the
+        // configured interval cache until probing/disconnect or reconfiguration.
         if(!e->offset)configuration_descriptor_size=0;
         if(e->offset==configuration_descriptor_size && e->offset+e->length<=sizeof(configuration_descriptor)) {
             memcpy(configuration_descriptor+e->offset,e->data,e->length);

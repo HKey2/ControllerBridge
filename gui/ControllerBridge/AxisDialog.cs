@@ -184,4 +184,11 @@ internal sealed partial class AxisDialog : Form
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException) { Ui.Error(this, ex); }
     }
     public void ConnectionLost() { DialogResult = DialogResult.Cancel; Close(); }
+    internal void InputEventsLost()
+    {
+        bool interrupted = detect || measuring || pairLearner is not null;
+        detect = measuring = false; pairLearner = null;
+        if (interrupted) message.Text = L.T("入力履歴が欠けたため、計測を中断しました。もう一度計測してください。",
+            "Measurement stopped because input events were missed. Start measuring again.");
+    }
 }

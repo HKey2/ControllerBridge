@@ -77,7 +77,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         hostX.AccessibleName = L.T("X : Xbox360互換", "X: Xbox 360 XInput");
         hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1; hostAuto.Checked = current.HostMode == 2;
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
-        Note(host, L.T("S：従来のSwitch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nモードの変更を保存するとUSBが再接続されます。",
+        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nモードの変更を保存するとUSBが再接続されます。",
             "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nSaving a mode change reconnects USB."));
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;

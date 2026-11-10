@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.24.0. Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.25.0. Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -46,9 +46,9 @@ Guide is sent using the established Xbox 360 wire bit. Windows' ordinary documen
 
 ## USB and report format
 
-The gamepad interface uses class/subclass/protocol **FF/5D/01**, the published 17-byte Xbox gamepad descriptor, interrupt IN **0x81**, interrupt OUT **0x01**, and 32-byte endpoint reservations. These match the connected 8BitDo Arcade Stick in X mode. EP0 uses 8-byte packets, IN81 is polled every 4 ms, and OUT01 declares 8 ms. The first oversized device-descriptor read at address zero completes after its first 8-byte packet; addressed reads return the complete descriptor. Configuration Feature reports are assembled across eight 8-byte packets.
+The gamepad interface uses class/subclass/protocol **FF/5D/01**, the published 17-byte Xbox gamepad descriptor, interrupt IN **0x81**, interrupt OUT **0x01**, and 32-byte endpoint reservations. These match the connected 8BitDo Arcade Stick in X mode. EP0 uses 8-byte packets and OUT01 declares 8 ms. With profile Input interval 0, IN81 requests the reference 4 ms period; with values 1–255, it requests that value instead. Actual polling remains host-controlled. The first oversized device-descriptor read at address zero completes after its first 8-byte packet; addressed reads return the complete descriptor. Configuration Feature reports are assembled across eight 8-byte packets.
 
-Input reports are produced every 11 ms independently of host ACK time. A 4 ms polling host consequently observes the measured 8/12 ms spacing. This is the cadence inferred from the reference’s timestamps, not a claim of cycle-exact electrical equivalence. Each input packet is exactly 20 bytes:
+With profile Input interval 0, input reports retain the 11 ms producer clock independently of host ACK time. A 4 ms polling host consequently observes the measured 8/12 ms spacing. This is the cadence inferred from the reference’s timestamps, not a claim of cycle-exact electrical equivalence. Since 0.24.1, an explicit value 1–255 removes that software wait and arms changes immediately through the existing ordered queue, while requesting that interval in IN81's descriptor. Only the gamepad IN interval changes; the combined mouse retains its own interval. Applying a changed active X interval reconnects USB after profile verification, and retains Auto's current result. See [latency and polling policy](latency-scheduling.md). Each input packet is exactly 20 bytes:
 
 | Offset | Bytes | Value |
 |---:|---:|---|
@@ -68,13 +68,13 @@ Since 0.23.1, X output uses VID **045E** with separate PIDs **4005/4006** and a 
 | X gamepad + mouse | 045E:4006 | XUSB IF0 IN81/OUT01; reference accessory IF1–3; mouse IF4 IN85; configuration IF5 IN86 |
 | Mouse only | CAFE:4004 | Existing mouse layout; host preference retained |
 
-The first four interface descriptors, including the advertised accessory/security functions, match the reference byte for byte. Device revision is **0114**. The measured strings are **8BitDo** (including its terminal UTF-16 NUL), **Controller**, and **157F8F8**. Exact-length string reads succeed. Over-reading manufacturer or serial returns 16 bytes followed by STALL, reproducing the observed reference behavior; string index 4 is unsupported. Device GET_STATUS returns `02 00`, as observed.
+At profile Input interval 0, the first four interface descriptors, including the advertised accessory/security functions, match the reference byte for byte. An explicit nonzero interval changes only gamepad IN81's bInterval in those interfaces. Device revision is **0114**. The measured strings are **8BitDo** (including its terminal UTF-16 NUL), **Controller**, and **157F8F8**. Exact-length string reads succeed. Over-reading manufacturer or serial returns 16 bytes followed by STALL, reproducing the observed reference behavior; string index 4 is unsupported. Device GET_STATUS returns `02 00`, as observed.
 
 The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Rumble and player-LED output packets are acknowledged and the gamepad OUT endpoint is rearmed, but forwarding them to the input controller is not implemented.
 
 ### Retained differences and optional PID build
 
-To retain the Windows configurator, the default device class remains **00/00/00**, PIDs remain **4005/4006**, a configuration HID is appended, and the Microsoft **XUSB10** compatible-ID response is retained. The reference uses device class **FF/FF/FF**, PID **028E**, and four interfaces. Configuration length/interface count therefore differ; combined mouse mode also appends a mouse. The mapper still uses the existing 8-bit axis resolution and digital trigger bindings. These are explicit differences, so this build is not presented as an identical clone of every reference behavior.
+To retain the Windows configurator, the default device class remains **00/00/00**, PIDs remain **4005/4006**, a configuration HID is appended, and the Microsoft **XUSB10** compatible-ID response is retained. The reference uses device class **FF/FF/FF**, PID **028E**, and four interfaces. Configuration length/interface count therefore differ; combined mouse mode also appends a mouse. The mapper still uses the existing 8-bit axis resolution and digital trigger bindings. Nonzero profile Input interval additionally opts into a different gamepad polling/production cadence. These are explicit differences, so this build is not presented as an identical clone of every reference behavior.
 
 The CMake cache settings `CONTROLLER_XINPUT_PID` and `CONTROLLER_XINPUT_COMBINED_PID` allow a dedicated build to change either PID; defaults are `0x4005` and `0x4006`. For example, `-DCONTROLLER_XINPUT_PID=0x028e` selects the reference gamepad PID. This is a last-resort build option, not a change made by the normal configurator. Windows may bind its whole-device retail driver to 028E and hide the configuration HID. The normal release keeps the existing configuration-accessible PIDs. A PID change alone does not remove the other differences above or establish POLYMEGA compatibility.
 

@@ -63,7 +63,7 @@ static bool profile_valid(const up_profile *p,unsigned version) {
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;
             if((a->flags&~7u) || a->reserved || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
-               a->minimum>=a->center || a->center>=a->maximum || a->deadzone_percent>50 ||
+               a->minimum>=a->maximum || a->minimum>a->center || a->center>a->maximum || a->deadzone_percent>50 ||
                !number_fits(a->minimum,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
         } else return false;
     }
@@ -274,7 +274,8 @@ static uint8_t UC_RAM_FUNC(analog_value)(const up_analog *a,int32_t value) {
     int64_t span=positive?(int64_t)a->maximum-a->center:(int64_t)a->center-a->minimum;
     int64_t distance=positive?(int64_t)value-a->center:(int64_t)a->center-value;
     int64_t dead=span*a->deadzone_percent/100;
-    if(distance<=dead)return 128;
+    // An endpoint neutral has a zero-width inactive side.
+    if(!span || distance<=dead)return 128;
     if(a->flags&UP_INVERT)positive=!positive;
     unsigned amount=(unsigned)((distance-dead)*(positive?127:128)/(span-dead));
     return (uint8_t)(positive?128+amount:128-amount);

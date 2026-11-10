@@ -1,5 +1,46 @@
 # Verification record
 
+## 2026-11-10 — cached native intervals and profile-controlled X polling (0.24.1)
+
+Native pointing endpoint intervals are cached at UC_CONFIGURED in a 32-byte table keyed by IN endpoint and owning interface. Input handling no longer walks the configuration descriptor for Hold/Virtual Rolling timeouts. Reconnect/probing clears the cache; diagnostic descriptor replay preserves it. Profile overrides remain immediate. No storage format or controller protocol was changed by this cache.
+
+Per the selected policy, profile Input interval 0 retains X's 4 ms USB / 11 ms producer timing. Nonzero values request that X gamepad polling interval and remove the software producer gate. S and mouse output keep their separate timing. The existing reference identity and initialization replies are retained. The real output-switch functions compare the active raw interval, so 0 and 4 do not alias, and apply changes after the existing save/readback sequence. Auto's result is retained through a timing reconnect. This does not establish POLYMEGA compatibility at a nonzero interval.
+
+The core suite passed **51,009 checks**, including 497 mouse runtime checks covering independent endpoint/interface values, inactive alternate settings, overrides, replay and reconnect. X output passed **224** checks (reference byte preservation, explicit intervals, producer clock and wraparound); Switch 2 and Auto suites passed **56 / 35**. A further **25** checks compile the actual output-selection/reconnect functions with USB stubs: delayed detachment, cancellation, latest-profile selection, measurement deferral, unchanged S/mouse behavior, Auto result and timer wrap. This verifies software sequencing, not physical USB timing.
+
+Normal firmware and the Windows configurator were built with existing Pico SDK 2.1.1 / Arm GCC 14.2.1 / .NET SDK 9.0.319. Japanese/English layout checks passed at 96/120/144/192 DPI, including the revised polling explanation, with **50,808 assertions**. The checks use hidden synthetic windows and do not open a controller. Normal-product resource verification checks the standalone/embedded firmware and absence of local development entry points.
+
+No firmware or settings were written to the board in this task, and no new post-change microsecond or contact-to-library latency measurement is claimed. The preceding physical 0.24.0 results remain historical observations. [Latency and polling policy](latency-scheduling.md) records the primary GP2040-CE, MiSTer Addons and Brook references, conditional faster-than-direct analysis, and why nominally equal polling periods do not prove phase alignment or theoretical optimality. Evidence remains in ignored `test/development/results/latency-scheduling-20261110`.
+
+## 2026-11-10 — EGRET input latency at the default 0 ms setting (0.24.0)
+
+Normal 0.22.0 (`10f61b8`, before X output, Switch 2 input and Auto selection) was compared with normal 0.24.0 (`4272590`) on the same RP2350 board, Windows host and saved profiles. The running 0.24.0 program matched the normal build. Both EGRET controllers used input setting **0 ms**, which selects their native **10 ms / 100 Hz** interval; S output used 1 ms polling. No profile, conversion, shift or output settings were changed. Each measurement had no configuration traffic during its interval. This is an internal receive-to-output measurement, not physical contact-to-game/display latency. The input report timestamp is recorded by the existing PIO transport, and USB completion is the bridge's observed host ACK.
+
+There is a small, repeatable receive-to-mapping increase; exact performance equality is not established. Controlled idle samples separate this from the different amount of user movement:
+
+| Controller / normal idle samples | 0.22.0 mean / max, microseconds | 0.24.0 mean / max, microseconds | Mean increase |
+|---|---:|---:|---:|
+| EGRET Arcade Stick 0AE4:0703; 9,000 / 1,500 reports | 54.388 / 62 | 60.742 / 69 | 6.354 us |
+| EGRET Paddle 0AE4:0701; 1,500 reports per version | 102.704 / 113 | 113.526 / 131 | 10.822 us |
+
+Arcade operation measurements recorded 652 transitions in 120 seconds on 0.22.0 and 990 in 90 seconds on 0.24.0; every transition was ACKed. Receive-to-send-ready mean/max was **69.138 / 86 us** versus **72.015 / 111 us**. Receive-to-ACK mean/max was **616.406 / 896 us** versus **525.409 / 1082 us**. The initial 90-second baseline operation attempt had zero transitions and is used only as an idle sample; a second capture with explicit user completion supplied the baseline operation data. Operations were manual, not a matched electronic stimulus.
+
+For paddle/trackball mouse output, 0.22.0 recorded 163 movements with receive-to-ready mean/max **143.840 / 171 us**; 0.24.0 recorded 5,559 with **145.213 / 274 us**. The different movement counts/workloads prevent treating the 1.373 us mean difference as a precise regression estimate. Current receive-to-mouse-ACK was **720.863 / 1,172 us**. All accumulated X/Y movement was ACKed exactly in both versions. The saved profile also generates gamepad directions with hold/wait and rolling behavior. Its combined gamepad-transition histogram includes generated edges and their intended timing; its tens-of-milliseconds values are not physical-button CPU latency. No isolated paddle-button A/B claim is made.
+
+All captured normal and timing-probe intervals had zero new input transfer/packet errors, malformed reports, raw queue drops and transition queue drops. Mouse drops were zero. Both controllers retained 100 Hz input; normal S output remained approximately 1,000 ACKs/second. USB completion includes host-poll phase, so different ACK averages or idle repeated-state latency must not be attributed directly to CPU speed. Current active arcade transitions were ready within 111 us and pointer movements within 274 us in these samples; no new millisecond-scale S-path wait or input loss was observed. These finite samples do not establish an absolute worst case.
+
+The source comparison found `profile.c`, `mouse.c`, `queue.c`, `transport_pio.c` and the PIO timestamp patch byte-identical between 0.22.0 and 0.24.0. Runtime mapping/relative-input code was unchanged; the runtime change concerns Switch 2 recognition during setup. Standard HID validation returns before other protocols' decoders. GIP ACK service is gated by `xbox_out.active`, false for EGRET; Switch 2/Xbox startup and Elite recovery paths are not run for EGRET input. The older pre-GIP comparison also shows the transport addition is an enumeration-recovery function, not a change to normal polling. This is source evidence, not a physical pre-GIP timing comparison. Shared scheduling, USB endpoint helpers and S/X/Auto branches did change.
+
+Identical local timing instrumentation in both versions measured 1,500 idle paddle packets: receive-to-scheduling-end means **132.405 -> 140.796 us**. Dispatch/mapping itself was **22.701 -> 23.735 us**. The remainder is spread across the receive handoff, pointing handling and scheduling stages. Instrumentation changes code placement and timing, so these probes support the small aggregate increase but do not prove one exact function is its sole cause. The probes were never adopted into product code.
+
+X output, including Auto when it settles on X, intentionally uses an **11,000 us report-production period** and **4 ms USB polling**. Input setting 0 ms does not override that output policy. The S results above must not be applied to X, and no new X-host timing measurement is claimed here. Auto's five-second detection policy is a startup decision, not a per-input wait after selection settles.
+
+One existing optimization candidate is caching the effective endpoint interval used by `pointing_timeout()`: at 0 ms it rescans the cached configuration descriptor for each relevant paddle/trackball packet. The same code exists in 0.22.0, so it is not a newly introduced protocol regression. Any cache must be invalidated on device, endpoint, profile or interval changes; no speed gain is claimed without measurement. Product firmware was not changed for this investigation.
+
+All five temporary comparison/probe runs restored **every one of the 2,097,152 Flash bytes**, with SHA-256 `4c63025e392db81c9d78e9d775d9fbed4d594e864e27921b623e3c2d44e1a73d`. Firmware, the full 13,908-byte profile bank, common settings and runtime configuration matched after reboot. The final board is normal **0.24.0, fixed S, input 0 ms**, with EGRET Arcade Stick connected. Evidence, source snapshots, diagnostic patches and restoration records are retained only under ignored `test/development/results/egret-latency-0240-20261110`; backups are not distributed.
+
+Normal allocation is unchanged: Flash code/initial values **125,272** plus **49,152** reserved, leaving **1,922,728 bytes**; static SRAM **158,596** plus **8,192** stack reservation, leaving **365,692 bytes**. Existing ELF sections confirm vectors/data/BSS **272 / 39,696 / 118,628**, and the normal UF2 is **250,880 bytes**. The outdated explanatory figures in both README memory paragraphs were corrected to match their existing current tables. No .NET/toolchain, production code or release binary was changed.
+
 ## 2026-11-09 — optional Auto host selection (0.24.0)
 
 Fixed S (default) and fixed X are retained. Auto presents X first, waits up to five seconds from host activity for X-specific requests or gamepad input completion, then disconnects once and presents S if acceptance was not observed. It never retries after final S or after confirmed X. USB reset and profile/application changes do not rearm it. The selected Auto setting persists separately from the runtime S/X result; the GUI reads command 54 and uses the active button labels. Host settings use the existing 40-byte runtime structure and 244-byte common Flash allocation.
@@ -728,20 +769,20 @@ Product builds use `tools/build-firmware.ps1` and `tools/build-configurator.ps1`
 
 Development and verification sources are maintained locally under the Git-ignored `test/development` directory. Its `prepare.ps1` assembles a fresh workspace from current product files, restores local development files, and checks/applies the local integration patch. `-ProductOnly` omits all development support. Build and verification commands run inside the generated workspace; they do not modify product sources or distribution files. The local README documents the retained GUI, C, DPI, UDLR, USB-diagnostic and measurement tools. Earlier dated entries describe the paths and executables used at the time.
 
-No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.24.0. The original source-separation work did not write a device. Later physical updates are described in their dated entries.
+No toolchain is installed or changed by this separation. The normal GUI remains `net9.0-windows`; the current normal firmware is 0.25.0. The original source-separation work did not write a device. Later physical updates are described in their dated entries.
 
 ## Current normal-build memory
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 125,272; persistent storage 49,152 | 1,922,728 |
-| SRAM, 532,480 bytes | Static data 158,596; two stacks 8,192 | 365,692 |
+| Flash, 2,097,152 bytes | Code/initial values 124,864; persistent storage 49,152 | 1,923,136 |
+| SRAM, 532,480 bytes | Static data 158,328; two stacks 8,192 | 365,960 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 39,696, and BSS 118,628 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 250,880 bytes.
+Static SRAM consists of vector table 272, initialized data 39,392, and BSS 118,664 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 249,856 bytes.
 
-These figures come from the final normal 0.24.0 ELF. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes. Compared with normal 0.23.2, Flash grows by 496 bytes and static SRAM grows by 96 bytes. Runtime settings remain 40 bytes; shared Flash remains 244 bytes. Stack and persistent-region reservations are unchanged. This is an allocation comparison, not a measured speed claim.
+The current normal firmware is 0.25.0. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes.
 
 The archived local UDLR variant was not rebuilt; its memory figures in dated entries describe those artifacts. GUI buffers use PC memory outside the board totals. Button shift and inertia transitions do not write Flash.

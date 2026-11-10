@@ -51,6 +51,9 @@ const uint8_t xw_combined_configuration_descriptor[XW_COMBINED_CONFIGURATION_BYT
     7,5,0x85,3,8,0,1,
     XW_CONFIG_INTERFACE(5,0x86)
 };
+void xw_set_poll_interval(uint8_t *configuration,uint8_t requested) {
+    configuration[41]=xw_poll_interval(requested);
+}
 static void put16(uint8_t *p,uint16_t value) { p[0]=(uint8_t)value;p[1]=(uint8_t)(value>>8); }
 static int16_t stick(uint8_t value,bool invert) {
     int32_t delta=(int32_t)value-128;
