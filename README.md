@@ -9,6 +9,7 @@
 - Shift-button switching between primary and alternate button mappings.
 - Per-button rapid fire, adjustable in one-press-per-second increments.
 - Map mouse, trackball, and paddle movement to any button.
+- DS3 pressure-sensitivity values ​​can be assigned to any analog stick axis.
 - Virtual rolling switch mode.
 - Internal input processing within 1 ms.
 - Configurable input polling interval (1–255 ms).
