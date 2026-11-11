@@ -453,7 +453,9 @@ internal sealed partial class MainForm : Form
             (caps.SwitchKeys == 0 ? L.T("BOOT長押しで切替", "Hold BOOT to cycle") : L.T("ショートカットで切替", "Use the shortcut to cycle"));
         if (caps.Connected && caps.Partial && outputState?.Active.Mouse != true) stateText += L.T("  •  一部の入力形式は未対応", "  •  Some inputs are unsupported");
         if (caps.Connected && !fields.Any(f => f.Learnable)) stateText = L.T("割り当て可能なボタン・絶対値入力がありません。", "No assignable buttons or absolute inputs were found.");
-        else if (caps.Connected && !fields.Any(f => f.Learnable && f.Valid)) stateText = L.T("操作データの受信待ち", "Waiting for controller input");
+        else if (caps.Connected && !fields.Any(f => f.Learnable && f.Valid)) stateText = caps.InputProtocol == 32
+            ? L.T("DS3のPSボタンを押して入力を開始してください。", "Press the DS3 PS button to start input.")
+            : L.T("操作データの受信待ち", "Waiting for controller input");
         if (!caps.Persisted) stateText += L.T("  •  初期設定を使用中", "  •  Using default settings");
         if (caps.SelectionUnsaved) stateText += L.T("  •  選択スロットが未保存", "  •  Active slot not saved");
         if (caps.BankGeneration != bankGeneration) {

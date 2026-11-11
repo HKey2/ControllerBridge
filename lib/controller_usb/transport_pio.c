@@ -73,6 +73,7 @@ void ut_init(uint8_t dp_pin) {
     root->is_fullspeed = true;
     root->suspended = true;
     next_frame = time_us_32() + 1000;
+    ut_wait_for_device(750);
 }
 
 void __not_in_flash_func(ut_pump)(void) {
@@ -98,6 +99,13 @@ uint32_t __not_in_flash_func(ut_idle_budget_us)(void) {
 }
 
 void ut_close_device(uint8_t address) { pio_usb_host_close_device(0, address); }
+void ut_wait_for_device(uint32_t ms) {
+    ut_close_device(0);ut_close_device(1);
+    // Leave the bus at idle without SOFs or probes so a newly attached
+    // controller can complete startup. Do not hold it in USB reset here.
+    PIO_USB_ROOT_PORT(0)->suspended = true;
+    ut_delay_ms(ms);
+}
 void ut_reset(void) {
     ut_close_device(0);
     ut_close_device(1);

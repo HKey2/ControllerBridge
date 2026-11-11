@@ -37,8 +37,11 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsTrackballHold => SupportsVirtualRolling && (Features & 4194304) != 0;
     public bool SupportsRollingStep => SupportsTrackballHold && (Features & 8388608) != 0;
     public bool SupportsProfileConversion => (Features & (16777216 | 33554432)) == (16777216 | 33554432);
+    public bool SupportsAnalogPair => (Features & 67108864) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
+        if (profile.Axes.Any(a => a.Mode == 3) && !SupportsAnalogPair)
+            throw new InvalidDataException(L.T("正負のアナログ入力合成には同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware to combine negative and positive analog inputs."));
         if (!SupportsProfileConversion) throw new InvalidDataException(L.T("プロファイル別の変換設定には同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware for per-profile conversion settings."));
         if (profile.Mouse.TrackballGain > 64 && !SupportsGain256)
             throw new InvalidDataException(L.T("64倍を超える感度にはファームウェア0.20.3以降が必要です。", "Gain above 64 requires firmware 0.20.3 or later."));
@@ -48,7 +51,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
             throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。デバイスを更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
     }
     public bool SelectionUnsaved => (Flags & 16) != 0;
-    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", 16 => "Switch 2 USB", _ => "HID" };
+    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", 16 => "Switch 2 USB", 32 => "DUALSHOCK 3 USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
         if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & (4096 | 16777216 | 33554432)) != (4096 | 16777216 | 33554432))
@@ -60,6 +63,8 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
 
 public sealed class InputField
 {
+    public bool DualShock3 { get; init; }
+    public bool Pressure => DualShock3 && UsagePage == 9 && Usage is >= 5 and <= 16 && Bits == 8 && Minimum == 0 && Maximum == 255;
     public ushort Index { get; init; }
     public byte Interface { get; init; }
     public byte ReportId { get; init; }
@@ -77,12 +82,15 @@ public sealed class InputField
         (!(UsagePage == 1 && Usage == 0x39) || Hat);
     public bool Hat => UsagePage == 1 && Usage == 0x39 && (long)Maximum - Minimum is 3 or 7;
     public bool Binary => (long)Maximum - Minimum == 1;
-    public string Label => UsagePage == 9 ? L.T($"ボタン {Usage}", $"Button {Usage}") : UsagePage == 1 ? Usage switch
+    private string SonyButton => Usage switch { 1 => "SELECT", 2 => "L3", 3 => "R3", 4 => "START",
+        5 => L.T("十字キー 上", "D-pad up"), 6 => L.T("十字キー 右", "D-pad right"), 7 => L.T("十字キー 下", "D-pad down"), 8 => L.T("十字キー 左", "D-pad left"),
+        9 => "L2", 10 => "R2", 11 => "L1", 12 => "R1", 13 => "△", 14 => "○", 15 => "×", 16 => "□", 17 => "PS", _ => L.T($"ボタン {Usage}", $"Button {Usage}") };
+    public string Label => DualShock3 && UsagePage == 9 ? SonyButton + (Pressure ? L.T(" 感圧", " pressure") : "") : UsagePage == 9 ? L.T($"ボタン {Usage}", $"Button {Usage}") : UsagePage == 1 ? Usage switch
         { 0x30 => L.T("X軸", "X axis"), 0x31 => L.T("Y軸", "Y axis"), 0x32 => L.T("Z軸", "Z axis"), 0x33 => L.T("Rx軸", "Rx axis"), 0x34 => L.T("Ry軸", "Ry axis"), 0x35 => L.T("Rz軸", "Rz axis"), 0x36 => L.T("スライダー", "Slider"), 0x38 => L.T("パドル (Wheel)", "Paddle (Wheel)"), 0x39 => L.T("十字キー (Hat)", "D-pad (Hat)"),
           0x90 => L.T("十字キー 上", "D-pad up"), 0x91 => L.T("十字キー 下", "D-pad down"), 0x92 => L.T("十字キー 右", "D-pad right"), 0x93 => L.T("十字キー 左", "D-pad left"), _ => $"HID {UsagePage:X2}:{Usage:X2}" }
         : $"HID {UsagePage:X2}:{Usage:X2}";
     public override string ToString() => $"{Label}  [IF{Interface}/ID{ReportId}/bit{BitOffset}]";
-    internal static InputField Read(byte[] b) => new() { Index = Wire.U16(b, 6), Interface = b[8], ReportId = b[9], Bits = b[10], Flags = b[11],
+    internal static InputField Read(byte[] b, bool dualShock3 = false) => new() { DualShock3 = dualShock3, Index = Wire.U16(b, 6), Interface = b[8], ReportId = b[9], Bits = b[10], Flags = b[11],
         BitOffset = Wire.U16(b, 12), UsagePage = Wire.U16(b, 14), Usage = Wire.U16(b, 16), HidFlags = Wire.U16(b, 18),
         Minimum = Wire.I32(b, 20), Maximum = Wire.I32(b, 24), Value = Wire.I32(b, 28), Valid = b[36] != 0 };
     public DigitalBinding Digital(byte mode, int low, int high) => new() { Interface = Interface, ReportId = ReportId,
@@ -279,7 +287,7 @@ internal sealed class HidBridge : IDisposable
                     restart = true; break;
                 }
                 if (Wire.U32(b, 0) != before.ConnectionGeneration || Wire.U16(b, 4) != before.FieldCount) { restart = true; break; }
-                fields.Add(InputField.Read(b));
+                fields.Add(InputField.Read(b, before.InputProtocol == 32 && before.Vid == 0x054c && before.Pid == 0x0268));
             }
             Capabilities after = Caps();
             if (!restart && after.ConnectionGeneration == before.ConnectionGeneration && after.FieldCount == before.FieldCount && after.DescriptorHash == before.DescriptorHash)

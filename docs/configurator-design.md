@@ -36,7 +36,7 @@ The canonical profile is version 8, 848 bytes, little endian. The C definitions 
 | 2 | 2 | Flags: enabled=1, descriptor match=2, revision match=4, custom LED RGB=8 |
 | 4 / 6 / 8 | 2 each | VID / PID / bcdDevice |
 | 10 | 1 | Input interval in ms; zero uses the descriptor |
-| 11 | 1 | Four 2-bit axis modes: disabled=0, analog=1, digital pair=2 |
+| 11 | 1 | Four 2-bit axis modes: disabled=0, analog=1, digital pair=2, analog pair=3 |
 | 12 | 4 | Input descriptor fingerprint |
 | 16 | 48 | NUL-terminated UTF-8 name, at most 47 data bytes |
 | 64 | 288 | 18 digital bindings, 16 bytes each |
@@ -70,7 +70,7 @@ Digital binding fields are interface (1), report ID (1), bit offset (2), bit wid
 
 Digital output order is Y, B, A, X, L, R, ZL, ZR, Minus, Plus, left-stick press, right-stick press, HOME, Capture, Up, Right, Down, Left.
 
-An analog binding contains interface (1), report ID (1), bit offset (2), bit width (1), flags (1), reserved (2), minimum (4), center (4), maximum (4), dead-zone percentage (2), and reserved (10). Flag bit 2 enables inversion. A digital-pair axis instead contains negative and positive 16-byte bindings; both held gives center. Axis order is LX, LY, RX, RY. Values received on separate interfaces/report IDs are retained and combined. Bit offsets exclude the report-ID byte.
+An analog binding contains interface (1), report ID (1), bit offset (2), bit width (1), flags (1), reserved (2), minimum (4), center (4), maximum (4), dead-zone percentage (2), and reserved (10). Flag bit 2 enables inversion. A digital-pair axis instead contains negative and positive 16-byte bindings; both held gives center. An analog-pair axis uses two 16-byte directional bindings, negative then positive: interface (1), report ID (1), bit offset (2), bit width (1), signed/report-ID flags (1), dead-zone percentage (2), released value (4), and fully pressed value (4). It requires capability bit 26. Both directions use the same normalized scale before summation, so equal pressure cancels exactly. Existing profile and bank sizes remain unchanged. Axis order is LX, LY, RX, RY. Values received on separate interfaces/report IDs are retained and combined. Bit offsets exclude the report-ID byte.
 
 ## Profile bank and Flash
 

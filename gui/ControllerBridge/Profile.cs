@@ -89,14 +89,48 @@ public sealed class AnalogBinding
         Center = Wire.I32(b, p + 12), Maximum = Wire.I32(b, p + 16), Deadzone = Wire.U16(b, p + 20) };
 }
 
+public sealed class AnalogHalfBinding
+{
+    public byte Interface { get; set; }
+    public byte ReportId { get; set; }
+    public ushort BitOffset { get; set; }
+    public byte Bits { get; set; }
+    public byte Flags { get; set; }
+    public ushort Deadzone { get; set; }
+    public int Neutral { get; set; }
+    public int Maximum { get; set; }
+    internal void Write(byte[] b, int p)
+    {
+        Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
+        if (Flags > 3 || Neutral == Maximum || Deadzone > 50 || !Wire.Fits(Neutral, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags))
+            throw new InvalidDataException(L.T("負方向・正方向それぞれの入力元、未押下と最大押下の異なる値、デッドゾーン0～50%を設定してください。", "Set both input sources, different released/fully pressed values, and a dead zone of 0–50%."));
+        b[p] = Interface; b[p + 1] = ReportId; Wire.W16(b, p + 2, BitOffset); b[p + 4] = Bits; b[p + 5] = Flags;
+        Wire.W16(b, p + 6, Deadzone); Wire.WI32(b, p + 8, Neutral); Wire.WI32(b, p + 12, Maximum);
+    }
+    internal static AnalogHalfBinding Read(byte[] b, int p) => new() { Interface = b[p], ReportId = b[p + 1],
+        BitOffset = Wire.U16(b, p + 2), Bits = b[p + 4], Flags = b[p + 5], Deadzone = Wire.U16(b, p + 6),
+        Neutral = Wire.I32(b, p + 8), Maximum = Wire.I32(b, p + 12) };
+    internal int Strength(int value)
+    {
+        long span = (long)Maximum - Neutral, distance = (long)value - Neutral;
+        if (span < 0) { span = -span; distance = -distance; }
+        long dead = span * Deadzone / 100;
+        return span == 0 || distance <= dead ? 0 : distance >= span ? 65535 : (int)((distance - dead) * 65535 / (span - dead));
+    }
+    public override string ToString() => $"IF{Interface} / ID{ReportId} / bit{BitOffset}";
+}
+
 public sealed class AxisBinding
 {
     public byte Mode { get; set; }
     public AnalogBinding Analog { get; set; } = new();
     public DigitalBinding Negative { get; set; } = new();
     public DigitalBinding Positive { get; set; } = new();
+    public AnalogHalfBinding NegativeAnalog { get; set; } = new();
+    public AnalogHalfBinding PositiveAnalog { get; set; } = new();
     public override string ToString() => Mode switch { 1 => L.T($"アナログ IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}", $"Analog IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}") + ((Analog.Flags & 4) != 0 ? L.T(" (反転)", " (inverted)") : ""),
-        2 => L.T("2つのボタン（負 / 正）", "Two buttons (negative / positive)"), _ => L.T("未使用・中心固定", "Unused / centered") };
+        2 => L.T("2つのボタン（負 / 正）", "Two buttons (negative / positive)"),
+        3 => L.T("2つのアナログ入力（負＋正）", "Two analog inputs (negative + positive)"), _ => L.T("未使用・中心固定", "Unused / centered") };
 }
 
 public enum PaddleOutputAxis { X, Y }
@@ -196,10 +230,11 @@ public sealed class DeviceProfile
         for (int i = 0; i < 4; i++)
         {
             AxisBinding a = Axes[i] ?? throw new InvalidDataException(L.T("軸が欠落しています。", "An axis is missing."));
-            if (a.Mode > 2) throw new InvalidDataException(L.T("未対応の軸モードです。", "This axis mode is not supported."));
+            if (a.Mode > 3) throw new InvalidDataException(L.T("未対応の軸モードです。", "This axis mode is not supported."));
             b[11] |= (byte)(a.Mode << (2 * i)); int p = 352 + 32 * i;
             if (a.Mode == 1) (a.Analog ?? throw new InvalidDataException(L.T("アナログ設定が欠落しています。", "Analog settings are missing."))).Write(b, p);
             if (a.Mode == 2) { (a.Negative ?? throw new InvalidDataException()).Write(b, p); (a.Positive ?? throw new InvalidDataException()).Write(b, p + 16); }
+            if (a.Mode == 3) { (a.NegativeAnalog ?? throw new InvalidDataException()).Write(b, p); (a.PositiveAnalog ?? throw new InvalidDataException()).Write(b, p + 16); }
         }
         (Mouse ?? throw new InvalidDataException(L.T("マウス設定が欠落しています。", "Mouse settings are missing."))).Write(b, 480);
         b[484] = (byte)(OutputMode | (ControllerButtons ? 4 : 0));
@@ -227,6 +262,7 @@ public sealed class DeviceProfile
             byte mode = (byte)((b[11] >> (2 * i)) & 3); int at = 352 + i * 32; p.Axes[i].Mode = mode;
             if (mode == 1) p.Axes[i].Analog = AnalogBinding.Read(b, at);
             if (mode == 2) { p.Axes[i].Negative = DigitalBinding.Read(b, at); p.Axes[i].Positive = DigitalBinding.Read(b, at + 16); }
+            if (mode == 3) { p.Axes[i].NegativeAnalog = AnalogHalfBinding.Read(b, at); p.Axes[i].PositiveAnalog = AnalogHalfBinding.Read(b, at + 16); }
         }
         p.Mouse = MouseProfileSettings.Read(b, 480);
         if ((b[484] & ~7) != 0) throw new InvalidDataException(L.T("未対応の出力方式です。", "This output mode is not supported."));

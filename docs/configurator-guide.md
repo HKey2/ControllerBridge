@@ -144,9 +144,17 @@ If input events are missed, measurement continues with the values received, pres
 
 ### Individual axis settings
 
+**DUALSHOCK 3 pressure:** connect the controller by USB and press its PS button if the application is waiting for input. The individual axis list includes named pressure inputs for D-pad Up/Right/Down/Left, L2/R2/L1/R1 and △/○/×/□. Pressure meters run from released (0) to fully pressed (100%). A single pressure source initially uses its released value as the axis center; the existing minimum/center/maximum settings and inversion remain available. Pressure inputs are configured here, not through the stick setup wizard.
+
+Choose **Combine two analog inputs for negative / positive** to assign a separate input to each direction. For example, use L2 pressure for negative and R2 pressure for positive. Each side has its own **Released value**, **Fully pressed value**, and **Dead zone %**. DS3 pressures default to 0, 255 and 0%; if a button reaches a smaller raw maximum, hold it at the intended full pressure and choose **Use current as fully pressed**. Decreasing raw ranges are also accepted.
+
+The two calibrated amounts are added with opposite signs. Negative only produces left/up, positive only produces right/down, and equal amounts cancel to the center. Both fully pressed therefore give zero deflection; unequal amounts give the difference. **Combined** previews the signed amount. The normal four output axes remain LX, LY, RX and RY; no extra output axes are added.
+
+Choose **Apply**, then **Save profile to device** in the profile screen. Paired analog settings require the matching bundled firmware; the application requests an update before saving them to older firmware. Existing mappings and profile sizes are retained. The stick setup wizard does not create paired assignments.
+
 The live **Input value** readout reserves enough width for a signed 32-bit value. **Record center** and **Use descriptor range** keep their positions when the value changes sign or number of digits.
 
-The analog dialog displays all candidate axes with live centered meters and raw values. Move the physical control to identify its axis, then select the matching row. Unselected axes update too. Large sets use multiple columns when needed. If input events are missed, automatic detection and range recording continue with the values received. A disconnection still closes the dialog.
+The analog dialog displays all candidate axes with live meters and raw values. Stick meters are centered; pressure meters start at the left edge. Move the physical control to identify its axis, then select the matching row. Unselected axes update too. Large sets use multiple columns when needed. If input events are missed, automatic detection and range recording continue with the values received. A disconnection still closes the dialog.
 
 ![Saved Left stick X settings for the disconnected Cyber analog profile](gui-axis-en.png)
 

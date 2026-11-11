@@ -2,7 +2,7 @@
 #define UC_INPUT_PROTOCOL_H
 #include "controller_usb.h"
 
-enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4, UC_PROTOCOL_XBOX_ONE=8, UC_PROTOCOL_SWITCH2=16 };
+enum { UC_PROTOCOL_HID=1, UC_PROTOCOL_XBOX360=2, UC_PROTOCOL_SWITCH_PRO=4, UC_PROTOCOL_XBOX_ONE=8, UC_PROTOCOL_SWITCH2=16, UC_PROTOCOL_DUALSHOCK3=32 };
 typedef struct {
     uint8_t number,protocol;
     uint16_t report_length;
@@ -24,5 +24,6 @@ bool uc_input_config_identify(uc_input_configuration *out,uint16_t vid,uint16_t 
 // Internal bit-field schema, not a descriptor obtained from the Xbox device.
 const uint8_t *uc_xbox360_layout(uint16_t *length);
 const uint8_t *uc_switch_pro_layout(uint16_t *length);
+const uint8_t *uc_dualshock3_layout(uint16_t *length);
 bool uc_input_packet_valid(uint8_t protocol,const uint8_t *data,size_t length);
 #endif

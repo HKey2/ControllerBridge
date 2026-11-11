@@ -85,6 +85,10 @@ static bool profile_exists(const up_profile *p) {
             const up_analog *a=&p->axes[i].analog;
             if(!source_exists(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags))return false;
         } else if(mode==UP_AXIS_BUTTON_PAIR && (!digital_exists(&p->axes[i].pair[0]) || !digital_exists(&p->axes[i].pair[1])))return false;
+        else if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
+            const up_analog_half *a=&p->axes[i].halves[j];
+            if(!source_exists(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags))return false;
+        }
     }
     return true;
 }
@@ -397,7 +401,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

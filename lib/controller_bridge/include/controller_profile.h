@@ -20,7 +20,7 @@
 enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8 };
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4 };
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
-enum { UP_AXIS_DISABLED, UP_AXIS_ANALOG, UP_AXIS_BUTTON_PAIR };
+enum { UP_AXIS_DISABLED, UP_AXIS_ANALOG, UP_AXIS_BUTTON_PAIR, UP_AXIS_ANALOG_PAIR };
 enum { UP_MOUSE_TRACKBALL=1, UP_MOUSE_PADDLE=2, UP_MOUSE_INVERT_X=4, UP_MOUSE_INVERT_Y=8, UP_MOUSE_INVERT_PADDLE=16, UP_MOUSE_PADDLE_Y=32, UP_MOUSE_TRACKBALL_KEYS=64, UP_MOUSE_PADDLE_KEYS=128 };
 // Byte 484: low two bits choose the USB layout; bit 2 remembers how
 // buttons behave in combined mode. Keep the preference when another tab is used.
@@ -55,7 +55,14 @@ typedef struct {
     uint16_t deadzone_percent;
     uint8_t padding[10];
 } up_analog;
-typedef union { up_analog analog; up_digital pair[2]; } up_axis;
+typedef struct {
+    uint8_t interface_number,report_id;
+    uint16_t bit_offset;
+    uint8_t bits,flags;
+    uint16_t deadzone_percent;
+    int32_t neutral,maximum; // Raw released and fully pressed values, in either order.
+} up_analog_half;
+typedef union { up_analog analog; up_digital pair[2]; up_analog_half halves[2]; } up_axis;
 typedef struct {
     uint8_t targets[4]; // Explicit output IDs, U/D/L/R.
     uint8_t paddle_targets[2]; // Negative/positive after input reversal; independent of pointer axis.
@@ -96,6 +103,7 @@ typedef struct {
     bool base_digital[UP_DIGITAL_COUNT],shift_digital[UP_DIGITAL_COUNT];
     bool shift_active,shift_consumed;
     uint8_t shift_held,axes[UP_AXIS_COUNT],raw_axes[UP_AXIS_COUNT];
+    uint16_t analog_halves[UP_AXIS_COUNT][2]; // Equal 0..65535 scales before signed summation.
     uint32_t inherited_conflicts[UP_DIGITAL_COUNT];
     uint8_t base_modifiers[UP_DIGITAL_COUNT],back_modifiers[UP_DIGITAL_COUNT];
     uint8_t pair_modifiers[UP_AXIS_COUNT][2],analog_modifiers[UP_AXIS_COUNT];
@@ -114,6 +122,7 @@ typedef struct {
 
 _Static_assert(sizeof(up_digital)==16,"digital wire ABI");
 _Static_assert(sizeof(up_analog)==32,"analog wire ABI");
+_Static_assert(sizeof(up_analog_half)==16,"analog half wire ABI");
 _Static_assert(sizeof(up_profile)==UP_PROFILE_BYTES,"profile wire ABI");
 _Static_assert(sizeof(up_mouse_options)==8,"mouse profile wire ABI");
 _Static_assert(sizeof(up_shift)==360,"button shift wire ABI");

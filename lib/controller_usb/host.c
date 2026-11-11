@@ -26,6 +26,7 @@ static hid_interface interfaces[UC_MAX_INTERFACES];
 static input_endpoint endpoints[UC_MAX_ENDPOINTS];
 static unsigned interface_count, endpoint_count;
 static bool ready;
+static bool probe_missing;
 // Only Xbox One keeps an OUT endpoint open after initialization. This state
 // never changes the transport engine, endpoint intervals or legacy packet path.
 static uc_xbox_one xbox_one;
@@ -424,13 +425,13 @@ done:
     return xbox_out.active;
 }
 static bool enumerate(void) {
-    ready = false;
+    ready = false;probe_missing=false;
     memset(&xbox_out,0,sizeof(xbox_out));memset(xbox_rx,0,sizeof(xbox_rx));
     status(UC_PROBING, ++stats.attempts);
     ut_reset();
     ut_ep0(0,8);
     if (!read_descriptor(0,0x80,0x0100,0,device_descriptor,8)) {
-        status(UC_PROBE_FAILED,0); return false;
+        probe_missing=true;status(UC_PROBE_FAILED,0); return false;
     }
     uint8_t packet = device_descriptor[7];
     if (device_descriptor[0] != 18 || device_descriptor[1] != 1 ||
@@ -458,6 +459,17 @@ static bool enumerate(void) {
     ut_delay_ms(10);
     for (unsigned i = 0; i < interface_count; ++i) {
         hid_interface *iface = &interfaces[i];
+        if(iface->protocol==UC_PROTOCOL_DUALSHOCK3) {
+            // Each USB enumeration needs this input-enabling Feature read.
+            // The controller may then wait for its PS button; keep polling it.
+            uint8_t feature[17];uint16_t actual=0;
+            ut_result result=control(1,0xa1,1,0x03f2,iface->number,sizeof(feature),feature,&actual);
+            if(result==UT_OK && actual!=sizeof(feature))result=UT_ERROR;
+            status(UC_INPUT_INIT,0x10000u|(uint32_t)result);
+            if(result!=UT_OK)return false;
+            const uint8_t *schema=uc_dualshock3_layout(&iface->report_length);
+            memcpy(iface->report,schema,iface->report_length);continue;
+        }
         if(iface->protocol==UC_PROTOCOL_XBOX_ONE) {
             uc_xbox_one_identify(&xbox_one,vid,pid,le16(device_descriptor+12));
             iface->report_length=uc_xbox_one_layout(&xbox_one,iface->report);
@@ -557,8 +569,11 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
         if (!ready) {
             if (!enumerate()) {
                 status(UC_ENUM_FAILED,stats.attempts);
-                // No resets during active input. Re-probe only when not ready.
-                ut_delay_ms(750);
+                // No response at address zero: leave the bus idle between probes
+                // so a newly attached controller can finish startup without SOFs.
+                // Once a device answers, preserve its normal startup retry path.
+                if(probe_missing)ut_wait_for_device(750);
+                else ut_delay_ms(750);
             }
         } else {
             ut_pump();

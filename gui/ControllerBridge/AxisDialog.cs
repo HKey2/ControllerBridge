@@ -12,6 +12,7 @@ internal sealed partial class AxisDialog : Form
     private readonly Label live = Ui.Label(L.T("入力値: —", "Input value: —"), 12, true), message = Ui.Label("", 10);
     private readonly Label negative = Ui.Label(L.T("未割り当て", "Unassigned"), 9), positive = Ui.Label(L.T("未割り当て", "Unassigned"), 9);
     private readonly Panel analogPanel = new() { Dock = DockStyle.Fill, AutoScroll = true }, pairPanel = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly AnalogPairEditor analogPair;
     private readonly Dictionary<ushort, int> baselines;
     private bool detect, measuring;
     private ButtonLearner? pairLearner;
@@ -34,15 +35,17 @@ internal sealed partial class AxisDialog : Form
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         root.RowStyles.Add(new(SizeType.AutoSize));
         root.Controls.Add(Ui.Label(DeviceProfile.AxisNames[axis], 17, true), 0, 0);
-        mode.Items.AddRange([L.T("未使用（中心に固定）", "Unused (centered)"), L.T("アナログ入力", "Analog input"), L.T("2つのボタンで負方向 / 正方向", "Two buttons for negative / positive")]);
+        mode.Items.AddRange([L.T("未使用（中心に固定）", "Unused (centered)"), L.T("アナログ入力", "Analog input"), L.T("2つのボタンで負方向 / 正方向", "Two buttons for negative / positive"), L.T("2つのアナログ入力を負方向 / 正方向に合成", "Combine two analog inputs for negative / positive")]);
         mode.SelectedIndex = Result.Mode; root.Controls.Add(mode, 0, 1);
-        Panel content = new() { Dock = DockStyle.Fill }; content.Controls.Add(analogPanel); content.Controls.Add(pairPanel); root.Controls.Add(content, 0, 2);
+        analogPair = new(Result, fields, canLearn);
+        Panel content = new() { Dock = DockStyle.Fill }; content.Controls.Add(analogPanel); content.Controls.Add(pairPanel); content.Controls.Add(analogPair); root.Controls.Add(content, 0, 2);
         TableLayoutPanel a = analogLayout = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 6 };
         a.ColumnStyles.Add(new(SizeType.Percent, 100));
         a.RowStyles.Add(new(SizeType.AutoSize)); a.RowStyles.Add(new(SizeType.Absolute, 56));
         for (int row = 2; row < 6; row++) a.RowStyles.Add(new(SizeType.AutoSize));
         foreach (InputField f in fields.Where(f => f.Learnable && !f.Binary && !f.Hat)) source.Items.Add(f);
         Label axisHint = Ui.Label(source.Items.Count == 0 ? L.T("利用できるアナログ入力軸がありません。", "No analog input axes are available.") :
+            fields.Any(f => f.Pressure) ? L.T("入力軸を選択  ·  スティックは中央が0、感圧は左端が0 / 右端の数字は生の入力値", "Select an input  ·  Sticks center at zero; pressure starts at zero on the left / number = raw value") :
             L.T("入力軸を選択  ·  バーの中央 = 記述子の中心 / 右端 = 生の入力値", "Select an input axis  ·  Meter center = descriptor midpoint / right = raw value"), 9);
         a.Controls.Add(axisHint, 0, 0); a.Controls.Add(source, 0, 1);
         FlowLayoutPanel tools = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false };
@@ -86,7 +89,8 @@ internal sealed partial class AxisDialog : Form
         source.SelectedIndexChanged += (_, _) =>
         {
             if (source.SelectedItem is not InputField f) return;
-            minimum.Value = f.Minimum; maximum.Value = f.Maximum; center.Value = f.Valid ? f.Value : (int)(((long)f.Minimum + f.Maximum) / 2);
+            minimum.Value = f.Minimum; maximum.Value = f.Maximum; center.Value = f.Pressure ? f.Minimum : f.Valid ? f.Value : (int)(((long)f.Minimum + f.Maximum) / 2);
+            if (f.Pressure) deadzone.Value = 0;
             live.Text = f.Valid ? L.T($"入力値: {f.Value}", $"Input value: {f.Value}") : L.T("入力値: —", "Input value: —"); measuring = false;
         };
         mode.SelectedIndexChanged += (_, _) => { pairLearner = null; detect = measuring = false; ShowMode(); };
@@ -112,7 +116,14 @@ internal sealed partial class AxisDialog : Form
     }
     private void FitAxisList()
     {
-        if (!IsHandleCreated || mode.SelectedIndex != 1) return;
+        if (!IsHandleCreated) return;
+        if (mode.SelectedIndex == 3)
+        {
+            MinimumSize = new(LogicalToDeviceUnits(860), LogicalToDeviceUnits(570));
+            ClientSize = new(LogicalToDeviceUnits(860), LogicalToDeviceUnits(710));
+            Ui.FitToWorkingArea(this, new(860, 710)); return;
+        }
+        if (mode.SelectedIndex != 1) return;
         int U(int value) => LogicalToDeviceUnits(value);
         Rectangle work = Screen.FromControl(this).WorkingArea;
         // Reserve the wrapped save reminder in addition to the original controls.
@@ -134,9 +145,11 @@ internal sealed partial class AxisDialog : Form
     }
     private void ShowMode()
     {
-        analogPanel.Visible = mode.SelectedIndex == 1; pairPanel.Visible = mode.SelectedIndex == 2;
+        analogPanel.Visible = mode.SelectedIndex == 1; pairPanel.Visible = mode.SelectedIndex == 2; analogPair.Visible = mode.SelectedIndex == 3;
         message.Text = mode.SelectedIndex switch { 0 => L.T("この軸は中心に固定されます。", "This axis remains centered."), 1 => L.T("軸を選択 → 両端まで往復 → 手を離して中心を記録。直接数値を調整することもできます。", "Select an axis → move to both ends → release and record the center. You can also edit the values directly."), _ => L.T("入力を離した状態で学習ボタンを選んでください。同時押しは中心になります。", "Release all inputs before learning. Pressing both buttons centers the axis.") };
         if (!canLearn && mode.SelectedIndex != 0) message.Text = L.T("入力コントローラー未接続。保存済みの数値を編集できます。", "No input controller is connected. You can edit the saved values.");
+        if (mode.SelectedIndex == 3) message.Text = L.T("負方向と正方向の押し込み量を加算します。両方を同じ強さで押すと中心になります。", "Negative and positive pressure are added. Equal amounts cancel to the center.") +
+            (canLearn ? "" : L.T(" 入力未接続。保存済みの数値を編集できます。", " Input disconnected; saved values can still be edited."));
         FitAxisList();
     }
     private async void LearnPair(int index)
@@ -149,6 +162,7 @@ internal sealed partial class AxisDialog : Form
     }
     public void OnInput(InputField field, int value)
     {
+        analogPair.OnInput(field);
         if (pairLearner?.Observe(field, value) is LearnedInput learned)
         {
             if (pairIndex == 0) { Result.Negative = learned.Binding; negative.Text = learned.Field.Label + " / " + learned.Binding; }
@@ -172,6 +186,7 @@ internal sealed partial class AxisDialog : Form
         try
         {
             Result.Mode = (byte)mode.SelectedIndex;
+            if (Result.Mode == 3) analogPair.Apply(Result);
             if (Result.Mode == 1)
             {
                 if (source.SelectedItem is InputField f) Result.Analog = f.Analog((int)minimum.Value, (int)center.Value, (int)maximum.Value, (ushort)deadzone.Value, invert.Checked);

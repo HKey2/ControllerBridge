@@ -65,6 +65,14 @@ static bool profile_valid(const up_profile *p,unsigned version) {
             if((a->flags&~7u) || a->reserved || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
                a->minimum>=a->maximum || a->minimum>a->center || a->center>a->maximum || a->deadzone_percent>50 ||
                !number_fits(a->minimum,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
+        } else if(mode==UP_AXIS_ANALOG_PAIR) {
+            if(legacy)return false;
+            for(unsigned j=0;j<2;++j) {
+                const up_analog_half *a=&p->axes[i].halves[j];
+                if((a->flags&~3u) || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
+                   a->neutral==a->maximum || a->deadzone_percent>50 ||
+                   !number_fits(a->neutral,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
+            }
         } else return false;
     }
     const up_shift *s=&p->shift;
@@ -194,6 +202,11 @@ void up_mapper_attach(up_mapper *m,const up_profile *p) {
             up_digital d={.interface_number=a->interface_number,.report_id=a->report_id,.bit_offset=a->bit_offset,.bits=a->bits,.flags=(uint8_t)(a->flags&3)};
             for(unsigned k=0;k<p->shift.count;++k)if(same_source(&d,&p->shift.keys[k]))m->analog_modifiers[i]|=(uint8_t)(1u<<k);
         }
+        if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
+            const up_analog_half *a=&p->axes[i].halves[j];
+            up_digital d={.interface_number=a->interface_number,.report_id=a->report_id,.bit_offset=a->bit_offset,.bits=a->bits,.flags=a->flags};
+            for(unsigned k=0;k<p->shift.count;++k)if(same_source(&d,&p->shift.keys[k]))m->pair_modifiers[i][j]|=(uint8_t)(1u<<k);
+        }
     }
 }
 static bool UC_RAM_FUNC(read_source)(uint8_t wanted_interface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,
@@ -280,6 +293,22 @@ static uint8_t UC_RAM_FUNC(analog_value)(const up_analog *a,int32_t value) {
     unsigned amount=(unsigned)((distance-dead)*(positive?127:128)/(span-dead));
     return (uint8_t)(positive?128+amount:128-amount);
 }
+static uint16_t UC_RAM_FUNC(analog_half_value)(const up_analog_half *a,int32_t value) {
+    int64_t span=(int64_t)a->maximum-a->neutral,distance=(int64_t)value-a->neutral;
+    if(span<0) { span=-span;distance=-distance; }
+    int64_t dead=span*a->deadzone_percent/100;
+    if(distance<=dead)return 0;
+    if(distance>=span)return 65535;
+    return (uint16_t)((distance-dead)*65535/(span-dead));
+}
+static uint8_t analog_pair_value(const up_mapper *m,unsigned i,uint8_t blocked) {
+    int32_t negative=(m->pair_modifiers[i][0]&blocked)?0:m->analog_halves[i][0];
+    int32_t positive=(m->pair_modifiers[i][1]&blocked)?0:m->analog_halves[i][1];
+    int32_t sum=positive-negative;
+    // Sum on a symmetric scale first: equally pressed inputs cancel exactly.
+    // Only the final conversion uses the asymmetric 128/127 output range.
+    return (uint8_t)(sum>=0?128+sum*127/65535:128-(-sum)*128/65535);
+}
 static uint32_t physical_buttons(const up_mapper *m) {
     uint32_t bits=0;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->digital[i])bits|=1u<<i;
@@ -349,6 +378,7 @@ static void UC_RAM_FUNC(resolve_shift)(up_mapper *m) {
             bool pos=m->pairs[i][1] && !(m->pair_modifiers[i][1]&blocked);
             m->axes[i]=neg==pos?128:neg?0:255;
         } else if(mode==UP_AXIS_ANALOG && (m->analog_modifiers[i]&blocked))m->axes[i]=128;
+        else if(mode==UP_AXIS_ANALOG_PAIR)m->axes[i]=analog_pair_value(m,i,blocked);
     }
 }
 void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value) {
@@ -368,6 +398,10 @@ void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;
             if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && (a->flags&3)==flags)m->raw_axes[i]=analog_value(a,value);
+        } else if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
+            const up_analog_half *a=&p->axes[i].halves[j];
+            if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && a->flags==flags)
+                m->analog_halves[i][j]=analog_half_value(a,value);
         }
     }
     resolve_shift(m);
@@ -396,6 +430,11 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
             const up_analog *a=&p->axes[i].analog;int32_t value;
             if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
                 m->raw_axes[i]=analog_value(a,value);touched=true;
+            }
+        } else if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
+            const up_analog_half *a=&p->axes[i].halves[j];int32_t value;
+            if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
+                m->analog_halves[i][j]=analog_half_value(a,value);touched=true;
             }
         }
     }

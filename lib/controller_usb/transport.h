@@ -11,6 +11,8 @@ void ut_init(uint8_t dp_pin);
 void ut_pump(void);
 uint32_t ut_idle_budget_us(void);
 void ut_delay_ms(uint32_t ms);
+// Leave the bus idle without traffic; the next reset resumes discovery.
+void ut_wait_for_device(uint32_t ms);
 void ut_reset(void);
 void ut_resume_fullspeed(void);
 bool ut_open(uint8_t address, const uint8_t descriptor[7]);

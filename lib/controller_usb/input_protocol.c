@@ -62,6 +62,12 @@ bool uc_input_config_parse(const uint8_t *data,size_t length,uc_input_configurat
     return true;
 }
 bool uc_input_config_identify(uc_input_configuration *out,uint16_t vid,uint16_t pid) {
+    if(vid==0x054c && pid==0x0268) {
+        if(out->interface_count!=1 || out->endpoint_count!=1 || out->interfaces[0].number!=0 ||
+           out->interfaces[0].protocol!=UC_PROTOCOL_HID || le16(out->endpoints[0].descriptor+4)<49)return false;
+        out->interfaces[0].protocol=out->endpoints[0].protocol=out->protocols=UC_PROTOCOL_DUALSHOCK3;
+        return true;
+    }
     if(vid!=0x057e || (pid!=0x2009 && pid!=0x2069))return true;
     if(out->interface_count!=1 || out->endpoint_count!=1 || out->interfaces[0].number!=0 ||
        out->interfaces[0].protocol!=UC_PROTOCOL_HID || !out->interfaces[0].output_descriptor[0] ||
@@ -108,7 +114,24 @@ static const uint8_t switch_pro_schema[]={
 const uint8_t *uc_switch_pro_layout(uint16_t *length) {
     *length=(uint16_t)sizeof(switch_pro_schema);return switch_pro_schema;
 }
+// USB report 1 retains the original byte offsets. The 17 digital buttons and
+// 12 pressure buttons share their physical button usages, with separate fields.
+// Battery, reserved bytes and motion sensors are not mapping inputs.
+static const uint8_t dualshock3_schema[]={
+    0x05,0x01,0x09,0x05,0xa1,0x01,0x85,0x01,
+    0x75,0x08,0x95,0x01,0x81,0x03,
+    0x05,0x09,0x15,0x00,0x25,0x01,0x75,0x01,0x95,0x11,0x19,0x01,0x29,0x11,0x81,0x02,
+    0x95,0x07,0x81,0x03,0x75,0x08,0x95,0x01,0x81,0x03,
+    0x05,0x01,0x26,0xff,0x00,0x95,0x04,0x09,0x30,0x09,0x31,0x09,0x33,0x09,0x34,0x81,0x02,
+    0x95,0x04,0x81,0x03,
+    0x05,0x09,0x95,0x0c,0x19,0x05,0x29,0x10,0x81,0x02,
+    0x95,0x17,0x81,0x03,0xc0
+};
+const uint8_t *uc_dualshock3_layout(uint16_t *length) {
+    *length=(uint16_t)sizeof(dualshock3_schema);return dualshock3_schema;
+}
 bool uc_input_packet_valid(uint8_t protocol,const uint8_t *data,size_t length) {
+    if(protocol==UC_PROTOCOL_DUALSHOCK3)return length>=49 && length<=64 && data[0]==1 && data[1]!=0xff;
     if(protocol==UC_PROTOCOL_HID)return length>0 && length<=UC_EVENT_BYTES;
     if(protocol==UC_PROTOCOL_SWITCH2)return length>=17 && length<=64 && data[0]==0x05;
     if(protocol==UC_PROTOCOL_SWITCH_PRO)return length>=13 && length<=64 && data[0]==0x30;

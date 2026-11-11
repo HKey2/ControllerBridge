@@ -27,7 +27,11 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.25.1 (firmware 0.25.1).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.25.2 (firmware 0.25.2).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.25.2:** Wired DUALSHOCK 3 input is supported. Individual axis settings expose its 12 pressure values and can combine separate negative and positive analog sources. Equal amounts cancel, including both fully pressed. Press the PS button if input has not started after connection. See [individual axis settings](docs/configurator-guide.md#individual-axis-settings).
+
+First-generation Switch Pro controllers can reconnect automatically after unplugging and reconnecting the USB cable. The host leaves an idle interval before discovery and between unanswered attempts so the controller can finish startup. Install the matching configurator and bundled firmware.
 
 **0.25.1:** X gamepad output uses the reference Xbox 360 USB identity and four-interface layout without a configuration HID. The Windows configurator connects and updates firmware while this layout remains active, with no BOOT-button operation or driver replacement. Install the matching configurator and bundled firmware. See [X output and configuration access](docs/xinput-output.md).
 
@@ -156,13 +160,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 128,528; persistent storage 49,152 | 1,919,472 |
-| SRAM, 532,480 bytes | Static data 158,464; two stacks 8,192 | 365,824 |
+| Flash, 2,097,152 bytes | Code/initial values 131,700; persistent storage 49,152 | 1,916,300 |
+| SRAM, 532,480 bytes | Static data 159,912; two stacks 8,192 | 364,376 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 39,416, and BSS 118,776 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 257,536 bytes.
+Static SRAM consists of vector table 272, initialized data 40,848, and BSS 118,792 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 263,680 bytes.
 
 ## Repository contents and license
 

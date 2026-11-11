@@ -16,7 +16,7 @@ internal sealed class AxisSourceList : ListBox
         ItemHeight = 54; TabIndex = 0;
     }
 
-    internal static int Midpoint(InputField field) => field.Minimum < 0 && field.Maximum > 0 ? 0 :
+    internal static int Midpoint(InputField field) => field.Pressure ? field.Minimum : field.Minimum < 0 && field.Maximum > 0 ? 0 :
         (int)(field.Minimum + ((long)field.Maximum - field.Minimum + 1) / 2);
 
     internal static double Position(InputField field, int value)
@@ -80,7 +80,7 @@ internal sealed class AxisSourceList : ListBox
 
         Rectangle track = new(divider + U(14), row.Top + U(10), Math.Max(U(20), row.Right - divider - U(133)), U(16));
         using SolidBrush empty = new(Ui.Input); g.FillRectangle(empty, track);
-        int middle = track.Left + track.Width / 2;
+        int middle = field.Pressure ? track.Left : track.Left + track.Width / 2;
         if (field.Valid)
         {
             double position = Position(field, field.Value);
@@ -92,14 +92,14 @@ internal sealed class AxisSourceList : ListBox
         g.DrawRectangle(line, track);
         using Pen origin = new(Ui.Ink);
         g.DrawLine(origin, middle, track.Top - U(3), middle, track.Bottom + U(3));
-        TextRenderer.DrawText(g, "−", detailFont, new Rectangle(track.Left, row.Top + U(30), U(30), U(20)), Ui.Muted, flags);
-        TextRenderer.DrawText(g, "0", detailFont, new Rectangle(middle - U(15), row.Top + U(30), U(30), U(20)), Ui.Muted, flags | TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(g, "+", detailFont, new Rectangle(track.Right - U(30), row.Top + U(30), U(30), U(20)), Ui.Muted, flags | TextFormatFlags.Right);
+        TextRenderer.DrawText(g, field.Pressure ? "0" : "−", detailFont, new Rectangle(track.Left, row.Top + U(30), U(30), U(20)), Ui.Muted, flags);
+        if (!field.Pressure) TextRenderer.DrawText(g, "0", detailFont, new Rectangle(middle - U(15), row.Top + U(30), U(30), U(20)), Ui.Muted, flags | TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(g, field.Pressure ? "100%" : "+", detailFont, new Rectangle(track.Right - U(48), row.Top + U(30), U(48), U(20)), Ui.Muted, flags | TextFormatFlags.Right);
         Rectangle value = new(track.Right + U(8), row.Top + U(1), row.Right - track.Right - U(16), U(25));
         TextRenderer.DrawText(g, field.Valid ? field.Value.ToString("N0") : "—", Font, value, Ui.Ink, flags | TextFormatFlags.Right);
         value.Y += U(25);
         string status = !field.Valid ? L.T("入力待ち", "Waiting") : field.Value < field.Minimum || field.Value > field.Maximum ?
-            L.T("範囲外", "Out of range") : Position(field, field.Value).ToString("+0%;-0%;0%");
+            L.T("範囲外", "Out of range") : Position(field, field.Value).ToString(field.Pressure ? "0%" : "+0%;-0%;0%");
         TextRenderer.DrawText(g, status, detailFont, value, Ui.Muted, flags | TextFormatFlags.Right);
         if ((e.State & DrawItemState.Focus) != 0) e.DrawFocusRectangle();
     }
