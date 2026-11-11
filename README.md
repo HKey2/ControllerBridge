@@ -2,6 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
+- Output mode : Switch-compatible,XInput-compatible (POLYMEGA) -> Can be toggled via common settings
 - Support for a wide range of controllers, including paddles, trackballs, and flight sticks.
 - Fully customizable controls and settings.
 - Combined mouse and gamepad output.
