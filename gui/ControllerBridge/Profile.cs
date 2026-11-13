@@ -21,7 +21,8 @@ internal static class Wire
     public static void Source(byte iface, byte id, ushort offset, byte bits, byte flags)
     {
         if (bits is 0 or > 32 || offset + bits > ((flags & 2) != 0 ? 504 : 512) ||
-            ((flags & 2) != 0 ? id == 0 : id != 0)) throw new InvalidDataException(L.T("HID入力位置が不正です。", "The HID input location is invalid."));
+            ((flags & 2) != 0 ? id == 0 : id != 0) || ((flags & 16) != 0 && (bits != 16 || offset % 8 != 0)) ||
+            ((flags & InputDirections.Reversed) != 0 && (bits != 8 || (flags & 17) != 0))) throw new InvalidDataException(L.T("HID入力位置が不正です。", "The HID input location is invalid."));
     }
     public static bool Fits(int value, byte bits, byte flags) => (flags & 1) != 0
         ? bits == 32 || (value >= -(1L << (bits - 1)) && value < (1L << (bits - 1)))
@@ -46,7 +47,7 @@ public sealed class DigitalBinding
             throw new InvalidDataException(L.T("連射は割り当て済みの出力ボタンに、毎秒1～60回で設定してください。", "Set rapid fire to 1–60 presses per second on an assigned output button."));
         if (Mode == 0) return;
         Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
-        if (Mode > 5 || Flags > 3 || Low > High || !Wire.Fits(Low, Bits, Flags) || !Wire.Fits(High, Bits, Flags) ||
+        if (Mode > 5 || (Flags & ~InputDirections.SourceFlags) != 0 || Low > High || !Wire.Fits(Low, Bits, Flags) || !Wire.Fits(High, Bits, Flags) ||
             (Mode > 1 && (long)High - Low is not (3 or 7))) throw new InvalidDataException(L.T("ボタン割り当てが不正です。", "The button mapping is invalid."));
     }
     internal void Write(byte[] b, int p, bool allowRapid = false)
@@ -76,17 +77,34 @@ public sealed class AnalogBinding
     public int Center { get; set; }
     public int Maximum { get; set; }
     public ushort Deadzone { get; set; } = 5;
+    public ushort NoiseQ8 { get; set; }
+    // GUI selection hint in existing padding; firmware uses the ordinary endpoint mapping.
+    public byte AssignmentSide { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Gyro => (Flags & 8) != 0;
     internal void Write(byte[] b, int p)
     {
         Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
-        if (Flags > 7 || Minimum >= Maximum || Minimum > Center || Center > Maximum || Deadzone > 50 ||
+        if (AssignmentSide > 2 || (Gyro && AssignmentSide != 0) ||
+            (AssignmentSide != 0 && (Center != Minimum && Center != Maximum ||
+             (((Flags & 4) != 0) == (Center == Minimum)) != (AssignmentSide == 1))))
+            throw new InvalidDataException(L.T("片側の割り当て範囲が不正です。", "The one-sided input range is invalid."));
+        if (Gyro)
+        {
+            if ((Flags & ~4) != 26 || Interface != 0 || ReportId != 1 || BitOffset != 368 || Bits != 16 ||
+                Minimum >= -1000 || Minimum < -1_000_000_000 || Maximum <= 1000 || Maximum > 1_000_000_000 ||
+                Center <= 0 || Center >= 1023 * 256 || NoiseQ8 > 12800 || Deadzone > 50)
+                throw new InvalidDataException(L.T("ジャイロの校正・可動範囲を設定してください。", "Calibrate the gyro and record its steering range."));
+        }
+        else if ((Flags & ~(InputDirections.SourceFlags | 4)) != 0 || NoiseQ8 != 0 || Minimum >= Maximum || Minimum > Center || Center > Maximum || Deadzone > 50 ||
             !Wire.Fits(Minimum, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags)) throw new InvalidDataException(L.T("アナログの最小 < 最大、最小 ≤ 中心 ≤ 最大、デッドゾーン0～50%を確認してください。", "Check that minimum < maximum and minimum ≤ center ≤ maximum, with a dead zone of 0–50%."));
         b[p] = Interface; b[p + 1] = ReportId; Wire.W16(b, p + 2, BitOffset); b[p + 4] = Bits; b[p + 5] = Flags;
-        Wire.WI32(b, p + 8, Minimum); Wire.WI32(b, p + 12, Center); Wire.WI32(b, p + 16, Maximum); Wire.W16(b, p + 20, Deadzone);
+        Wire.W16(b, p + 6, NoiseQ8);
+        Wire.WI32(b, p + 8, Minimum); Wire.WI32(b, p + 12, Center); Wire.WI32(b, p + 16, Maximum); Wire.W16(b, p + 20, Deadzone); b[p + 22] = AssignmentSide; b[p + 23] = AssignmentSide == 0 ? (byte)0 : (byte)0xa7;
     }
     internal static AnalogBinding Read(byte[] b, int p) => new() { Interface = b[p], ReportId = b[p + 1],
-        BitOffset = Wire.U16(b, p + 2), Bits = b[p + 4], Flags = b[p + 5], Minimum = Wire.I32(b, p + 8),
-        Center = Wire.I32(b, p + 12), Maximum = Wire.I32(b, p + 16), Deadzone = Wire.U16(b, p + 20) };
+        BitOffset = Wire.U16(b, p + 2), Bits = b[p + 4], Flags = b[p + 5], NoiseQ8 = Wire.U16(b, p + 6), Minimum = Wire.I32(b, p + 8),
+        Center = Wire.I32(b, p + 12), Maximum = Wire.I32(b, p + 16), Deadzone = Wire.U16(b, p + 20), AssignmentSide = b[p + 23] == 0xa7 && b[p + 22] is 1 or 2 ? b[p + 22] : (byte)0 };
 }
 
 public sealed class AnalogHalfBinding
@@ -102,7 +120,7 @@ public sealed class AnalogHalfBinding
     internal void Write(byte[] b, int p)
     {
         Wire.Source(Interface, ReportId, BitOffset, Bits, Flags);
-        if (Flags > 3 || Neutral == Maximum || Deadzone > 50 || !Wire.Fits(Neutral, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags))
+        if ((Flags & ~InputDirections.SourceFlags) != 0 || Neutral == Maximum || Deadzone > 50 || !Wire.Fits(Neutral, Bits, Flags) || !Wire.Fits(Maximum, Bits, Flags))
             throw new InvalidDataException(L.T("負方向・正方向それぞれの入力元、未押下と最大押下の異なる値、デッドゾーン0～50%を設定してください。", "Set both input sources, different released/fully pressed values, and a dead zone of 0–50%."));
         b[p] = Interface; b[p + 1] = ReportId; Wire.W16(b, p + 2, BitOffset); b[p + 4] = Bits; b[p + 5] = Flags;
         Wire.W16(b, p + 6, Deadzone); Wire.WI32(b, p + 8, Neutral); Wire.WI32(b, p + 12, Maximum);
@@ -128,7 +146,7 @@ public sealed class AxisBinding
     public DigitalBinding Positive { get; set; } = new();
     public AnalogHalfBinding NegativeAnalog { get; set; } = new();
     public AnalogHalfBinding PositiveAnalog { get; set; } = new();
-    public override string ToString() => Mode switch { 1 => L.T($"アナログ IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}", $"Analog IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}") + ((Analog.Flags & 4) != 0 ? L.T(" (反転)", " (inverted)") : ""),
+    public override string ToString() => Mode == 1 && Analog.Gyro ? L.T("ジャイロ・ハンドル", "Gyro steering") : Mode switch { 1 => L.T($"アナログ IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}", $"Analog IF{Analog.Interface}/ID{Analog.ReportId}/bit{Analog.BitOffset}") + ((Analog.Flags & 4) != 0 ? L.T(" (反転)", " (inverted)") : ""),
         2 => L.T("2つのボタン（負 / 正）", "Two buttons (negative / positive)"),
         3 => L.T("2つのアナログ入力（負＋正）", "Two analog inputs (negative + positive)"), _ => L.T("未使用・中心固定", "Unused / centered") };
 }
@@ -209,6 +227,7 @@ public sealed class DeviceProfile
     public ushort Pid { get; set; }
     public ushort Revision { get; set; }
     public byte InputInterval { get; set; }
+    public uint GyroRecenterButtons { get; set; }
     public uint DescriptorHash { get; set; }
     public string Name { get; set; } = "";
     public DigitalBinding[] Buttons { get; set; } = Enumerable.Range(0, 18).Select(_ => new DigitalBinding()).ToArray();
@@ -222,6 +241,10 @@ public sealed class DeviceProfile
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));
         // v5 stores per-profile output in one former reserved byte, without
         // changing the original prefix. Shift data follows at offset 488.
+        if ((GyroRecenterButtons & ~0x1ffffu) != 0) throw new InvalidDataException("Invalid Recenter buttons.");
+        for (int axis = 0; axis < 4; axis++)
+            if (Axes[axis] is { Mode: 1, Analog.Gyro: true } && (Vid != 0x054c || Pid != 0x0268 || axis is not (0 or 2)))
+                throw new InvalidDataException(L.T("DS3のジャイロはLXまたはRXに設定してください。", "Assign the DS3 gyro to LX or RX."));
         const ushort wireVersion = 8;
         byte[] b = new byte[ByteCount]; Wire.W16(b, 0, wireVersion); Wire.W16(b, 2, Flags); Wire.W16(b, 4, Vid);
         Wire.W16(b, 6, Pid); Wire.W16(b, 8, Revision); b[10] = InputInterval; Wire.W32(b, 12, DescriptorHash);
@@ -240,6 +263,7 @@ public sealed class DeviceProfile
         b[484] = (byte)(OutputMode | (ControllerButtons ? 4 : 0));
         b[485] = LedRed; b[486] = LedGreen; b[487] = LedBlue;
         (Shift ?? throw new InvalidDataException()).Write(b);
+        b[493] = (byte)GyroRecenterButtons; b[494] = (byte)(GyroRecenterButtons >> 8); b[495] = (byte)(GyroRecenterButtons >> 16);
         (Conversion ?? throw new InvalidDataException()).Write(b);
         return b;
     }
@@ -269,6 +293,7 @@ public sealed class DeviceProfile
         p.OutputMode = (byte)(b[484] & 3); p.ControllerButtons = (b[484] & 4) != 0;
         p.LedRed = b[485]; p.LedGreen = b[486]; p.LedBlue = b[487];
         p.Shift = ShiftSettings.Read(b, legacy);
+        p.GyroRecenterButtons = (uint)(b[493] | b[494] << 8 | b[495] << 16);
         p.Conversion = legacy ? ConversionSettings.FromLegacy(p.Mouse, legacyDefaults ?? MouseUdlrSettings.Defaults) : ConversionSettings.Read(b);
         p.Version = 8; p.LegacyConversionApplied = legacy;
         _ = p.Encode(); return p;

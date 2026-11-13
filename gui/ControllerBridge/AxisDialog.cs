@@ -1,209 +1,265 @@
 namespace ControllerBridge;
 
-internal sealed partial class AxisDialog : Form
+internal sealed class AxisDialog : Form
 {
     public AxisBinding Result { get; private set; }
-    private readonly List<InputField> fields;
-    private readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+    private readonly List<InputField> fields, inputs;
+    private readonly Dictionary<InputField, string> savedLabels = [];
+    private readonly AxisSelection selection;
     private readonly AxisSourceList source = new();
     private readonly NumericUpDown minimum = Number(), center = Number(), maximum = Number();
-    private readonly NumericUpDown deadzone = new() { Minimum = 0, Maximum = 50, Value = 5, Width = 75 };
-    private readonly CheckBox invert = new() { Text = L.T("向きを反転", "Invert direction"), AutoSize = true, Padding = new(4) };
-    private readonly Label live = Ui.Label(L.T("入力値: —", "Input value: —"), 12, true), message = Ui.Label("", 10);
-    private readonly Label negative = Ui.Label(L.T("未割り当て", "Unassigned"), 9), positive = Ui.Label(L.T("未割り当て", "Unassigned"), 9);
-    private readonly Panel analogPanel = new() { Dock = DockStyle.Fill, AutoScroll = true }, pairPanel = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly NumericUpDown deadzone = new() { Minimum = 0, Maximum = 50, Value = 5, Width = 90 };
+    private readonly CheckBox invert = new() { Text = L.T("向きを反転", "Invert direction"), AutoSize = true, Margin = new(10, 24, 4, 4) };
+    private readonly Label live = Ui.Label("", 10), summary = Ui.Label("", 11, true), message = Ui.Label("", 9);
+    private readonly Label gyroNotice = Ui.Label(L.T("校正とRecenterは、スティック設定画面の「ジャイロ」から変更できます。", "Open Gyro in the stick setup window to calibrate or change Recenter."), 10);
+    private readonly TableLayoutPanel analogPanel;
     private readonly AnalogPairEditor analogPair;
-    private readonly Dictionary<ushort, int> baselines;
-    private bool detect, measuring;
-    private ButtonLearner? pairLearner;
-    private int pairIndex;
+    private readonly Button detectButton, apply, calibrate, setCenter, descriptor;
+    private readonly Button[] digital = new Button[2];
+    private readonly ToolTip digitalTips = new() { AutoPopDelay = 15000 };
+    private readonly HashSet<InputField> dirtyInputs = [];
+    private readonly Dictionary<ushort, int> baselines = [];
     private readonly bool canLearn;
+    private readonly int axis;
     private readonly Func<Task<bool>>? prepareLearning;
-    private readonly TableLayoutPanel analogLayout;
-    private readonly Label saveNotice = Ui.Label(L.ProfileSaveNotice, 9);
+    private ButtonLearner? pairLearner;
+    private int learningSide = -1, learningRequest;
+    private bool detect, measuring, loading, preparing, refreshQueued;
     private static NumericUpDown Number() => new() { Minimum = int.MinValue, Maximum = int.MaxValue, Width = 145, ThousandsSeparator = true };
+
     public AxisDialog(int axis, AxisBinding original, List<InputField> fields, bool canLearn, Func<Task<bool>>? prepareLearning = null)
     {
-        this.fields = fields; this.canLearn = canLearn;
-        this.prepareLearning = prepareLearning;
-        Result = new DeviceProfile { Flags = 0, Axes = [original, new(), new(), new()] }.Clone().Axes[0];
-        baselines = fields.Where(f => f.Valid).ToDictionary(f => f.Index, f => f.Value);
-        using IDisposable formLayout = Ui.Form(this, DeviceProfile.AxisNames[axis] + L.T(" の設定", " settings"), new(860, 570)); MaximizeBox = false;
-        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 6 };
+        this.axis = axis; this.fields = fields; this.canLearn = canLearn; this.prepareLearning = prepareLearning;
+        if (canLearn) InputDirections.RequireCurrentInput(fields);
+        selection = new(original, axis); Result = selection.Build();
+        inputs = fields.Where(f => f.Learnable && !f.Binary && !f.Hat).ToList();
+        AddSavedInputs();
+        using IDisposable layout = Ui.Form(this, DeviceProfile.AxisNames[axis] + L.T(" の設定", " settings"), new(1060, 820), new(900, 680));
+        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 9 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
-        root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        root.RowStyles.Add(new(SizeType.AutoSize));
-        root.Controls.Add(Ui.Label(DeviceProfile.AxisNames[axis], 17, true), 0, 0);
-        mode.Items.AddRange([L.T("未使用（中心に固定）", "Unused (centered)"), L.T("アナログ入力", "Analog input"), L.T("2つのボタンで負方向 / 正方向", "Two buttons for negative / positive"), L.T("2つのアナログ入力を負方向 / 正方向に合成", "Combine two analog inputs for negative / positive")]);
-        mode.SelectedIndex = Result.Mode; root.Controls.Add(mode, 0, 1);
-        analogPair = new(Result, fields, canLearn);
-        Panel content = new() { Dock = DockStyle.Fill }; content.Controls.Add(analogPanel); content.Controls.Add(pairPanel); content.Controls.Add(analogPair); root.Controls.Add(content, 0, 2);
-        TableLayoutPanel a = analogLayout = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 6 };
-        a.ColumnStyles.Add(new(SizeType.Percent, 100));
-        a.RowStyles.Add(new(SizeType.AutoSize)); a.RowStyles.Add(new(SizeType.Absolute, 56));
-        for (int row = 2; row < 6; row++) a.RowStyles.Add(new(SizeType.AutoSize));
-        foreach (InputField f in fields.Where(f => f.Learnable && !f.Binary && !f.Hat)) source.Items.Add(f);
-        Label axisHint = Ui.Label(source.Items.Count == 0 ? L.T("利用できるアナログ入力軸がありません。", "No analog input axes are available.") :
-            fields.Any(f => f.Pressure) ? L.T("入力軸を選択  ·  スティックは中央が0、感圧は左端が0 / 右端の数字は生の入力値", "Select an input  ·  Sticks center at zero; pressure starts at zero on the left / number = raw value") :
-            L.T("入力軸を選択  ·  バーの中央 = 記述子の中心 / 右端 = 生の入力値", "Select an input axis  ·  Meter center = descriptor midpoint / right = raw value"), 9);
-        a.Controls.Add(axisHint, 0, 0); a.Controls.Add(source, 0, 1);
-        FlowLayoutPanel tools = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false };
-        Button detectButton = Ui.Button(L.T("操作して入力軸を検出", "Move to detect an input axis"), (_, _) =>
+        for (int row = 0; row < 9; row++) root.RowStyles.Add(new(row == 3 ? SizeType.Percent : SizeType.AutoSize, row == 3 ? 100 : 0));
+        root.Controls.Add(Ui.Label(DeviceProfile.AxisNames[axis] + L.T(" の入力割り当て", " input assignment"), 17, true), 0, 0);
+        Label help = Ui.Label(L.F("左側で全体、右上で「{0}」、右下で「{1}」を選択。同じボタンをもう一度押すと解除します。", "Choose the whole axis on the left, {0} at upper right, or {1} at lower right. Press again to clear.", AxisDirections.Label(axis, 1), AxisDirections.Label(axis, 0)), 10);
+        help.Dock = DockStyle.Fill; root.Controls.Add(help, 0, 1);
+
+        FlowLayoutPanel tools = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new(0, 2, 0, 2) };
+        detectButton = Ui.Button(L.T("操作して入力軸を検出", "Move to detect an input axis"), (_, _) => Detect()); detectButton.Enabled = canLearn;
+        tools.Controls.Add(detectButton);
+        for (int i = 0; i < 2; i++)
         {
-            pairLearner = null; detect = true; measuring = false; baselines.Clear();
-            foreach (InputField f in fields.Where(f => f.Valid)) baselines[f.Index] = f.Value;
-            message.Text = L.T("設定する1軸だけを大きく動かしてください。", "Move only the axis you want to configure through a large range.");
-        }); detectButton.Enabled = canLearn; tools.Controls.Add(detectButton);
-        Button calibrate = Ui.Button(L.T("可動範囲を計測", "Measure range"), (_, _) =>
+            int side = i; digital[i] = Ui.Button("", (_, _) => LearnPair(side));
+            digital[i].AutoSize = false; digital[i].MinimumSize = Size.Empty; digital[i].Size = new(100, 28);
+            digital[i].Font = new Font(L.FontFamily, 9); digital[i].Padding = new(4, 1, 4, 1); digital[i].Margin = new(4, 15, 4, 4);
+        }
+        root.Controls.Add(tools, 0, 2);
+
+        Panel inputArea = new() { Dock = DockStyle.Fill, AutoScroll = false, MinimumSize = new(0, 150), Margin = new(0, 0, 0, 6) };
+        source.SetInputs(inputs, InputName, axis); inputArea.Controls.Add(source); root.Controls.Add(inputArea, 0, 3);
+        inputArea.SizeChanged += (_, _) => source.FitToArea();
+        summary.Dock = DockStyle.Fill; root.Controls.Add(summary, 0, 4);
+
+        TableLayoutPanel editors = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 3 };
+        editors.ColumnStyles.Add(new(SizeType.Percent, 100)); for (int i = 0; i < 3; i++) editors.RowStyles.Add(new(SizeType.AutoSize));
+        analogPanel = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, ColumnCount = 1, RowCount = 2 };
+        analogPanel.ColumnStyles.Add(new(SizeType.Percent, 100)); analogPanel.RowStyles.Add(new(SizeType.AutoSize)); analogPanel.RowStyles.Add(new(SizeType.AutoSize));
+        FlowLayoutPanel numbers = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, WrapContents = false };
+        foreach ((string title, NumericUpDown number) in new[] { (L.T("最小入力値", "Minimum input"), minimum), (L.T("中心", "Center"), center), (L.T("最大入力値", "Maximum input"), maximum), (L.T("デッドゾーン %", "Dead zone %"), deadzone) })
         {
-            if (source.SelectedItem is not InputField f || !f.Valid) return;
-            minimum.Value = maximum.Value = center.Value = f.Value; measuring = true; detect = false;
-            message.Text = L.T("両端まで往復した後、手を離して「中心を記録」を押してください。", "Move to both ends, release the control, then choose “Record center”.");
-        }); calibrate.Enabled = canLearn; tools.Controls.Add(calibrate); a.Controls.Add(tools, 0, 2);
-        // Reserve the full signed 32-bit value width so adjacent controls never
-        // move when the live reading changes sign or number of digits.
-        live.AutoSize = false; live.Size = new(260, 26);
-        FlowLayoutPanel read = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false }; read.Controls.Add(live);
-        Button setCenter = Ui.Button(L.T("中心を記録", "Record center"), (_, _) => { if (source.SelectedItem is InputField f && f.Valid) { center.Value = f.Value; measuring = false; message.Text = L.T("中心を記録しました。最小・中心・最大を確認して適用します。", "Center recorded. Check the minimum, center, and maximum before applying."); } });
-        setCenter.Enabled = canLearn; read.Controls.Add(setCenter);
-        read.Controls.Add(Ui.Button(L.T("記述子の範囲を使う", "Use descriptor range"), (_, _) => { if (source.SelectedItem is InputField f) { minimum.Value = f.Minimum; maximum.Value = f.Maximum; center.Value = f.Valid ? Math.Clamp(f.Value, f.Minimum, f.Maximum) : (int)(((long)f.Minimum + f.Maximum) / 2); } }));
-        a.Controls.Add(read, 0, 3);
-        FlowLayoutPanel numbers = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false };
-        foreach ((string title, NumericUpDown box) in new[] { (L.T("最小（左 / 上）", "Minimum (left / up)"), minimum), (L.T("中心", "Center"), center), (L.T("最大（右 / 下）", "Maximum (right / down)"), maximum) })
-        { FlowLayoutPanel column = new() { FlowDirection = FlowDirection.TopDown, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Padding = new(0, 3, 12, 3) }; column.Controls.Add(Ui.Label(title, 9)); column.Controls.Add(box); numbers.Controls.Add(column); }
-        a.Controls.Add(numbers, 0, 4);
-        FlowLayoutPanel options = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink }; options.Controls.Add(Ui.Label(L.T("デッドゾーン %", "Dead zone %"))); options.Controls.Add(deadzone); options.Controls.Add(invert); a.Controls.Add(options, 0, 5); analogPanel.Controls.Add(a);
-        TableLayoutPanel p = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, RowCount = 4, ColumnCount = 1 };
-        p.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int row = 0; row < 4; row++) p.RowStyles.Add(new(SizeType.AutoSize));
-        Button neg = Ui.Button(L.T("負方向（左 / 上）を学習", "Learn negative (left / up)"), (_, _) => LearnPair(0)); neg.Enabled = canLearn;
-        Button pos = Ui.Button(L.T("正方向（右 / 下）を学習", "Learn positive (right / down)"), (_, _) => LearnPair(1)); pos.Enabled = canLearn;
-        p.Controls.Add(neg, 0, 0); p.Controls.Add(negative, 0, 1); p.Controls.Add(pos, 0, 2); p.Controls.Add(positive, 0, 3); pairPanel.Controls.Add(p);
-        message.Dock = DockStyle.Fill; message.Padding = new(0, 8, 0, 8); message.ForeColor = Ui.Muted; root.Controls.Add(message, 0, 3);
-        saveNotice.Dock = DockStyle.Fill; saveNotice.ForeColor = Ui.Muted;
-        root.Controls.Add(saveNotice, 0, 4);
-        FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft };
-        Button apply = Ui.Button(L.T("適用", "Apply"), (_, _) => Apply(), true); Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
-        footer.Controls.Add(apply); footer.Controls.Add(cancel); CancelButton = cancel; root.Controls.Add(footer, 0, 5); Controls.Add(root);
-        source.SelectedIndexChanged += (_, _) =>
+            FlowLayoutPanel column = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new(2, 2, 12, 2) };
+            column.Controls.Add(Ui.Label(title, 9)); column.Controls.Add(number); numbers.Controls.Add(column);
+            number.ValueChanged += (_, _) => StoreAnalog();
+        }
+        numbers.Controls.Add(invert); invert.CheckedChanged += (_, _) => StoreAnalog(); analogPanel.Controls.Add(numbers, 0, 0);
+        FlowLayoutPanel read = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, WrapContents = false };
+        live.AutoSize = false; live.Size = new(195, 40); read.Controls.Add(live);
+        calibrate = Ui.Button(L.T("可動範囲を計測", "Measure range"), (_, _) =>
         {
-            if (source.SelectedItem is not InputField f) return;
-            minimum.Value = f.Minimum; maximum.Value = f.Maximum; center.Value = f.Pressure ? f.Minimum : f.Valid ? f.Value : (int)(((long)f.Minimum + f.Maximum) / 2);
-            if (f.Pressure) deadzone.Value = 0;
-            live.Text = f.Valid ? L.T($"入力値: {f.Value}", $"Input value: {f.Value}") : L.T("入力値: —", "Input value: —"); measuring = false;
+            if (WholeInput is not { Valid: true } f) return;
+            CancelLearning(); minimum.Value = center.Value = maximum.Value = f.Value; measuring = true;
+            message.Text = L.T("両端まで往復し、手を離して「中心を記録」を押してください。", "Move to both ends, release the control, then choose Record center.");
+        });
+        setCenter = Ui.Button(L.T("中心を記録", "Record center"), (_, _) =>
+        {
+            if (WholeInput is not { Valid: true } f) return;
+            center.Value = Math.Clamp(f.Value, f.Minimum, f.Maximum); measuring = false;
+            message.Text = L.T("中心を記録しました。", "Center recorded.");
+        });
+        descriptor = Ui.Button(L.T("元の範囲に戻す", "Restore input range"), (_, _) =>
+        {
+            if (WholeInput is not { } f) return;
+            minimum.Value = f.Minimum; maximum.Value = f.Maximum;
+            center.Value = f.Pressure ? f.Minimum : AxisSourceList.Midpoint(f); measuring = false;
+        });
+        read.Controls.Add(calibrate); read.Controls.Add(setCenter); read.Controls.Add(descriptor); analogPanel.Controls.Add(read, 0, 1);
+        analogPair = new(inputs, canLearn, InputName, axis); gyroNotice.Dock = DockStyle.Fill;
+        editors.Controls.Add(analogPanel, 0, 0); editors.Controls.Add(analogPair, 0, 1); editors.Controls.Add(gyroNotice, 0, 2); root.Controls.Add(editors, 0, 5);
+        message.Dock = DockStyle.Fill; message.ForeColor = Ui.Muted; message.Margin = new(4, 6, 4, 6); root.Controls.Add(message, 0, 6);
+        Label notice = Ui.Label(L.ProfileSaveNotice, 9); notice.ForeColor = Ui.Muted; notice.Dock = DockStyle.Fill; root.Controls.Add(notice, 0, 7);
+        FlowLayoutPanel footer = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
+        apply = Ui.Button(L.T("適用", "Apply"), (_, _) => Apply(), true);
+        Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
+        footer.Controls.Add(apply); footer.Controls.Add(cancel); footer.Controls.Add(digital[AxisDirections.ProfileSide(axis, 1)]); footer.Controls.Add(digital[AxisDirections.ProfileSide(axis, 0)]);
+        root.Controls.Add(footer, 0, 8); CancelButton = cancel; Controls.Add(root);
+        source.Choose += (field, part) =>
+        {
+            CancelLearning();
+            if (part < 0) selection.ToggleWhole(field); else selection.ToggleHalf(part, field);
+            ShowSelection();
         };
-        mode.SelectedIndexChanged += (_, _) => { pairLearner = null; detect = measuring = false; ShowMode(); };
-        if (Result.Mode == 1)
+        Ui.ThemeInputs(this); ShowSelection();
+    }
+    private string InputName(InputField f) => savedLabels.TryGetValue(f, out string? label) ? label : f.Label;
+    private void AddSavedInputs()
+    {
+        void Add(byte iface, byte id, ushort offset, byte bits, byte flags, int min, int max, bool gyro)
         {
-            AnalogBinding old = Result.Analog;
-            for (int i = 0; i < source.Items.Count; i++) if (source.Items[i] is InputField f && f.Interface == old.Interface && f.ReportId == old.ReportId && f.BitOffset == old.BitOffset) source.SelectedIndex = i;
-            minimum.Value = old.Minimum; center.Value = old.Center; maximum.Value = old.Maximum; deadzone.Value = old.Deadzone; invert.Checked = (old.Flags & 4) != 0;
+            InputField? existing = fields.FirstOrDefault(f => AxisSelection.Matches(f, iface, id, offset, bits, flags));
+            if (existing is not null) { if (!inputs.Contains(existing)) inputs.Add(existing); return; }
+            if (inputs.Any(f => AxisSelection.Matches(f, iface, id, offset, bits, flags))) return;
+            InputField saved = new() { Index = (ushort)(65535 - savedLabels.Count), Interface = iface, ReportId = id, BitOffset = offset,
+                Bits = bits, Flags = (byte)(flags & InputDirections.SourceFlags), Minimum = min, Maximum = max, DualShock3 = gyro, UsagePage = gyro ? (ushort)0xff00 : (ushort)0, Usage = gyro ? (ushort)4 : (ushort)0 };
+            savedLabels[saved] = gyro ? L.T("ジャイロ（設定済み）", "Gyro (configured)") : L.T("保存済みの入力", "Saved input"); inputs.Add(saved);
         }
-        else if (source.Items.Count > 0) source.SelectedIndex = 0;
-        negative.Text = Result.Negative.ToString(); positive.Text = Result.Positive.ToString(); Ui.ThemeInputs(this); ShowMode();
-        DpiChanged += (_, _) => BeginInvoke(() => { if (!IsDisposed) { SizeLiveValue(); FitAxisList(); } });
+        if (selection.Whole is { } a) Add(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags, a.Minimum, a.Maximum, a.Gyro);
+        foreach (AnalogHalfBinding h in selection.Halves.OfType<AnalogHalfBinding>()) Add(h.Interface, h.ReportId, h.BitOffset, h.Bits, h.Flags, Math.Min(h.Neutral, h.Maximum), Math.Max(h.Neutral, h.Maximum), false);
     }
-    protected override void OnShown(EventArgs e)
+    private InputField? WholeInput => inputs.FirstOrDefault(f => AxisSelection.Matches(f, selection.Whole));
+    private string ButtonName(DigitalBinding? b) => b is null ? L.T("未割り当て", "Unassigned") : fields.FirstOrDefault(f => AxisSelection.Matches(f, b))?.Label ?? L.T("保存済み", "Saved");
+    private string HalfName(int side) => selection.Halves[side] is not { } a ? L.T("未割り当て", "Unassigned") :
+        inputs.FirstOrDefault(f => AxisSelection.Matches(f, a)) is { } f ? InputName(f) : L.T("保存済み", "Saved");
+    private void StoreAnalog()
     {
-        base.OnShown(e); SizeLiveValue(); FitAxisList();
+        if (loading || selection.Whole is not { Gyro: false } a) return;
+        a.Minimum = (int)minimum.Value; a.Center = (int)center.Value; a.Maximum = (int)maximum.Value; a.Deadzone = (ushort)deadzone.Value;
+        a.Flags = (byte)((a.Flags & InputDirections.SourceFlags) | (AxisDirections.ProfileInvert(axis, invert.Checked) ? 4 : 0));
     }
-    private void SizeLiveValue()
+    private void ShowSelection()
     {
-        using Graphics graphics = live.CreateGraphics();
-        Size needed = TextRenderer.MeasureText(graphics, L.T("入力値: -2147483648", "Input value: -2147483648"), live.Font);
-        live.Size = new(needed.Width + LogicalToDeviceUnits(8), needed.Height + LogicalToDeviceUnits(2));
-    }
-    private void FitAxisList()
-    {
-        if (!IsHandleCreated) return;
-        if (mode.SelectedIndex == 3)
+        using IDisposable layout = Ui.BatchLayout(this);
+        source.ShowSelection(selection);
+        analogPanel.Visible = selection.Whole is { Gyro: false }; analogPair.Visible = selection.HasHalves; gyroNotice.Visible = selection.Whole is { Gyro: true };
+        if (selection.Whole is { Gyro: false } a)
         {
-            MinimumSize = new(LogicalToDeviceUnits(860), LogicalToDeviceUnits(570));
-            ClientSize = new(LogicalToDeviceUnits(860), LogicalToDeviceUnits(710));
-            Ui.FitToWorkingArea(this, new(860, 710)); return;
+            loading = true; minimum.Value = a.Minimum; center.Value = a.Center; maximum.Value = a.Maximum; deadzone.Value = a.Deadzone; invert.Checked = AxisDirections.ProfileInvert(axis, (a.Flags & 4) != 0); loading = false;
         }
-        if (mode.SelectedIndex != 1) return;
-        int U(int value) => LogicalToDeviceUnits(value);
-        Rectangle work = Screen.FromControl(this).WorkingArea;
-        // Reserve the wrapped save reminder in addition to the original controls.
-        int noticeHeight = saveNotice.GetPreferredSize(new(U(812), int.MaxValue)).Height + saveNotice.Margin.Vertical;
-        int rows = Math.Max(1, Math.Min(Math.Max(1, source.Items.Count), (work.Height - U(560) - noticeHeight) / U(54)));
-        int columns = Math.Max(1, (source.Items.Count + rows - 1) / rows);
-        rows = Math.Max(1, (source.Items.Count + columns - 1) / columns);
-        int width = Math.Min(work.Width - U(32), U(860) * columns);
-        MinimumSize = new(Math.Min(width, U(860)) + Width - ClientSize.Width, U(570));
-        ClientSize = new(width, Math.Min(work.Height - (Height - ClientSize.Height) - U(24), U(490) + noticeHeight + rows * U(54)));
-        PerformLayout();
-        analogLayout.RowStyles[1].Height = source.Fit(rows, analogLayout.ClientSize.Width - source.Margin.Horizontal) + source.Margin.Vertical;
-        PerformLayout();
-        // Prevent partially visible rows after the user resizes the dialog smaller.
-        MinimumSize = Size;
-        Location = new(Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - Width)),
-            Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - Height)));
-        Ui.FitToWorkingArea(this, new(860, 570));
+        analogPair.Bind(selection); RefreshLive(); RefreshButtons();
+        summary.Text = selection.Whole is not null ? L.T("全体: ", "Whole axis: ") + (WholeInput is { } f ? InputName(f) : L.T("保存済み", "Saved")) :
+            selection.HasHalves ? AxisDirections.Label(axis, 0) + ": " + HalfName(AxisDirections.ProfileSide(axis, 0)) + "    /    " + AxisDirections.Label(axis, 1) + ": " + HalfName(AxisDirections.ProfileSide(axis, 1)) :
+            selection.HasButtons ? L.T("デジタル  ", "Digital  ") + AxisDirections.Label(axis, 0) + ": " + ButtonName(selection.Buttons[AxisDirections.ProfileSide(axis, 0)]) + "    /    " + AxisDirections.Label(axis, 1) + ": " + ButtonName(selection.Buttons[AxisDirections.ProfileSide(axis, 1)]) :
+            L.T("未使用 — 入力は選択されていません。出力は中心に固定されます。", "Unused — no input selected. Output stays centered.");
+        message.Text = !canLearn ? L.T("入力コントローラー未接続。保存済みの設定を編集・解除できます。", "Input controller disconnected. Saved assignments can be edited or cleared.") :
+            selection.HasHalves ? L.T("片側だけでも使用できます。正負の押し込み量が等しいと出力は中心になります。", "Either side can be used alone. Equal positive and negative input returns the output to center.") :
+            selection.HasButtons ? L.T("同時押しは中心になります。割り当て済みの学習ボタンを押すと解除します。", "Pressing both buttons centers the axis. Press an assigned learning button to clear it.") :
+            L.T("何も選択しない状態で適用すると、この軸は未使用になります。", "Apply with nothing selected to leave this axis unused.");
     }
-    private void ShowMode()
+    private void RefreshButtons()
     {
-        analogPanel.Visible = mode.SelectedIndex == 1; pairPanel.Visible = mode.SelectedIndex == 2; analogPair.Visible = mode.SelectedIndex == 3;
-        message.Text = mode.SelectedIndex switch { 0 => L.T("この軸は中心に固定されます。", "This axis remains centered."), 1 => L.T("軸を選択 → 両端まで往復 → 手を離して中心を記録。直接数値を調整することもできます。", "Select an axis → move to both ends → release and record the center. You can also edit the values directly."), _ => L.T("入力を離した状態で学習ボタンを選んでください。同時押しは中心になります。", "Release all inputs before learning. Pressing both buttons centers the axis.") };
-        if (!canLearn && mode.SelectedIndex != 0) message.Text = L.T("入力コントローラー未接続。保存済みの数値を編集できます。", "No input controller is connected. You can edit the saved values.");
-        if (mode.SelectedIndex == 3) message.Text = L.T("負方向と正方向の押し込み量を加算します。両方を同じ強さで押すと中心になります。", "Negative and positive pressure are added. Equal amounts cancel to the center.") +
-            (canLearn ? "" : L.T(" 入力未接続。保存済みの数値を編集できます。", " Input disconnected; saved values can still be edited."));
-        FitAxisList();
+        for (int i = 0; i < 2; i++)
+        {
+            int displaySide = AxisDirections.ProfileSide(axis, i);
+            string direction = L.T("デジタル ", "Digital ") + AxisDirections.Label(axis, displaySide);
+            bool learning = learningSide == i && (preparing || pairLearner is not null);
+            digital[i].Text = learning ? AxisDirections.Label(axis, displaySide, compact: true) + " " + L.T("学習中", "Learning") : direction;
+            string detail = learning ? L.T("入力待ち。もう一度押すと中止します。", "Waiting for input. Press again to cancel.") :
+                selection.Buttons[i] is null ? L.T("押してから、割り当てるボタンを操作してください。", "Press, then operate the button to assign.") :
+                ButtonName(selection.Buttons[i]) + L.T(" — 押すと解除します。", " — press to clear.");
+            digitalTips.SetToolTip(digital[i], detail); digital[i].AccessibleName = direction; digital[i].AccessibleDescription = detail;
+            digital[i].Enabled = canLearn || selection.Buttons[i] is not null;
+            Ui.ButtonColors(digital[i], learning, selection.Buttons[i] is not null); digital[i].Invalidate();
+        }
+        Ui.ButtonColors(detectButton, detect); detectButton.Text = detect ? L.T("入力を検出中 · 押すと中止", "Detecting · press to cancel") : L.T("操作して入力軸を検出", "Move to detect an input axis");
+        apply.Enabled = !preparing && pairLearner is null && !detect;
     }
-    private async void LearnPair(int index)
+    private void RefreshLive()
     {
-        pairLearner = null;
-        if (prepareLearning is not null && !await prepareLearning()) return;
-        if (IsDisposed) return;
-        pairIndex = index; pairLearner = new(fields, false);
-        message.Text = (index == 0 ? L.T("負方向", "Negative") : L.T("正方向", "Positive")) + L.T("にするボタンを押してください。", ": press the button you want to assign.");
+        InputField? f = WholeInput;
+        live.Text = f is { Valid: true } ? L.T($"入力値: {f.Value:N0}", $"Input value: {f.Value:N0}") : L.T("入力値: —", "Input value: —");
+        calibrate.Enabled = setCenter.Enabled = canLearn && f is { Valid: true }; descriptor.Enabled = f is not null;
+    }
+    private void CancelLearning()
+    {
+        learningRequest++; preparing = detect = measuring = false; pairLearner = null; learningSide = -1;
+        if (apply is not null) RefreshButtons();
+    }
+    private void Detect()
+    {
+        bool wasDetecting = detect; CancelLearning();
+        if (!canLearn || wasDetecting) { ShowSelection(); return; }
+        detect = true; baselines.Clear(); foreach (InputField f in inputs.Where(f => f.Valid)) baselines[f.Index] = f.Value;
+        message.Text = L.T("割り当てたい入力だけを大きく動かしてください。検出した入力を全体へ割り当てます。", "Move only the input you want. It will be assigned to the whole axis."); RefreshButtons();
+    }
+    private async void LearnPair(int side)
+    {
+        bool wasLearning = learningSide == side && (preparing || pairLearner is not null); CancelLearning();
+        if (wasLearning) { ShowSelection(); return; }
+        if (selection.Buttons[side] is not null) { selection.SetButton(side, null); ShowSelection(); return; }
+        if (!canLearn) return;
+        int request = ++learningRequest; learningSide = side; preparing = true; RefreshButtons();
+        try
+        {
+            bool ready = prepareLearning is null || await prepareLearning();
+            if (IsDisposed || request != learningRequest) return;
+            preparing = false;
+            if (!ready) { CancelLearning(); ShowSelection(); return; }
+            pairLearner = new(fields, false); RefreshButtons();
+            message.Text = L.F("「{0}」にするボタンを押してください。", "Press the button for {0}.", AxisDirections.Label(axis, AxisDirections.ProfileSide(axis, side)));
+        }
+        catch (Exception ex) { if (!IsDisposed && request == learningRequest) { CancelLearning(); ShowSelection(); Ui.Error(this, ex); } }
     }
     public void OnInput(InputField field, int value)
     {
-        analogPair.OnInput(field);
+        if (IsDisposed) return;
+        field.Value = value; field.Valid = true; dirtyInputs.Add(field); QueueInputView();
         if (pairLearner?.Observe(field, value) is LearnedInput learned)
         {
-            if (pairIndex == 0) { Result.Negative = learned.Binding; negative.Text = learned.Field.Label + " / " + learned.Binding; }
-            else { Result.Positive = learned.Binding; positive.Text = learned.Field.Label + " / " + learned.Binding; }
-            pairLearner = null; message.Text = L.T("割り当てました。もう一方も指定して適用してください。", "Assigned. Configure the other direction, then apply.");
+            selection.SetButton(learningSide, learned.Binding); CancelLearning(); ShowSelection();
+            message.Text = L.T("割り当てました。同じ学習ボタンを押すと解除できます。", "Assigned. Press the same learning button to clear."); return;
         }
-        if (mode.SelectedIndex != 1 || !field.Learnable || field.Binary || field.Hat) return;
-        source.RefreshValue(field);
+        if (!inputs.Contains(field) || !field.Learnable || field.Gyroscope) return;
         if (detect && !baselines.ContainsKey(field.Index)) baselines[field.Index] = value;
         if (detect && baselines.TryGetValue(field.Index, out int start) && Math.Abs((long)value - start) >= Math.Max(1, ((long)field.Maximum - field.Minimum) / 5))
         {
-            source.SelectedItem = field; minimum.Value = Math.Min(start, value); maximum.Value = Math.Max(start, value); center.Value = start;
-            detect = false; measuring = true; message.Text = L.T("軸を検出しました。両端へ往復した後、手を離して中心を記録してください。", "Axis detected. Move to both ends, then release and record the center.");
+            selection.SelectWhole(field); CancelLearning(); ShowSelection();
+            minimum.Value = Math.Min(start, value); maximum.Value = Math.Max(start, value); center.Value = start; measuring = true;
+            message.Text = L.T("入力を検出しました。両端へ動かし、手を離して中心を記録してください。", "Input detected. Move to both ends, release it, then record the center.");
         }
-        if (source.SelectedItem != field) return;
-        live.Text = L.T($"入力値: {value}", $"Input value: {value}");
+        if (!ReferenceEquals(WholeInput, field)) return;
         if (measuring && value >= field.Minimum && value <= field.Maximum) { minimum.Value = Math.Min(minimum.Value, value); maximum.Value = Math.Max(maximum.Value, value); }
+    }
+    // Learning and calibration consume every event above. Live labels and
+    // meters render the latest state once after that received batch completes.
+    private void QueueInputView()
+    {
+        if (refreshQueued || !IsHandleCreated) return;
+        refreshQueued = true;
+        BeginInvoke(() =>
+        {
+            refreshQueued = false;
+            if (IsDisposed) return;
+            foreach (InputField input in dirtyInputs) source.RefreshValue(input);
+            dirtyInputs.Clear();
+            if (analogPair.Visible) analogPair.RefreshValues();
+            if (analogPanel.Visible) RefreshLive();
+        });
     }
     private void Apply()
     {
+        if (!apply.Enabled) return;
         try
         {
-            Result.Mode = (byte)mode.SelectedIndex;
-            if (Result.Mode == 3) analogPair.Apply(Result);
-            if (Result.Mode == 1)
-            {
-                if (source.SelectedItem is InputField f) Result.Analog = f.Analog((int)minimum.Value, (int)center.Value, (int)maximum.Value, (ushort)deadzone.Value, invert.Checked);
-                else if (Result.Analog.Bits == 0) throw new InvalidDataException(L.T("アナログ入力軸を選択してください。", "Select an analog input axis."));
-                else { Result.Analog.Minimum = (int)minimum.Value; Result.Analog.Center = (int)center.Value; Result.Analog.Maximum = (int)maximum.Value; Result.Analog.Deadzone = (ushort)deadzone.Value; Result.Analog.Flags = (byte)((Result.Analog.Flags & 3) | (invert.Checked ? 4 : 0)); }
-            }
-            new DeviceProfile { Axes = [Result, new(), new(), new()] }.Encode();
-            DialogResult = DialogResult.OK; Close();
+            AxisBinding result = selection.Build();
+            new DeviceProfile { Vid = 0x054c, Pid = 0x0268, Axes = [result, new(), new(), new()] }.Encode();
+            Result = result; DialogResult = DialogResult.OK; Close();
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException) { Ui.Error(this, ex); }
     }
-    public void ConnectionLost() { DialogResult = DialogResult.Cancel; Close(); }
+    public void ConnectionLost() { CancelLearning(); DialogResult = DialogResult.Cancel; Close(); }
     internal void InputEventsLost()
     {
-        bool interrupted = detect || measuring || pairLearner is not null;
-        detect = measuring = false; pairLearner = null;
-        if (interrupted) message.Text = L.T("入力履歴が欠けたため、計測を中断しました。もう一度計測してください。",
-            "Measurement stopped because input events were missed. Start measuring again.");
+        bool interrupted = detect || measuring || pairLearner is not null || preparing;
+        CancelLearning();
+        if (interrupted) message.Text = L.T("入力履歴が欠けたため計測を中断しました。もう一度操作してください。", "Measurement stopped because input events were missed. Start again.");
     }
+    protected override void OnFormClosed(FormClosedEventArgs e) { learningRequest++; base.OnFormClosed(e); }
+    protected override void Dispose(bool disposing) { if (disposing) digitalTips.Dispose(); base.Dispose(disposing); }
 }

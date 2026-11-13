@@ -28,7 +28,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.25.2 (firmware 0.25.2).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.26.0 (firmware 0.26.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.26.0:** Individual axis settings use toggle selections for the whole axis or either direction, with direct digital-button learning on the same screen. Adds single-axis DUALSHOCK 3 gyro steering for LX or RX, with separate setup entry points, per-unit factory calibration, still calibration and a live steering display. Steering remains at the held position. Strong drift protection combines stillness-based zero tracking, noise filtering and a minimum 5% output deadzone. Hold Recenter still for about two seconds to relearn a shifted zero; slow, small turns are suppressed. A Recenter button or chord is shared by both sticks; three accelerometer inputs are available for manual analog assignments. Install the matching configurator and bundled firmware. See [DS3 gyro steering](docs/configurator-guide.md#ds3-gyro-steering).
 
 **0.25.2:** Wired DUALSHOCK 3 input is supported. Individual axis settings expose its 12 pressure values and can combine separate negative and positive analog sources. Equal amounts cancel, including both fully pressed. Press the PS button if input has not started after connection. See [individual axis settings](docs/configurator-guide.md#individual-axis-settings).
 
@@ -161,13 +163,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 131,700; persistent storage 49,152 | 1,916,300 |
-| SRAM, 532,480 bytes | Static data 159,912; two stacks 8,192 | 364,376 |
+| Flash, 2,097,152 bytes | Code/initial values 139,060; persistent storage 49,152 | 1,908,940 |
+| SRAM, 532,480 bytes | Static data 159,580; two stacks 8,192 | 364,708 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 40,848, and BSS 118,792 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 263,680 bytes.
+Static SRAM consists of vector table 272, initialized data 40,400, and BSS 118,908 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 278,528 bytes.
 
 ## Repository contents and license
 

@@ -22,7 +22,8 @@ uint32_t up_crc32(const void *data,unsigned length) {
 }
 static bool source_valid(uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags) {
     return bits && bits<=32 && (unsigned)offset+bits<=((flags&UP_REPORT_ID)?504u:512u) &&
-        ((flags&UP_REPORT_ID)?id!=0:id==0);
+        ((flags&UP_REPORT_ID)?id!=0:id==0) && (!(flags&UP_BIG_ENDIAN) || (bits==16 && !(offset&7))) &&
+        (!(flags&UP_SOURCE_REVERSED) || (bits==8 && !(flags&(UP_SIGNED|UP_BIG_ENDIAN))));
 }
 static bool number_fits(int32_t value,uint8_t bits,uint8_t flags) {
     if(flags&UP_SIGNED) {
@@ -36,7 +37,7 @@ static bool digital_valid(const up_digital *d,bool allow_rapid) {
     if(d->rapid_hz && (!allow_rapid || d->mode==UP_DISABLED ||
        d->rapid_hz<UP_RAPID_MIN_HZ || d->rapid_hz>UP_RAPID_MAX_HZ))return false;
     if(d->mode==UP_DISABLED)return true;
-    if(d->mode>UP_HAT_LEFT || (d->flags&~3u) ||
+    if(d->mode>UP_HAT_LEFT || (d->flags&~(unsigned)UP_SOURCE_FLAGS) ||
        !source_valid(d->report_id,d->bit_offset,d->bits,d->flags) || d->low>d->high ||
        !number_fits(d->low,d->bits,d->flags) || !number_fits(d->high,d->bits,d->flags))return false;
     int64_t range=(int64_t)d->high-d->low;
@@ -62,21 +63,28 @@ static bool profile_valid(const up_profile *p,unsigned version) {
             if(!digital_valid(&p->axes[i].pair[0],false) || !digital_valid(&p->axes[i].pair[1],false))return false;
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;
-            if((a->flags&~7u) || a->reserved || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
+            if(a->flags&UP_GYRO) {
+                if(legacy || p->vid!=0x054c || p->pid!=0x0268 || (i!=0 && i!=2) ||
+                   (a->flags&~4u)!=(UP_REPORT_ID|UP_BIG_ENDIAN|UP_GYRO) || a->interface_number ||
+                   a->report_id!=1 || a->bit_offset!=368 || a->bits!=16 || a->reserved>12800 ||
+                   a->minimum>=-1000 || a->minimum< -1000000000 || a->maximum<=1000 || a->maximum>1000000000 ||
+                   a->center<=0 || a->center>=1023*256 || a->deadzone_percent>50)return false;
+                for(unsigned j=0;j<sizeof(a->padding);++j)if(a->padding[j])return false;
+            } else if((a->flags&~(unsigned)(UP_SOURCE_FLAGS|UP_INVERT)) || a->reserved || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
                a->minimum>=a->maximum || a->minimum>a->center || a->center>a->maximum || a->deadzone_percent>50 ||
                !number_fits(a->minimum,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
         } else if(mode==UP_AXIS_ANALOG_PAIR) {
             if(legacy)return false;
             for(unsigned j=0;j<2;++j) {
                 const up_analog_half *a=&p->axes[i].halves[j];
-                if((a->flags&~3u) || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
+                if((a->flags&~(unsigned)UP_SOURCE_FLAGS) || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
                    a->neutral==a->maximum || a->deadzone_percent>50 ||
                    !number_fits(a->neutral,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
             }
         } else return false;
     }
     const up_shift *s=&p->shift;
-    if(s->count>(legacy?4u:UP_SHIFT_KEYS) || (s->overrides&~0x3ffffu) || s->reserved[0] || s->reserved[1] || s->reserved[2])return false;
+    if(s->count>(legacy?4u:UP_SHIFT_KEYS) || (s->overrides&~0x3ffffu) || (up_profile_recenter_keys(p)&~0x1ffffu) || (legacy && up_profile_recenter_keys(p)))return false;
     const up_digital *keys=(const up_digital *)((const uint8_t *)p+496);
     for(unsigned i=0;i<(legacy?4u:UP_SHIFT_KEYS);++i) {
         if(!digital_valid(&keys[i],false) || (i<s->count && !keys[i].mode))return false;
@@ -96,6 +104,10 @@ static bool profile_valid(const up_profile *p,unsigned version) {
         for(unsigned i=0;i<6;++i)if(c->reserved[i])return false;
     }
     return true;
+}
+uint32_t up_profile_recenter_keys(const up_profile *p) {
+    const uint8_t *b=p->shift.gyro_recenter;
+    return b[0]|((uint32_t)b[1]<<8)|((uint32_t)b[2]<<16);
 }
 bool up_profile_valid(const up_profile *p) { return profile_valid(p,UP_PROFILE_VERSION); }
 void up_conversion_from_legacy(up_conversion *c,const up_mouse_options *mouse,const udk_settings *s) {
@@ -176,7 +188,7 @@ int up_find_profile(const up_bank *b,uint16_t vid,uint16_t pid,uint16_t revision
 }
 static bool same_source(const up_digital *a,const up_digital *b) {
     return a->interface_number==b->interface_number && a->report_id==b->report_id &&
-        a->bit_offset==b->bit_offset && a->bits==b->bits && (a->flags&3)==(b->flags&3);
+        a->bit_offset==b->bit_offset && a->bits==b->bits && (a->flags&UP_SOURCE_FLAGS)==(b->flags&UP_SOURCE_FLAGS);
 }
 static uint8_t modifier_mask(const up_profile *p,const up_digital *d) {
     uint8_t mask=0;
@@ -186,6 +198,14 @@ static uint8_t modifier_mask(const up_profile *p,const up_digital *d) {
 void up_mapper_attach(up_mapper *m,const up_profile *p) {
     memset(m,0,sizeof(*m));m->profile=p && up_profile_valid(p)?p:NULL;
     memset(m->axes,128,sizeof(m->axes));memset(m->raw_axes,128,sizeof(m->raw_axes));
+    int32_t bias=512*256;uint16_t noise=0;bool found=false;
+    if(m->profile)for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
+        const up_analog *a=&p->axes[i].analog;
+        if(((p->axis_modes>>(2*i))&3)!=UP_AXIS_ANALOG || !(a->flags&UP_GYRO))continue;
+        if(!found) { bias=a->center;found=true; }
+        if(a->reserved>noise)noise=a->reserved;
+    }
+    up_gyro_init(&m->gyro,bias,noise);
     if(!m->profile || !(p->flags&UP_ENABLED))return;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
         if(p->digital[i].rapid_hz)m->rapid_configured|=1u<<i;
@@ -199,7 +219,7 @@ void up_mapper_attach(up_mapper *m,const up_profile *p) {
         if(mode==UP_AXIS_BUTTON_PAIR)for(unsigned j=0;j<2;++j)m->pair_modifiers[i][j]=modifier_mask(p,&p->axes[i].pair[j]);
         if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;
-            up_digital d={.interface_number=a->interface_number,.report_id=a->report_id,.bit_offset=a->bit_offset,.bits=a->bits,.flags=(uint8_t)(a->flags&3)};
+            up_digital d={.interface_number=a->interface_number,.report_id=a->report_id,.bit_offset=a->bit_offset,.bits=a->bits,.flags=(uint8_t)(a->flags&UP_SOURCE_FLAGS)};
             for(unsigned k=0;k<p->shift.count;++k)if(same_source(&d,&p->shift.keys[k]))m->analog_modifiers[i]|=(uint8_t)(1u<<k);
         }
         if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
@@ -212,7 +232,7 @@ void up_mapper_attach(up_mapper *m,const up_profile *p) {
 static bool UC_RAM_FUNC(read_source)(uint8_t wanted_interface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,
                         uint8_t interface_number,const uint8_t *raw,unsigned n,int32_t *value) {
     if(wanted_interface!=interface_number)return false;
-    uc_hid_field field={.bit_offset=offset,.bits=bits,.report_id=id,.logical_min=(flags&UP_SIGNED)?-1:0};
+    uc_hid_field field={.bit_offset=offset,.bits=bits,.report_id=id,.logical_min=(flags&UP_SIGNED)?-1:0,.flags=(uint16_t)(((flags&UP_BIG_ENDIAN)?UC_FIELD_BIG_ENDIAN:0)|((flags&UP_SOURCE_REVERSED)?UC_FIELD_REVERSED:0))};
     return uc_hid_field_value(&field,(flags&UP_REPORT_ID)!=0,raw,n,value);
 }
 static inline bool digital_pressed(const up_digital *d,int32_t value) {
@@ -225,7 +245,14 @@ static inline bool digital_pressed(const up_digital *d,int32_t value) {
 }
 bool up_digital_pressed_value(const up_digital *d,int32_t value) { return digital_pressed(d,value); }
 bool up_digital_overlap(const up_digital *a,const up_digital *b) {
-    if(!a->mode || !b->mode || !same_source(a,b))return false;
+    if(!a->mode || !b->mode)return false;
+    // Legacy raw and normalized ranges may coexist in imported profiles.
+    up_digital reflected;
+    if(((a->flags^b->flags)&UP_SOURCE_REVERSED) && a->bits==8 && b->bits==8 && b->mode==UP_RANGE) {
+        reflected=*b;reflected.flags^=UP_SOURCE_REVERSED;
+        reflected.low=255-b->high;reflected.high=255-b->low;b=&reflected;
+    }
+    if(!same_source(a,b))return false;
     if(a->mode==UP_RANGE && b->mode==UP_RANGE)return a->low<=b->high && b->low<=a->high;
     const up_digital *hat=a->mode==UP_RANGE?b:a;
     for(int64_t v=hat->low;v<=hat->high;++v)if(digital_pressed(a,(int32_t)v) && digital_pressed(b,(int32_t)v))return true;
@@ -397,7 +424,7 @@ void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_
             if(same_source(&p->axes[i].pair[j],&field))m->pairs[i][j]=digital_pressed(&p->axes[i].pair[j],value);
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;
-            if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && (a->flags&3)==flags)m->raw_axes[i]=analog_value(a,value);
+            if(!(a->flags&UP_GYRO) && a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && (a->flags&UP_SOURCE_FLAGS)==flags)m->raw_axes[i]=analog_value(a,value);
         } else if(mode==UP_AXIS_ANALOG_PAIR)for(unsigned j=0;j<2;++j) {
             const up_analog_half *a=&p->axes[i].halves[j];
             if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && a->flags==flags)
@@ -428,6 +455,7 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
             m->raw_axes[i]=m->pairs[i][0]==m->pairs[i][1]?128:m->pairs[i][0]?0:255;
         } else if(mode==UP_AXIS_ANALOG) {
             const up_analog *a=&p->axes[i].analog;int32_t value;
+            if(a->flags&UP_GYRO) { touched=true;continue; }
             if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
                 m->raw_axes[i]=analog_value(a,value);touched=true;
             }
@@ -439,4 +467,31 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
         }
     }
     resolve_shift(m);up_mapper_report(m,out);return touched;
+}
+
+bool up_mapper_motion(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,uint32_t time) {
+    const up_profile *p=m->profile;
+    if(!p || !(p->flags&UP_ENABLED) || p->vid!=0x054c || p->pid!=0x0268 || iface || n<49 || raw[0]!=1)return false;
+    uint32_t keys=up_profile_recenter_keys(p),pressed=raw[2]|((uint32_t)raw[3]<<8)|((uint32_t)(raw[4]&1)<<16);
+    uint16_t accel[3];
+    for(unsigned i=0;i<3;++i)accel[i]=(uint16_t)(((uint16_t)raw[41+2*i]<<8)|raw[42+2*i]);
+    uint16_t value=(uint16_t)(((uint16_t)raw[47]<<8)|raw[48]);
+    uint32_t maximum_gap=((uint32_t)p->input_interval_ms+20u)*1000u;
+    if(maximum_gap<100000u)maximum_gap=100000u;
+    up_gyro_step step=up_gyro_update(&m->gyro,value,accel,true,time,maximum_gap,keys && (pressed&keys)==keys);
+    bool touched=false;
+    for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
+        const up_analog *a=&p->axes[i].analog;
+        if(((p->axis_modes>>(2*i))&3)!=UP_AXIS_ANALOG || !(a->flags&UP_GYRO))continue;
+        m->gyro_position[i]+=step.delta;
+        // Keep overshoot so returning from full lock preserves the reference.
+        const int64_t limit=INT64_C(1000000000)*256000;
+        if(m->gyro_position[i]>limit)m->gyro_position[i]=limit;
+        if(m->gyro_position[i]<-limit)m->gyro_position[i]=-limit;
+        if(step.recentered)m->gyro_position[i]=0;
+        up_analog scale=*a;scale.center=0;
+        if(scale.deadzone_percent<5)scale.deadzone_percent=5;
+        m->raw_axes[i]=analog_value(&scale,(int32_t)(m->gyro_position[i]/256000));touched=true;
+    }
+    return touched;
 }

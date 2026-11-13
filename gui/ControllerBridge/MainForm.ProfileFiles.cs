@@ -70,6 +70,7 @@ internal sealed partial class MainForm
     {
         if (profiles[slot].Enabled) throw new InvalidDataException(L.T("未使用スロットを選んでください。", "Select an unused slot."));
         DeviceProfile imported = ProfileFile.Load(path, migrationDefaults);
+        InputDirections.NormalizeProfile(imported);
         if (imported.LegacyConversionApplied) MessageBox.Show(this, LegacyImportNotice(migrationDefaults is not null), L.T("旧設定の変換", "Legacy settings conversion"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         if (!imported.Enabled) throw new InvalidDataException(L.T("ファイルに登録済みプロファイルがありません。", "The file does not contain an enabled profile."));
         // A copied file may carry an identity already present in either drafts or the device bank.

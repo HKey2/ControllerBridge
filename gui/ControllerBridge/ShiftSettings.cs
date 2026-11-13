@@ -13,11 +13,11 @@ public sealed class ShiftSettings
         byte[] data = new byte[16]; binding.Write(data, 0, true); return DigitalBinding.Read(data, 0, true);
     }
     internal static bool SameSource(DigitalBinding a, DigitalBinding b) =>
-        a.Interface == b.Interface && a.ReportId == b.ReportId && a.BitOffset == b.BitOffset && a.Bits == b.Bits && (a.Flags & 3) == (b.Flags & 3);
+        a.Interface == b.Interface && a.ReportId == b.ReportId && a.BitOffset == b.BitOffset && a.Bits == b.Bits && (a.Flags & 19) == (b.Flags & 19);
     internal static string DescribeKey(DigitalBinding key, IEnumerable<InputField> fields)
     {
         InputField? field = fields.FirstOrDefault(f => f.Interface == key.Interface && f.ReportId == key.ReportId &&
-            f.BitOffset == key.BitOffset && f.Bits == key.Bits && (f.Flags & 3) == (key.Flags & 3));
+            f.BitOffset == key.BitOffset && f.Bits == key.Bits && (f.Flags & 19) == (key.Flags & 19));
         return (field?.Label ?? L.T("入力名未確認", "Input name unavailable")) + $"  [{key}]";
     }
     internal static bool Pressed(DigitalBinding b, int value)
@@ -30,6 +30,10 @@ public sealed class ShiftSettings
     internal static bool Overlap(DigitalBinding a, DigitalBinding b)
     {
         if (a.Mode == 0 || b.Mode == 0 || !SameSource(a, b)) return false;
+        if (((a.Flags ^ b.Flags) & InputDirections.Reversed) != 0 && b.Bits == 8 && b.Mode == 1)
+        {
+            b = Copy(b); (b.Low, b.High) = (255 - b.High, 255 - b.Low); b.Flags ^= InputDirections.Reversed;
+        }
         if (a.Mode == 1 && b.Mode == 1) return a.Low <= b.High && b.Low <= a.High;
         DigitalBinding hat = a.Mode == 1 ? b : a;
         for (long v = hat.Low; v <= hat.High; v++) if (Pressed(a, (int)v) && Pressed(b, (int)v)) return true;
@@ -55,7 +59,7 @@ public sealed class ShiftSettings
     internal static ShiftSettings Read(byte[] bytes, bool legacy = false)
     {
         int count = bytes[492];
-        if (count > (legacy ? 4 : MaxKeys) || bytes[493] != 0 || bytes[494] != 0 || bytes[495] != 0) throw new InvalidDataException(L.T("未対応のシフト設定です。", "These shift settings are not supported."));
+        if (count > (legacy ? 4 : MaxKeys) || bytes[495] > 1 || (legacy && (bytes[493] != 0 || bytes[494] != 0 || bytes[495] != 0))) throw new InvalidDataException(L.T("未対応のシフト設定です。", "These shift settings are not supported."));
         ShiftSettings result = new() { Overrides = Wire.U32(bytes, 488) };
         for (int i = 0; i < (legacy ? 4 : MaxKeys); i++)
         {

@@ -424,6 +424,30 @@ done:
     if(!xbox_out.active)ut_close_endpoint(1,xbox_out.endpoint);
     return xbox_out.active;
 }
+// Read only the per-unit calibration page, then apply its volatile gyro trim.
+// Failed or unsupported motion setup leaves ordinary buttons/sticks available.
+static void ds3_motion_initialize(uint8_t iface) {
+    uint8_t identity[64],page[64],request[48]={0};
+    uint16_t ni=0,np=0;uc_ds3_calibration cal={0};
+    uc_event event={.type=UC_STATUS,.code=UC_MOTION_CALIBRATION,.interface_number=iface};
+    bool valid=control(1,0xa1,1,0x0301,iface,sizeof(identity),identity,&ni)==UT_OK;
+    if(valid) {
+        request[4]=3;request[5]=1;request[6]=0xa0;
+        valid=control(1,0x21,9,0x03ef,iface,sizeof(request),request,NULL)==UT_OK &&
+            control(1,0xa1,1,0x03ef,iface,sizeof(page),page,&np)==UT_OK &&
+            uc_ds3_calibration_parse(identity,ni,page,np,&cal);
+    }
+    if(valid) {
+        unsigned size=uc_ds3_calibration_output(&cal,request);
+        if(size)valid=control(1,0x21,9,0x0201,iface,(uint16_t)size,request,NULL)==UT_OK;
+    }
+    if(valid) {
+        event.sequence=cal.path;event.length=sizeof(cal.values);
+        memcpy(event.data,cal.values,sizeof(cal.values));
+    }
+    options.event(&event,options.context);
+}
+
 static bool enumerate(void) {
     ready = false;probe_missing=false;
     memset(&xbox_out,0,sizeof(xbox_out));memset(xbox_rx,0,sizeof(xbox_rx));
@@ -467,6 +491,7 @@ static bool enumerate(void) {
             if(result==UT_OK && actual!=sizeof(feature))result=UT_ERROR;
             status(UC_INPUT_INIT,0x10000u|(uint32_t)result);
             if(result!=UT_OK)return false;
+            ds3_motion_initialize(iface->number);
             const uint8_t *schema=uc_dualshock3_layout(&iface->report_length);
             memcpy(iface->report,schema,iface->report_length);continue;
         }

@@ -1,106 +1,141 @@
 namespace ControllerBridge;
 
-// An always-open native choice list. Each row keeps its input identity and live
-// meter together; selection and keyboard navigation remain standard ListBox behavior.
-internal sealed class AxisSourceList : ListBox
+// Each input is one 60/40 split choice: whole axis on the left, positive over
+// negative on the right. Native buttons preserve keyboard and accessibility.
+internal sealed class AxisSourceList : TableLayoutPanel
 {
-    public AxisSourceList()
+    private readonly List<SourceTile> tiles = [];
+    private readonly ToolTip tips = new() { AutoPopDelay = 15000 };
+    private bool arranging;
+    internal event Action<InputField, int>? Choose;
+    internal IReadOnlyList<InputField> Items => tiles.Select(t => t.Field).ToArray();
+    internal AxisSourceList()
     {
-        // Keep native selection/accessibility, but paint the complete visible
-        // rows into one buffer. Native owner-draw erases before drawing rows.
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        DrawMode = DrawMode.OwnerDrawFixed; IntegralHeight = false;
-        BorderStyle = BorderStyle.FixedSingle; Dock = DockStyle.Fill;
-        HorizontalScrollbar = false;
-        AccessibleName = L.T("入力軸とリアルタイム値", "Input axes and live values");
-        ItemHeight = 54; TabIndex = 0;
+        Dock = DockStyle.Top; AutoSize = false;
+        Margin = Padding.Empty; Padding = Padding.Empty;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+        SizeChanged += (_, _) => ArrangeTiles();
     }
-
+    internal void SetInputs(IEnumerable<InputField> fields, Func<InputField, string> label, int axis = 0)
+    {
+        foreach (InputField f in fields)
+        {
+            SourceTile tile = new(f, label(f), tips, axis); tiles.Add(tile);
+            tile.Choose += part => Choose?.Invoke(f, part);
+        }
+        ArrangeTiles();
+    }
+    internal void FitToArea() => ArrangeTiles();
+    private void ArrangeTiles()
+    {
+        if (arranging) return;
+        int rowHeight = LogicalToDeviceUnits(48);
+        int availableHeight = Parent?.ClientSize.Height ?? rowHeight * 7;
+        int availableRows = Math.Max(1, availableHeight / rowHeight);
+        int columns = Math.Max(ClientSize.Width >= LogicalToDeviceUnits(960) ? 3 : 2,
+            (tiles.Count + availableRows - 1) / availableRows);
+        int rows = Math.Max(1, (tiles.Count + columns - 1) / columns);
+        arranging = true;
+        SuspendLayout();
+        try
+        {
+            if (ColumnCount != columns || RowCount != rows || Controls.Count != tiles.Count)
+            {
+                Controls.Clear(); ColumnStyles.Clear(); RowStyles.Clear(); ColumnCount = columns; RowCount = rows;
+                for (int i = 0; i < columns; i++) ColumnStyles.Add(new(SizeType.Percent, 100f / columns));
+                for (int i = 0; i < rows; i++) RowStyles.Add(new(SizeType.Absolute, rowHeight));
+                for (int i = 0; i < tiles.Count; i++) Controls.Add(tiles[i], i % columns, i / columns);
+            }
+            foreach (RowStyle row in RowStyles) row.Height = rowHeight;
+            Height = rows * rowHeight;
+        }
+        finally { ResumeLayout(true); arranging = false; }
+    }
+    protected override void OnDpiChangedAfterParent(EventArgs e) { base.OnDpiChangedAfterParent(e); ArrangeTiles(); }
+    internal void ShowSelection(AxisSelection selection)
+    {
+        foreach (SourceTile tile in tiles)
+            tile.ShowSelection(AxisSelection.Matches(tile.Field, selection.Whole),
+                AxisSelection.Matches(tile.Field, selection.Halves[0]), AxisSelection.Matches(tile.Field, selection.Halves[1]));
+    }
+    internal void RefreshValue(InputField field) => tiles.FirstOrDefault(t => ReferenceEquals(t.Field, field))?.RefreshValue();
     internal static int Midpoint(InputField field) => field.Pressure ? field.Minimum : field.Minimum < 0 && field.Maximum > 0 ? 0 :
         (int)(field.Minimum + ((long)field.Maximum - field.Minimum + 1) / 2);
-
     internal static double Position(InputField field, int value)
     {
         long origin = Midpoint(field), delta = (long)value - origin;
         long span = delta < 0 ? origin - field.Minimum : (long)field.Maximum - origin;
         return span <= 0 ? 0 : Math.Clamp((double)delta / span, -1, 1);
     }
+    protected override void Dispose(bool disposing) { if (disposing) tips.Dispose(); base.Dispose(disposing); }
 
-    internal int Fit(int rows, int width)
+    private sealed class SourceTile : TableLayoutPanel
     {
-        ItemHeight = LogicalToDeviceUnits(54);
-        int columns = Math.Max(1, (Items.Count + rows - 1) / rows);
-        MultiColumn = columns > 1;
-        ColumnWidth = Math.Max(1, (width - 2) / columns);
-        return Math.Max(1, Math.Min(rows, Items.Count)) * ItemHeight + 2 + (MultiColumn ? SystemInformation.HorizontalScrollBarHeight : 0);
-    }
-
-    internal void RefreshValue(InputField field)
-    {
-        int index = Items.IndexOf(field);
-        if (index >= 0 && IsHandleCreated) Invalidate(GetItemRectangle(index));
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        for (int i = 0; i < Items.Count; i++)
+        internal InputField Field { get; }
+        private readonly InputButton whole;
+        private readonly Button positive, negative;
+        private readonly int axis;
+        internal event Action<int>? Choose;
+        internal SourceTile(InputField field, string label, ToolTip tips, int axis)
         {
-            Rectangle row = GetItemRectangle(i);
-            if (!row.IntersectsWith(e.ClipRectangle)) continue;
-            DrawItemState state = GetSelected(i) ? DrawItemState.Selected : DrawItemState.None;
-            if (Focused && ShowFocusCues && i == SelectedIndex) state |= DrawItemState.Focus;
-            OnDrawItem(new(e.Graphics, Font, row, i, state, ForeColor, BackColor));
+            this.axis = axis; Field = field; Dock = DockStyle.Fill; Margin = new(4, 2, 4, 2); ColumnCount = 2; RowCount = 2;
+            ColumnStyles.Add(new(SizeType.Percent, 60)); ColumnStyles.Add(new(SizeType.Percent, 40));
+            RowStyles.Add(new(SizeType.Percent, 50)); RowStyles.Add(new(SizeType.Percent, 50));
+            whole = new(field) { Text = label, AccessibleName = label + L.T(" 全体を割り当て・解除", " assign or clear whole axis") };
+            whole.Click += (_, _) => Choose?.Invoke(-1);
+            positive = Part(AxisDirections.Label(axis, 1), 1); negative = Part(AxisDirections.Label(axis, 0), 0);
+            positive.Enabled = negative.Enabled = !field.Gyroscope;
+            Controls.Add(whole, 0, 0); SetRowSpan(whole, 2); Controls.Add(positive, 1, 0); Controls.Add(negative, 1, 1);
+            string origin = $"IF{field.Interface} / ID{field.ReportId} / bit{field.BitOffset}";
+            tips.SetToolTip(whole, label + L.T("：全体に割り当て。同じ場所をもう一度押すと解除。", ": assign the whole axis. Press again to clear.") + "\n" + origin);
+            tips.SetToolTip(positive, label + "：" + AxisDirections.Label(axis, 1) + L.T("に割り当て・解除。", " — assign or clear."));
+            tips.SetToolTip(negative, label + "：" + AxisDirections.Label(axis, 0) + L.T("に割り当て・解除。", " — assign or clear."));
         }
-        base.OnPaint(e);
+        private Button Part(string label, int part)
+        {
+            Button b = Ui.Button(label, (_, _) => Choose?.Invoke(AxisDirections.ProfileSide(axis, part)));
+            b.AutoSize = false; b.MinimumSize = Size.Empty; b.Dock = DockStyle.Fill; b.Margin = Padding.Empty; b.Padding = new(4, 1, 4, 1);
+            b.SizeChanged += (_, _) => b.Text = b.Width >= TextRenderer.MeasureText(label, b.Font).Width + b.Padding.Horizontal ? label : AxisDirections.Label(axis, part, compact: true);
+            b.AccessibleName = Field.Label + " " + label + L.T("を割り当て・解除", " assign or clear"); return b;
+        }
+        internal void ShowSelection(bool all, bool minus, bool plus)
+        {
+            if ((axis & 1) != 0) (minus, plus) = (plus, minus);
+            Ui.ButtonColors(whole, false, all); Ui.ButtonColors(negative, false, minus); Ui.ButtonColors(positive, false, plus);
+            foreach ((Button button, bool selected) in new[] { ((Button)whole, all), (negative, minus), (positive, plus) })
+            { button.AccessibleDescription = selected ? L.T("選択中。もう一度押すと解除。", "Selected. Press again to clear.") : L.T("未選択", "Not selected"); button.Invalidate(); }
+        }
+        internal void RefreshValue() => whole.Invalidate();
     }
-
-    protected override void OnDrawItem(DrawItemEventArgs e)
+    private sealed class InputButton : DarkButton
     {
-        if (e.Index < 0 || Items[e.Index] is not InputField field) return;
-        Graphics g = e.Graphics; Rectangle row = e.Bounds;
-        int U(int value) => LogicalToDeviceUnits(value);
-        bool selected = (e.State & DrawItemState.Selected) != 0;
-        using SolidBrush background = new(selected ? Ui.Selected : Ui.Surface);
-        g.FillRectangle(background, row);
-        using Pen line = new(Ui.Stroke);
-        int divider = row.Left + (int)(row.Width * .38);
-        g.DrawLine(line, divider, row.Top + U(5), divider, row.Bottom - U(5));
-        g.DrawLine(line, row.Left, row.Bottom - 1, row.Right, row.Bottom - 1);
-        if (selected)
+        private readonly InputField field;
+        internal InputButton(InputField field)
         {
-            using SolidBrush accent = new(Ui.Focus);
-            g.FillRectangle(accent, row.Left, row.Top, U(3), row.Height);
+            this.field = field; Dock = DockStyle.Fill; AutoSize = false; Margin = Padding.Empty;
+            Padding = new(7, 1, 7, 17); FlatStyle = FlatStyle.Flat; UseVisualStyleBackColor = false; Cursor = Cursors.Hand;
+            Ui.ButtonColors(this, false);
         }
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
-        TextRenderer.DrawText(g, field.Label, Font,
-            new Rectangle(row.Left + U(12), row.Top + U(2), divider - row.Left - U(20), U(24)), Ui.Ink, flags);
-        using Font detailFont = new(Font.FontFamily, Font.SizeInPoints * .85f);
-        TextRenderer.DrawText(g, $"IF{field.Interface} / ID{field.ReportId} / bit{field.BitOffset}", detailFont,
-            new Rectangle(row.Left + U(12), row.Top + U(27), divider - row.Left - U(20), U(21)), Ui.Muted, flags);
-
-        Rectangle track = new(divider + U(14), row.Top + U(10), Math.Max(U(20), row.Right - divider - U(133)), U(16));
-        using SolidBrush empty = new(Ui.Input); g.FillRectangle(empty, track);
-        int middle = field.Pressure ? track.Left : track.Left + track.Width / 2;
-        if (field.Valid)
+        protected override TextFormatFlags LabelFlags => TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+        protected override void OnPaint(PaintEventArgs e)
         {
-            double position = Position(field, field.Value);
-            int end = middle + (int)Math.Round(position * (position < 0 ? middle - track.Left : track.Right - middle));
-            bool inRange = field.Value >= field.Minimum && field.Value <= field.Maximum;
-            using SolidBrush fill = new(inRange ? Ui.Focus : Ui.Stroke);
-            if (end != middle) g.FillRectangle(fill, Math.Min(end, middle), track.Top, Math.Abs(end - middle), track.Height);
+            base.OnPaint(e);
+            int U(int value) => LogicalToDeviceUnits(value);
+            Rectangle track = new(U(8), Height - U(14), Math.Max(U(16), Width - U(68)), U(7));
+            using SolidBrush empty = new(Ui.Input); e.Graphics.FillRectangle(empty, track);
+            int origin = field.Pressure ? track.Left : track.Left + track.Width / 2;
+            if (field.Valid)
+            {
+                double value = Position(field, field.Value);
+                int end = origin + (int)Math.Round(value * (value < 0 ? origin - track.Left : track.Right - origin));
+                using SolidBrush fill = new(Ui.Focus);
+                e.Graphics.FillRectangle(fill, Math.Min(origin, end), track.Top, Math.Abs(end - origin), track.Height);
+            }
+            using Pen mark = new(Ui.Muted); e.Graphics.DrawLine(mark, origin, track.Top - U(2), origin, track.Bottom + U(2));
+            TextRenderer.DrawText(e.Graphics, field.Valid ? field.Value.ToString("N0") : "—", Font,
+                new Rectangle(track.Right + U(4), Height - U(21), Width - track.Right - U(10), U(19)), Ui.Muted,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
-        g.DrawRectangle(line, track);
-        using Pen origin = new(Ui.Ink);
-        g.DrawLine(origin, middle, track.Top - U(3), middle, track.Bottom + U(3));
-        TextRenderer.DrawText(g, field.Pressure ? "0" : "−", detailFont, new Rectangle(track.Left, row.Top + U(30), U(30), U(20)), Ui.Muted, flags);
-        if (!field.Pressure) TextRenderer.DrawText(g, "0", detailFont, new Rectangle(middle - U(15), row.Top + U(30), U(30), U(20)), Ui.Muted, flags | TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(g, field.Pressure ? "100%" : "+", detailFont, new Rectangle(track.Right - U(48), row.Top + U(30), U(48), U(20)), Ui.Muted, flags | TextFormatFlags.Right);
-        Rectangle value = new(track.Right + U(8), row.Top + U(1), row.Right - track.Right - U(16), U(25));
-        TextRenderer.DrawText(g, field.Valid ? field.Value.ToString("N0") : "—", Font, value, Ui.Ink, flags | TextFormatFlags.Right);
-        value.Y += U(25);
-        string status = !field.Valid ? L.T("入力待ち", "Waiting") : field.Value < field.Minimum || field.Value > field.Maximum ?
-            L.T("範囲外", "Out of range") : Position(field, field.Value).ToString(field.Pressure ? "0%" : "+0%;-0%;0%");
-        TextRenderer.DrawText(g, status, detailFont, value, Ui.Muted, flags | TextFormatFlags.Right);
-        if ((e.State & DrawItemState.Focus) != 0) e.DrawFocusRectangle();
     }
 }

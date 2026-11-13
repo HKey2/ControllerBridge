@@ -25,5 +25,12 @@ bool uc_input_config_identify(uc_input_configuration *out,uint16_t vid,uint16_t 
 const uint8_t *uc_xbox360_layout(uint16_t *length);
 const uint8_t *uc_switch_pro_layout(uint16_t *length);
 const uint8_t *uc_dualshock3_layout(uint16_t *length);
+typedef struct {
+    uint16_t values[8]; // Per-unit A0: accel zero/-1g pairs, gyro zero/trim.
+    uint8_t path; // 1 software zero, 2 hardware trim, 3 SIXAXIS trim.
+} uc_ds3_calibration;
+bool uc_ds3_calibration_parse(const uint8_t *identity,unsigned identity_length,
+                              const uint8_t *page,unsigned page_length,uc_ds3_calibration *out);
+unsigned uc_ds3_calibration_output(const uc_ds3_calibration *cal,uint8_t output[48]);
 bool uc_input_packet_valid(uint8_t protocol,const uint8_t *data,size_t length);
 #endif

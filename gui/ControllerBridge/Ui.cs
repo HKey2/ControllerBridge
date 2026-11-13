@@ -155,6 +155,7 @@ internal static class Ui
 // Keep the standard enabled painting/input/accessibility; paint only disabled state.
 internal class DarkButton : Button
 {
+    protected virtual TextFormatFlags LabelFlags => TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
     public DarkButton() => SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Assigned { get; set; }
@@ -180,7 +181,7 @@ internal class DarkButton : Button
         Rectangle text = Rectangle.FromLTRB(Padding.Left, Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
         if (pressed) text.Offset(1, 1);
         TextRenderer.DrawText(e.Graphics, Text, Font, text, Enabled ? ForeColor : Color.FromArgb(0xad, 0xad, 0xad),
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            LabelFlags);
         if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5), Ui.Ink, face);
         if (Assigned)
         {

@@ -1,6 +1,6 @@
 # Firmware update
 
-ControllerBridge 0.22.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.26.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
 
 Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferences. Before returning to firmware through 0.20.18, save those profiles in a gamepad mode or clear their conversion flags using 0.20.19; the older validator rejects that combination.
 
@@ -8,7 +8,7 @@ Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferen
 
 The main window checks the firmware identity before reading capabilities or profile data. Only an exact match with the bundled version proceeds to normal settings reads. Detection runs at startup and about every two seconds while waiting for a usable connection.
 
-- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.22.0?** confirmation follows. Lower and higher versions are treated alike.
+- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.26.0?** confirmation follows. Lower and higher versions are treated alike.
 - A factory-state RP2350-USB-A exposing Pico SDK CDC/reset USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge without readable firmware information shows **Device unsupported** and automatically opens the BOOT connection guide. It immediately monitors for BOOT connection and shows only **Cancel**. A valid BOOT connection advances to the final overwrite confirmation automatically. This works both when the board is already connected at startup and when it is detected while the tool is running.
 - With no recognized board, the tool shows **Device not connected** and waits without opening an update guide or recording a startup error. Unrelated USB peripherals do not trigger installation. Other firmware with unrecognized USB identities can still use **Firmware update** manually.
 
@@ -25,12 +25,12 @@ The factory-state screenshot was captured on 2026-10-31 with the supplied RP2350
 ## Confirmation flow
 
 1. Choose **Firmware update**. The dialog shows **Checking firmware version...**.
-2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing.
-3. If a supported device reports a different version, the dialog asks **Install v0.22.0?**. **No** exits; **Yes** starts automatic programming.
+2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing. Opening the updater preserves unsaved profile edits. Before restarting the Windows app to use a newer executable, export any unsaved profiles from the profile list’s context menu and import them again after restarting.
+3. If a supported device reports a different version, the dialog asks **Install v0.26.0?**. **No** exits; **Yes** starts automatic programming.
 4. If no supported version response is available, the dialog immediately shows **Waiting for reconnection with BOOT held...** and only a **Cancel** button. Unplug the RP2350-USB-A's USB-C cable, hold **BOOT**, reconnect to the same PC USB port, then release BOOT. This wait has no timeout. **Cancel**, Escape, or the window close button exits without writing.
 5. Once the target's RP2350 BOOT USB identity and disk information are validated, the dialog automatically shows **Confirm firmware write** with **Yes/No** buttons. It states that BOOT connection was confirmed and names the bundled version. Only **Yes** starts the transfer; **No** exits without writing. If the board was already in validated BOOT mode, this final confirmation appears directly after detection.
 
-When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.22.0?**. A confirmed saved v5/v6 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
+When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.26.0?**. A confirmed saved v5/v6 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
 
 A BOOT-only connection does not provide this saved-bank information through the supported updater interface, so **Confirm firmware write** has no data-update notice. The actual firmware migration still runs when applicable; absence of the notice is not a promise that the saved data format will stay unchanged.
 

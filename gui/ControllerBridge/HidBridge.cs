@@ -38,10 +38,20 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsRollingStep => SupportsTrackballHold && (Features & 8388608) != 0;
     public bool SupportsProfileConversion => (Features & (16777216 | 33554432)) == (16777216 | 33554432);
     public bool SupportsAnalogPair => (Features & 67108864) != 0;
+    public bool SupportsGyroSteering => (Features & (1u << 27)) != 0;
+    public bool SupportsGyroDriftProtection => (Features & (1u << 28)) != 0;
+    public bool SupportsInputDirections => (Features & (1u << 29)) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
+        if (InputDirections.UsesNormalizedInput(profile) && !SupportsInputDirections)
+            throw new InvalidDataException(InputDirections.UpdateMessage);
+        if ((profile.GyroRecenterButtons != 0 || profile.Axes.Any(a => a.Mode == 1 && (a.Analog.Flags & 24) != 0) ||
+             profile.Axes.Any(a => a.Mode == 3 && ((a.NegativeAnalog.Flags | a.PositiveAnalog.Flags) & 16) != 0)) && !SupportsGyroSteering)
+            throw new InvalidDataException(L.T("ジャイロ・加速度の設定には同梱ファームウェアへの更新が必要です。画面上部の「ファームウェア更新」を実行してから、もう一度保存してください。", "Gyro and accelerometer settings require the bundled firmware. Choose Firmware update at the top of the window, then save again."));
+        if (profile.Axes.Any(a => a.Mode == 1 && a.Analog.Gyro) && !SupportsGyroDriftProtection)
+            throw new InvalidDataException(L.T("ジャイロのドリフト補正には同梱ファームウェアへの更新が必要です。画面上部の「ファームウェア更新」を実行してから、もう一度保存してください。", "Gyro drift protection requires the bundled firmware. Choose Firmware update at the top of the window, then save again."));
         if (profile.Axes.Any(a => a.Mode == 3) && !SupportsAnalogPair)
-            throw new InvalidDataException(L.T("正負のアナログ入力合成には同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware to combine negative and positive analog inputs."));
+            throw new InvalidDataException(L.T("正負のアナログ入力合成には同梱ファームウェアへの更新が必要です。画面上部の「ファームウェア更新」を実行してから、もう一度保存してください。", "Combining negative and positive analog inputs requires the bundled firmware. Choose Firmware update at the top of the window, then save again."));
         if (!SupportsProfileConversion) throw new InvalidDataException(L.T("プロファイル別の変換設定には同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware for per-profile conversion settings."));
         if (profile.Mouse.TrackballGain > 64 && !SupportsGain256)
             throw new InvalidDataException(L.T("64倍を超える感度にはファームウェア0.20.3以降が必要です。", "Gain above 64 requires firmware 0.20.3 or later."));
@@ -64,6 +74,9 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
 public sealed class InputField
 {
     public bool DualShock3 { get; init; }
+    public bool Motion => DualShock3 && UsagePage == 0xff00 && Usage is >= 1 and <= 4;
+    public bool Gyroscope => Motion && Usage == 4;
+    public bool Accelerometer => Motion && Usage <= 3;
     public bool Pressure => DualShock3 && UsagePage == 9 && Usage is >= 5 and <= 16 && Bits == 8 && Minimum == 0 && Maximum == 255;
     public ushort Index { get; init; }
     public byte Interface { get; init; }
@@ -78,14 +91,15 @@ public sealed class InputField
     public int Maximum { get; init; }
     public int Value { get; set; }
     public bool Valid { get; set; }
-    public bool Learnable => (HidFlags & 4) == 0 && Maximum > Minimum && Bits is > 0 and <= 32 &&
+    public bool Learnable => !Gyroscope && (HidFlags & 4) == 0 && Maximum > Minimum && Bits is > 0 and <= 32 &&
         (!(UsagePage == 1 && Usage == 0x39) || Hat);
     public bool Hat => UsagePage == 1 && Usage == 0x39 && (long)Maximum - Minimum is 3 or 7;
     public bool Binary => (long)Maximum - Minimum == 1;
     private string SonyButton => Usage switch { 1 => "SELECT", 2 => "L3", 3 => "R3", 4 => "START",
         5 => L.T("十字キー 上", "D-pad up"), 6 => L.T("十字キー 右", "D-pad right"), 7 => L.T("十字キー 下", "D-pad down"), 8 => L.T("十字キー 左", "D-pad left"),
         9 => "L2", 10 => "R2", 11 => "L1", 12 => "R1", 13 => "△", 14 => "○", 15 => "×", 16 => "□", 17 => "PS", _ => L.T($"ボタン {Usage}", $"Button {Usage}") };
-    public string Label => DualShock3 && UsagePage == 9 ? SonyButton + (Pressure ? L.T(" 感圧", " pressure") : "") : UsagePage == 9 ? L.T($"ボタン {Usage}", $"Button {Usage}") : UsagePage == 1 ? Usage switch
+    public string Label => Motion ? Usage switch { 1 => L.T("加速度 X", "Acceleration X"), 2 => L.T("加速度 Y", "Acceleration Y"),
+        3 => L.T("加速度 Z", "Acceleration Z"), _ => L.T("ジャイロ（ハンドル）", "Gyro (steering)") } : DualShock3 && UsagePage == 9 ? SonyButton + (Pressure ? L.T(" 感圧", " pressure") : "") : UsagePage == 9 ? L.T($"ボタン {Usage}", $"Button {Usage}") : UsagePage == 1 ? Usage switch
         { 0x30 => L.T("X軸", "X axis"), 0x31 => L.T("Y軸", "Y axis"), 0x32 => L.T("Z軸", "Z axis"), 0x33 => L.T("Rx軸", "Rx axis"), 0x34 => L.T("Ry軸", "Ry axis"), 0x35 => L.T("Rz軸", "Rz axis"), 0x36 => L.T("スライダー", "Slider"), 0x38 => L.T("パドル (Wheel)", "Paddle (Wheel)"), 0x39 => L.T("十字キー (Hat)", "D-pad (Hat)"),
           0x90 => L.T("十字キー 上", "D-pad up"), 0x91 => L.T("十字キー 下", "D-pad down"), 0x92 => L.T("十字キー 右", "D-pad right"), 0x93 => L.T("十字キー 左", "D-pad left"), _ => $"HID {UsagePage:X2}:{Usage:X2}" }
         : $"HID {UsagePage:X2}:{Usage:X2}";

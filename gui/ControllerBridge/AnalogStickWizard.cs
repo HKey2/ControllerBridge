@@ -9,13 +9,17 @@ internal sealed class AnalogStickWizard : Form
     private readonly Button next, back, skip;
     private readonly CheckBox invert = new() { Text = L.T("向きを反転", "Invert direction"), AutoSize = true, Margin = new(8, 12, 12, 4) };
     private bool updating, refreshQueued;
+    private GyroWizard? gyroWizard;
+    private readonly List<InputField> fields;
+    private readonly ToolTip gyroTips = new() { AutoPopDelay = 15000 };
+    internal uint RecenterButtons => session.RecenterButtons;
     private long lastRefresh = Environment.TickCount64;
     internal AxisBinding[] Result => session.Result;
     private static string ReadyHint => L.T("軸を示す帯が固定されると確定可能です。", "Confirm once the axis band is fixed.");
 
     internal AnalogStickWizard(DeviceProfile original, List<InputField> fields)
     {
-        session = new(original, fields); session.Start();
+        this.fields = fields; session = new(original, fields); session.Start();
         using IDisposable layout = Ui.Form(this, L.T("アナログスティックの設定ウィザード", "Analog stick setup wizard"), new(860, 680), new(820, 640));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(18), ColumnCount = 1, RowCount = 5 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -32,7 +36,24 @@ internal sealed class AnalogStickWizard : Form
         TableLayoutPanel graphs = new() { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, MinimumSize = new(0, 240) };
         graphs.ColumnStyles.Add(new(SizeType.Percent, 50)); graphs.ColumnStyles.Add(new(SizeType.Percent, 50));
         graphs.RowStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 2; i++) graphs.Controls.Add(views[i], i, 0);
+        for (int i = 0; i < 2; i++)
+        {
+            int side = i;
+            Button gyro = Ui.Button(L.T("ジャイロ", "Gyro"), (_, _) => EditGyro(side));
+            gyro.Enabled = fields.Any(f => f.Gyroscope);
+            gyro.Anchor = AnchorStyles.Bottom | (i == 0 ? AnchorStyles.Left : AnchorStyles.Right);
+            gyroTips.SetToolTip(gyro, gyro.Enabled ? L.T("このスティックの横方向をジャイロで操作します。", "Use gyro steering for this stick’s horizontal axis.") :
+                L.T("対応するDS3を接続し、同梱ファームウェアへ更新してください。個体校正値を読み取れた場合に使用できます。", "Connect a supported DS3 and update to the bundled firmware. Factory calibration must be readable."));
+            views[i].Controls.Add(gyro);
+            void PlaceGyro()
+            {
+                int margin = views[side].LogicalToDeviceUnits(8);
+                gyro.Location = new(side == 0 ? margin : Math.Max(margin, views[side].Width - gyro.Width - margin),
+                    Math.Max(margin, views[side].Height - gyro.Height - margin));
+            }
+            views[i].SizeChanged += (_, _) => PlaceGyro(); gyro.SizeChanged += (_, _) => PlaceGyro();
+            graphs.Controls.Add(views[i], i, 0);
+        }
         root.Controls.Add(graphs, 0, 2);
         FlowLayoutPanel options = new() { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         options.Controls.Add(invert);
@@ -81,6 +102,7 @@ internal sealed class AnalogStickWizard : Form
     internal void OnInput(InputField field, int value, uint time)
     {
         if (IsDisposed) return;
+        if (gyroWizard is not null) { gyroWizard.OnInput(field, value, time); return; }
         bool confirm = session.Observe(field, value, time);
         if (confirm && !session.Reviewing) Next();
         else { QueueRefresh(); }
@@ -88,6 +110,7 @@ internal sealed class AnalogStickWizard : Form
     internal void OnInputRefresh()
     {
         if (IsDisposed) return;
+        if (gyroWizard is not null) { gyroWizard.RefreshView(); return; }
         long now = Environment.TickCount64, elapsed = now - lastRefresh; lastRefresh = now;
         if (session.AdvanceHeld(elapsed > 250 ? 251 : (int)Math.Max(0, elapsed))) QueueRefresh();
     }
@@ -98,13 +121,31 @@ internal sealed class AnalogStickWizard : Form
         refreshQueued = true;
         BeginInvoke(() => { refreshQueued = false; if (!IsDisposed) RefreshValues(); });
     }
-    internal void ConnectionLost() { DialogResult = DialogResult.Cancel; Close(); }
+    internal void ConnectionLost() { gyroWizard?.ConnectionLost(); DialogResult = DialogResult.Cancel; Close(); }
     internal void InputEventsLost()
     {
-        session.InputEventsLost(); RefreshStep();
+        gyroWizard?.InputEventsLost(); session.InputEventsLost(); RefreshStep();
         if (session.Started && !session.Reviewing)
             instruction.Text = L.T("入力履歴が欠けたため、この軸をもう一度動かしてください。",
                 "Input events were missed. Move this axis again.");
+    }
+    internal void GyroEventsLost() => gyroWizard?.InputEventsLost();
+    private void EditGyro(int side)
+    {
+        if (!fields.Any(f => f.Gyroscope)) return;
+        using GyroWizard dialog = new(side, session.Axis(side * 2), session.RecenterButtons, fields, session.InputInterval); gyroWizard = dialog;
+        try
+        {
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            session.SetGyro(side * 2, dialog.Result, dialog.RecenterButtons);
+            DialogResult = DialogResult.OK; Close();
+        }
+        finally { gyroWizard = null; }
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) gyroTips.Dispose();
+        base.Dispose(disposing);
     }
     private void RefreshStep()
     {

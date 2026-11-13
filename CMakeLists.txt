@@ -31,7 +31,7 @@ target_link_libraries(controller_device PUBLIC pico_stdlib PRIVATE hardware_irq 
 target_compile_options(controller_device PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_bridge STATIC lib/controller_bridge/queue.c lib/controller_bridge/store.c
-    lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c
+    lib/controller_bridge/gyro.c lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c
     lib/controller_bridge/profile_button.c lib/controller_bridge/mouse.c)
 target_include_directories(controller_bridge PUBLIC lib/controller_bridge/include)
 target_link_libraries(controller_bridge PUBLIC controller_usb controller_device PRIVATE hardware_flash)

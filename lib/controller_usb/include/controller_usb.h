@@ -16,7 +16,7 @@ typedef enum { UC_STATUS, UC_DESCRIPTOR, UC_INPUT, UC_STATISTICS } uc_event_type
 typedef enum {
     UC_START, UC_PROBING, UC_PROBE_FAILED, UC_DEVICE_FOUND, UC_REJECTED,
     UC_CONFIGURED, UC_REPORT_DESCRIPTOR_FAILED, UC_INPUT_ERROR,
-    UC_DISCONNECTED, UC_POLL_CHANGED, UC_ENUM_FAILED, UC_INPUT_PROTOCOL, UC_INPUT_INIT
+    UC_DISCONNECTED, UC_POLL_CHANGED, UC_ENUM_FAILED, UC_INPUT_PROTOCOL, UC_INPUT_INIT, UC_MOTION_CALIBRATION
 } uc_status;
 typedef struct {
     uint32_t reports, transfer_errors, stalls, attempts;
@@ -60,6 +60,10 @@ void uc_host_resume(void);
 // A bounded HID layout parser, independent of the PIO backend and of any VID/PID.
 // Scalar Variable Input fields are decoded; arrays remain available as raw data.
 #define UC_HID_MAX_FIELDS 64
+// Internal synthetic sensor field marker; never emitted by the HID parser.
+#define UC_FIELD_BIG_ENDIAN 0x8000u
+// Protocol-defined 8-bit axis direction, applied in the shared value decoder.
+#define UC_FIELD_REVERSED 0x4000u
 typedef struct {
     uint16_t usage_page, usage, bit_offset;
     uint8_t bits, report_id;

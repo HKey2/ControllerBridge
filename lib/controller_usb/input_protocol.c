@@ -137,3 +137,27 @@ bool uc_input_packet_valid(uint8_t protocol,const uint8_t *data,size_t length) {
     if(protocol==UC_PROTOCOL_SWITCH_PRO)return length>=13 && length<=64 && data[0]==0x30;
     return protocol==UC_PROTOCOL_XBOX360 && length==20 && data[0]==0 && data[1]==20;
 }
+
+static uint16_t ds3_be16(const uint8_t *p) { return ((uint16_t)p[0]<<8)|p[1]; }
+bool uc_ds3_calibration_parse(const uint8_t *id,unsigned ni,const uint8_t *page,unsigned np,uc_ds3_calibration *out) {
+    memset(out,0,sizeof(*out));
+    if(ni<39 || np<33 || id[0] || id[1]!=1 || page[0] || page[1]!=0xef ||
+       memcmp(id+2,page+2,3) || page[5]!=3 || page[6]!=1 || page[7]!=0xa0)return false;
+    unsigned count=id[37];if(!count || count>ni-38)return false;
+    bool hardware=false;
+    for(unsigned i=0;i<count;++i)if(id[38+i]==7)hardware=true;
+    bool plain=(count>=2 && id[38]==1 && id[39]==2) || (count>=3 && id[39]==1 && id[40]==2);
+    uint8_t path=hardware?2:plain?1:(count==1 && id[38]==6)?3:0;
+    if(!path)return false;
+    for(unsigned i=0;i<8;++i)out->values[i]=ds3_be16(page+17+2*i);
+    for(unsigned i=0;i<3;++i)if(out->values[2*i]>1023 || out->values[2*i+1]>1023 ||
+       out->values[2*i]==out->values[2*i+1])return false;
+    if(!out->values[6] || out->values[6]>=1023 || out->values[7]>255)return false;
+    out->path=path;return true;
+}
+unsigned uc_ds3_calibration_output(const uc_ds3_calibration *cal,uint8_t output[48]) {
+    memset(output,0,48);
+    if(cal->path!=2 && cal->path!=3)return 0;
+    unsigned offset=cal->path==2?5:3;
+    output[offset]=0xff;output[offset+1]=(uint8_t)cal->values[7];return 48;
+}

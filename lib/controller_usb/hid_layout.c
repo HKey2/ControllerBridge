@@ -62,7 +62,7 @@ bool uc_hid_parse(const uint8_t *desc, size_t length, uc_hid_layout *layout) {
                         f->report_id = (uint8_t)g.report_id;
                         f->logical_min = g.logical_min;
                         f->logical_max = g.logical_max;
-                        f->flags = (uint16_t)value;
+                        f->flags = (uint16_t)(value & ~(UC_FIELD_BIG_ENDIAN|UC_FIELD_REVERSED));
                     }
                     offsets[g.report_id] = (uint16_t)(offsets[g.report_id]+g.size);
                 }
@@ -86,12 +86,21 @@ bool UC_RAM_FUNC(uc_hid_field_value)(const uc_hid_field *f,bool has_ids,const ui
     if((size_t)f->bit_offset+f->bits>length*8)return false;
     unsigned shift=f->bit_offset%8,bytes=(shift+f->bits+7)/8;
     const uint8_t *p=data+f->bit_offset/8;
+    if(f->flags&UC_FIELD_BIG_ENDIAN) {
+        if(shift || f->bits!=16)return false;
+        uint16_t value=((uint16_t)p[0]<<8)|p[1];
+        *out=f->logical_min<0?(int16_t)value:(int32_t)value;return true;
+    }
     uint32_t value=p[0]>>shift;
     for(unsigned i=1;i<bytes;++i)value|=(uint32_t)p[i]<<(8*i-shift);
     if(f->bits<32) {
         uint32_t mask=(1u<<f->bits)-1;
         value&=mask;
         if(f->logical_min<0 && (value&(1u<<(f->bits-1))))value|=~mask;
+    }
+    if(f->flags&UC_FIELD_REVERSED) {
+        if(f->bits!=8 || f->logical_min<0)return false;
+        value=255u-value;
     }
     *out=(int32_t)value; return true;
 }

@@ -3,6 +3,7 @@
 #include "controller_usb.h"
 #include "switch_wired.h"
 #include "controller_direction.h"
+#include "controller_gyro.h"
 #include <stddef.h>
 
 #define UP_PROFILE_COUNT 16
@@ -18,7 +19,8 @@
 #define UP_RAPID_MIN_HZ 1
 #define UP_RAPID_MAX_HZ 60
 enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8 };
-enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4 };
+enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4, UP_GYRO=8, UP_BIG_ENDIAN=16, UP_SOURCE_REVERSED=32 };
+#define UP_SOURCE_FLAGS (UP_SIGNED|UP_REPORT_ID|UP_BIG_ENDIAN|UP_SOURCE_REVERSED)
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
 enum { UP_AXIS_DISABLED, UP_AXIS_ANALOG, UP_AXIS_BUTTON_PAIR, UP_AXIS_ANALOG_PAIR };
 enum { UP_MOUSE_TRACKBALL=1, UP_MOUSE_PADDLE=2, UP_MOUSE_INVERT_X=4, UP_MOUSE_INVERT_Y=8, UP_MOUSE_INVERT_PADDLE=16, UP_MOUSE_PADDLE_Y=32, UP_MOUSE_TRACKBALL_KEYS=64, UP_MOUSE_PADDLE_KEYS=128 };
@@ -50,7 +52,10 @@ typedef struct {
     uint8_t interface_number,report_id;
     uint16_t bit_offset;
     uint8_t bits,flags;
+    // Gyro: noise threshold in raw-count Q8. Otherwise zero.
     uint16_t reserved;
+    // Gyro: negative/positive count-ms limits, and resting raw-count Q8 bias.
+    // Ordinary analog bindings retain their raw minimum/center/maximum.
     int32_t minimum,center,maximum;
     uint16_t deadzone_percent;
     uint8_t padding[10];
@@ -75,7 +80,8 @@ typedef struct {
 #define UP_DEFAULT_CONVERSION {{15,17,18,16},{18,16},0,0,30,0,{0}}
 typedef struct {
     uint32_t overrides; // One bit per output: 0 inherits, 1 replaces (disabled = mute).
-    uint8_t count,reserved[3]; // All configured physical modifiers must be held.
+    uint8_t count,gyro_recenter[3]; // Shared DS3 physical chord, little-endian 17-bit mask.
+    // All configured physical shift modifiers must be held.
     up_digital keys[UP_SHIFT_KEYS];
     up_conversion conversion; // Independent of shift activation; reuses the old fourth key.
     up_digital digital[UP_DIGITAL_COUNT];
@@ -109,6 +115,8 @@ typedef struct {
     uint8_t pair_modifiers[UP_AXIS_COUNT][2],analog_modifiers[UP_AXIS_COUNT];
     uint32_t rapid_configured,rapid_held,rapid_on,physical;
     uint32_t rapid_time[UP_DIGITAL_COUNT],rapid_phase[UP_DIGITAL_COUNT],rapid_next[UP_DIGITAL_COUNT];
+    int64_t gyro_position[UP_AXIS_COUNT]; // Q8 count-us, retained outside output saturation.
+    up_gyro gyro;
     sw_report last_output;
     bool have_output;
 } up_mapper;
@@ -150,6 +158,9 @@ unsigned up_profile_number(const up_bank *bank,unsigned slot);
 void up_prefer_slot(up_bank *bank,unsigned slot);
 uint32_t up_crc32(const void *data,unsigned length);
 void up_mapper_attach(up_mapper *mapper,const up_profile *profile);
+uint32_t up_profile_recenter_keys(const up_profile *profile);
+// Integrate at USB receipt timestamps, before ordinary mapping resolves output.
+bool up_mapper_motion(up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigned length,uint32_t time_us);
 bool up_mapper_apply(up_mapper *mapper,uint8_t interface_number,const uint8_t *report,unsigned length,sw_report *output);
 void up_mapper_report(const up_mapper *mapper,sw_report *output);
 void up_mapper_seed(up_mapper *mapper,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value);

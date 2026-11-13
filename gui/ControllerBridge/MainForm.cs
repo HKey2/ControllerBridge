@@ -336,9 +336,14 @@ internal sealed partial class MainForm : Form
     private async Task WaitForPoll() { while (polling && !closing) await Task.Delay(5); }
     private async Task WaitForConnection() { while (connecting && !closing) await Task.Delay(5); }
     private bool ModalEditorOpen => !Enabled || OwnedForms.Any(form => form.Modal);
-    private void ApplyBank(DeviceProfile[] data, uint version)
+    private void ApplyBank(DeviceProfile[] data, uint version, bool normalizeInputs)
     {
-        profiles = data; persistedProfiles = data.Select(p => p.Clone()).ToArray(); Array.Clear(dirty); bankGeneration = observedBankGeneration = version;
+        // Keep the device snapshot in its stored coordinates for backup,
+        // conflict detection and reconnects. Only the editor copy is normalized.
+        persistedProfiles = data.Select(p => p.Clone()).ToArray();
+        profiles = data.Select(p => p.Clone()).ToArray();
+        if (normalizeInputs) foreach (DeviceProfile profile in profiles) InputDirections.NormalizeProfile(profile);
+        Array.Clear(dirty); bankGeneration = observedBankGeneration = version;
     }
     private async Task Connect(bool showErrors = true, bool allowFirmwareNotice = true)
     {
@@ -367,7 +372,7 @@ internal sealed partial class MainForm : Form
             firmwareNotices.Observe(read.Status, allowFirmwareNotice);
             bridge = read.TakeBridge(); var bank = read.Bank;
             bool retain = dirty.Any(x => x), unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
-            if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
+            if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
             fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
@@ -415,7 +420,7 @@ internal sealed partial class MainForm : Form
         if (working || !ConfirmDiscard()) return;
         if (bridge is null) return;
         working = true; AbortLearning(); UpdateEnabled(); await WaitForPoll();
-        try { var bank = await bridge.ReadProfilesAsync(); ApplyBank(bank.Profiles, bank.Caps.BankGeneration); await RefreshDevice(); RefreshSlots(); BindSelected(); SetText(saved, L.T("デバイスのスロットを再読込しました。", "Reloaded the device's slots.")); }
+        try { var bank = await bridge.ReadProfilesAsync(); ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); await RefreshDevice(); RefreshSlots(); BindSelected(); SetText(saved, L.T("デバイスのスロットを再読込しました。", "Reloaded the device's slots.")); }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
@@ -490,6 +495,7 @@ internal sealed partial class MainForm : Form
         string? latest = null;
         foreach (InputChange change in changes)
         {
+            if (deliver && change.Lost) { ActiveEditor.GyroEventsLost(); wizard?.GyroEventsLost(); }
             InputField? f = fields.FirstOrDefault(f => f.Index == change.Index);
             // A PC-side backlog may overwrite device history. Continue with
             // received values without interrupting learning or its axis range.
@@ -530,7 +536,7 @@ internal sealed partial class MainForm : Form
                 {
                     var bank = await bridge.ReadProfilesAsync(); observedBankGeneration = bank.Caps.BankGeneration; caps = bank.Caps;
                     bool unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
-                    if (!dirty.Any(x => x)) { ApplyBank(bank.Profiles, bank.Caps.BankGeneration); RefreshSlots(); rebind = true; }
+                    if (!dirty.Any(x => x)) { ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); RefreshSlots(); rebind = true; }
                     else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
                 }
                 bool activeChanged = oldActive != caps.ActiveSlot;
@@ -766,7 +772,7 @@ internal sealed partial class MainForm : Form
             working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
             SetText(saved, L.T("全スロットを復帰し、読み戻して照合しています…", "Restoring and verifying all slots…"));
             SlotBank actual = await bridge!.WriteBankAsync(loaded, bankGeneration);
-            ApplyBank(actual.Profiles, actual.Generation); await RefreshDevice();
+            ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true); await RefreshDevice();
             if (caps?.ActiveSlot < profiles.Length) selected = caps.ActiveSlot; RefreshSlots(); BindSelected();
             SetText(saved, L.T("全16スロットと切替設定を復帰しました。", "Restored all 16 slots and profile switching settings."));
         }
@@ -782,7 +788,7 @@ internal sealed partial class MainForm : Form
             SlotBank bank = await ReadCurrentBank(), moved = bank.Move(source, destination);
             SetText(saved, L.T("スロットの順番を保存しています…", "Saving the slot order…"));
             SlotBank actual = await bridge!.WriteBankAsync(moved, bank.Generation);
-            ApplyBank(actual.Profiles, actual.Generation); selected = destination;
+            ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true); selected = destination;
             await RefreshDevice(); RefreshSlots(); BindSelected();
             SetText(saved, L.T("スロットの順番を保存しました。BOOT・ショートカットもこの順で切り替わります。", "Slot order saved. BOOT and shortcuts follow this order."));
         }

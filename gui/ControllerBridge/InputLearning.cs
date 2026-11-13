@@ -10,13 +10,13 @@ internal sealed class ButtonLearner
     public ButtonLearner(IEnumerable<InputField> fields, bool dpad)
     {
         this.dpad = dpad;
-        baseline = fields.Where(f => f.Valid && f.Learnable).ToDictionary(f => f.Index, f => f.Value);
-        foreach (InputField f in fields.Where(f => f.Valid && f.Learnable))
+        baseline = fields.Where(f => f.Valid && f.Learnable && !f.Motion).ToDictionary(f => f.Index, f => f.Value);
+        foreach (InputField f in fields.Where(f => f.Valid && f.Learnable && !f.Motion))
             if (f.Binary ? f.Value == f.Minimum : f.Hat ? f.Value < f.Minimum || f.Value > f.Maximum : true) armed.Add(f.Index);
     }
     public LearnedInput? Observe(InputField f, int value)
     {
-        if (!f.Learnable || !baseline.TryGetValue(f.Index, out int start)) return null;
+        if (!f.Learnable || f.Motion || !baseline.TryGetValue(f.Index, out int start)) return null;
         if (f.Binary)
         {
             if (value == f.Minimum) { armed.Add(f.Index); return null; }
@@ -237,17 +237,19 @@ internal sealed partial class MappingEditor : UserControl
     }
     public void ObserveAxisWizard(InputField field, int value, uint time) => stickWizard?.OnInput(field, value, time);
     public void RefreshAxisWizard() => stickWizard?.OnInputRefresh();
+    internal void GyroEventsLost() => stickWizard?.GyroEventsLost();
     private async void EditSticks()
     {
         if (!profile.Enabled || !canLearn) return;
         int request = ++learningRequest; learner = null;
         if (PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
+        try { InputDirections.RequireCurrentInput(fields); } catch (InvalidDataException ex) { Ui.Error(this, ex); return; }
         using AnalogStickWizard dialog = new(profile, fields); stickWizard = dialog;
         try
         {
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
-            DeviceProfile before = profile.Clone(); profile.Axes = dialog.Result;
+            DeviceProfile before = profile.Clone(); profile.Axes = dialog.Result; profile.GyroRecenterButtons = dialog.RecenterButtons;
             if (!before.SameContent(profile)) { UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty); }
         }
         finally { stickWizard = null; }
@@ -258,6 +260,7 @@ internal sealed partial class MappingEditor : UserControl
         int request = ++learningRequest; learner = null;
         if (canLearn && PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
+        if (canLearn) { try { InputDirections.RequireCurrentInput(fields); } catch (InvalidDataException ex) { Ui.Error(this, ex); return; } }
         using AxisDialog dialog = new(axis, profile.Axes[axis], fields, canLearn, PrepareLearningAsync); axisDialog = dialog;
         try
         {
@@ -335,6 +338,21 @@ internal sealed partial class MappingEditor : UserControl
         rapid.Enabled = profile.Enabled && supportsRapid;
         tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒1～60回を設定します。新規設定は20回です。", "Set each button to OFF or 1–60 presses per second. New settings start at 20.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));
         string[] shortNames = [L.T("左 X", "Left X"), L.T("左 Y", "Left Y"), L.T("右 X", "Right X"), L.T("右 Y", "Right Y")];
-        for (int i = 0; i < 4; i++) axes[i].Text = shortNames[i] + " · " + (profile.Axes[i].Mode switch { 1 => L.T("アナログ", "Analog"), 2 => L.T("2ボタン", "2 buttons"), _ => L.T("未使用", "Unused") });
+        for (int i = 0; i < 4; i++)
+        {
+            AxisBinding axis = profile.Axes[i];
+            string mode = axis.Mode switch
+            {
+                1 when axis.Analog.Gyro => L.T("ジャイロ", "Gyro"),
+                1 => L.T("アナログ", "Analog"),
+                2 => L.T("2ボタン", "2 buttons"),
+                3 => L.T("アナログ合成", "Analog pair"),
+                _ => L.T("未使用", "Unused")
+            };
+            axes[i].Text = shortNames[i] + " · " + mode;
+            axes[i].AccessibleName = shortNames[i] + " · " + mode;
+            axes[i].AccessibleDescription = AxisDirections.Describe(i, axis);
+            tips.SetToolTip(axes[i], shortNames[i] + " ← " + AxisDirections.Describe(i, axis));
+        }
     }
 }

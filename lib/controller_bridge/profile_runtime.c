@@ -36,7 +36,7 @@ static um_hold_state hold_state;
 static uint32_t hold_idle_us=20000u;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool connected,partial,persisted,binding_error;
-static uint8_t host_status,input_protocol;
+static uint8_t host_status,input_protocol,motion_path;
 static uc_event last_input;
 static uint32_t input_initialization;
 static up_profile staged;
@@ -68,7 +68,8 @@ static bool source_exists(uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,
     for(unsigned i=0;i<field_count;++i) {
         const observed_field *f=&fields[i];
         if(f->iface==iface && f->field.report_id==id && f->field.bit_offset==offset && f->field.bits==bits &&
-           f->flags==(flags&3) && !(f->field.flags&4))return true;
+           (f->flags&~UP_SOURCE_REVERSED)==(flags&(UP_SOURCE_FLAGS&~UP_SOURCE_REVERSED)) &&
+           (!(flags&UP_SOURCE_REVERSED) || (f->flags&UP_SOURCE_REVERSED)) && !(f->field.flags&4))return true;
     }
     return false;
 }
@@ -103,7 +104,13 @@ static void seed_buttons(void) {
     if(active<0)return;
     for(unsigned j=0;j<field_count;++j) {
         const observed_field *f=&fields[j];
-        if(f->valid)up_mapper_seed(&mapper,f->iface,f->field.report_id,f->field.bit_offset,f->field.bits,f->flags,f->value);
+        if(f->valid) {
+            up_mapper_seed(&mapper,f->iface,f->field.report_id,f->field.bit_offset,f->field.bits,f->flags,f->value);
+            // Old stored bindings keep their original raw coordinate system.
+            if(f->flags&UP_SOURCE_REVERSED)
+                up_mapper_seed(&mapper,f->iface,f->field.report_id,f->field.bit_offset,f->field.bits,
+                    (uint8_t)(f->flags&~UP_SOURCE_REVERSED),255-f->value);
+        }
     }
 }
 static void refresh_conversion(void) {
@@ -304,11 +311,12 @@ bool upr_event(const uc_event *e) {
             device_descriptor_size=configuration_descriptor_size=0;
             memset(pointing_intervals,0,sizeof(pointing_intervals));
             input_protocol=0;memset(&last_input,0,sizeof(last_input));
-            input_initialization=0;
+            input_initialization=0;motion_path=0;
             memset(fields,0,sizeof(fields));up_mapper_attach(&mapper,NULL);return true;
         }
         if(e->code==UC_DEVICE_FOUND) { vid=(uint16_t)(e->sequence>>16);pid=(uint16_t)e->sequence; }
         if(e->code==UC_INPUT_INIT)input_initialization=e->sequence;
+        if(e->code==UC_MOTION_CALIBRATION)motion_path=(uint8_t)e->sequence;
         if(e->code==UC_INPUT_PROTOCOL) {
             input_protocol=(uint8_t)e->sequence;
             // A synthetic schema alone cannot distinguish Xbox-compatible pads.
@@ -351,6 +359,26 @@ bool upr_event(const uc_event *e) {
                    (layout.has_report_ids && !f->report_id) || f->logical_max<f->logical_min) { partial=true;continue; }
                 observed_field *o=&fields[field_count++];o->field=*f;o->iface=e->interface_number;
                 o->flags=(f->logical_min<0?UP_SIGNED:0)|(layout.has_report_ids?UP_REPORT_ID:0);
+                // DS3 reports Y down-positive; Switch Pro and Xbox report up-positive.
+                // Keep report bytes and descriptor identity intact. Both live fields
+                // and profile mapping use uc_hid_field_value for this conversion.
+                if(input_protocol==UC_PROTOCOL_DUALSHOCK3 && e->interface_number==0 &&
+                   f->report_id==1 && f->bits==8 && (f->bit_offset==48 || f->bit_offset==64) &&
+                   f->usage_page==1 && (f->usage==0x31 || f->usage==0x34)) {
+                    o->field.flags|=UC_FIELD_REVERSED;o->flags|=UP_SOURCE_REVERSED;
+                }
+            }
+            // Append sensors after hashing the established DS3 schema. Existing
+            // controller identities, button fields and profile matches stay stable.
+            if(input_protocol==UC_PROTOCOL_DUALSHOCK3 && e->interface_number==0) {
+                unsigned sensors=motion_path?4:3;
+                if(field_count+sensors>FIELD_COUNT) { partial=true;return false; }
+                for(unsigned i=0;i<sensors;++i) {
+                    observed_field *o=&fields[field_count++];
+                    o->field=(uc_hid_field){.usage_page=0xff00,.usage=(uint16_t)(i+1),.bit_offset=(uint16_t)(320+16*i),
+                        .bits=16,.report_id=1,.logical_min=0,.logical_max=1023,.flags=UC_FIELD_BIG_ENDIAN|2};
+                    o->iface=0;o->flags=UP_REPORT_ID|UP_BIG_ENDIAN;
+                }
             }
             // Trackball X/Y share a report; a paddle Wheel may use its own report.
             if(mouse_x<0)for(unsigned x=0;x<field_count && mouse_x<0;++x) {
@@ -375,7 +403,7 @@ bool upr_event(const uc_event *e) {
         for(unsigned i=0;i<field_count;++i) {
             observed_field *f=&fields[i];int32_t value;
             if(f->iface!=e->interface_number || !uc_hid_field_value(&f->field,(f->flags&UP_REPORT_ID)!=0,e->data,e->length,&value))continue;
-            if(!f->valid || value!=f->value) {
+            if(!f->valid || value!=f->value || (f->field.usage_page==0xff00 && f->field.usage==4)) {
                 f->value=value;f->time=e->time_us;f->valid=1;
                 changes[head%CHANGE_COUNT]=(field_change){(uint16_t)i,1,value,e->time_us};head++;
             }
@@ -384,7 +412,8 @@ bool upr_event(const uc_event *e) {
     return false;
 }
 bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
-    if(!up_mapper_apply(&mapper,e->interface_number,e->data,e->length,out))return false;
+    bool motion=up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us);
+    if(!up_mapper_apply(&mapper,e->interface_number,e->data,e->length,out) && !motion)return false;
     up_mapper_tick(&mapper,now,output_ready,out);return true;
 }
 bool upr_tick(uint32_t now,bool output_ready,sw_report *out) {
@@ -399,9 +428,9 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put16(reply+14,pid);put16(reply+16,revision);
         put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0));
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
-        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;
+        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

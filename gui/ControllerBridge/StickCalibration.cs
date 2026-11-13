@@ -196,12 +196,30 @@ internal sealed class StickCalibration
     internal bool CanConfirm => Started && !Reviewing && Candidate is not null;
     internal AxisBinding[] Result => draft.Clone().Axes;
     internal IReadOnlyCollection<InputAxis> Inputs => inputs.Values;
+    internal byte InputInterval => draft.InputInterval;
+    internal uint RecenterButtons { get => draft.GyroRecenterButtons; set => draft.GyroRecenterButtons = value; }
+    internal AxisBinding Axis(int index) => draft.Clone().Axes[index];
+    internal void SetGyro(int axis, AxisBinding binding, uint recenter)
+    {
+        draft.Axes[axis] = binding; draft.GyroRecenterButtons = recenter;
+        // Both steering outputs use the same physical sensor. Keep their
+        // independent ranges and directions, but share the latest still bias.
+        foreach (AxisBinding other in draft.Axes)
+            if (other.Mode == 1 && other.Analog.Gyro)
+            {
+                other.Analog.Center = binding.Analog.Center;
+                other.Analog.NoiseQ8 = binding.Analog.NoiseQ8;
+            }
+        visited[axis] = confirmed[axis] = true;
+        if (Step == axis) Advance();
+    }
     internal bool Visited(int axis) => visited[axis];
     internal bool Confirmed(int axis) => confirmed[axis];
 
     internal StickCalibration(DeviceProfile original, IEnumerable<InputField> fields)
     {
         draft = original.Clone(); InputField[] all = fields.ToArray();
+        InputDirections.RequireCurrentInput(all);
         // Assign colors by input identity, independently of arrival order and
         // the output axis being configured. Additional axes repeat the palette.
         inputs = all.Where(IsAnalog).OrderBy(f => f.Index)
@@ -215,7 +233,7 @@ internal sealed class StickCalibration
         pressed = confirmation.ToDictionary(f => f.Index, f => !f.Valid || f.Value != f.Minimum);
         buttonBlocked = pressed.Values.Any(p => p);
     }
-    internal static bool IsAnalog(InputField f) => f.Learnable && !f.Binary && !f.Hat && f.UsagePage != 9;
+    internal static bool IsAnalog(InputField f) => f.Learnable && !f.Motion && !f.Binary && !f.Hat && f.UsagePage != 9;
     internal static bool InRange(InputField f, int value) => value >= f.Minimum && value <= f.Maximum;
     internal static double Normalize(InputField f, int center, int value)
     {
@@ -224,9 +242,9 @@ internal sealed class StickCalibration
         return span <= 0 ? 0 : Math.Clamp(delta / (double)span, -1, 1);
     }
     private static bool Matches(InputField f, DigitalBinding b) => f.Interface == b.Interface && f.ReportId == b.ReportId &&
-        f.BitOffset == b.BitOffset && f.Bits == b.Bits && (f.Flags & 3) == (b.Flags & 3);
+        f.BitOffset == b.BitOffset && f.Bits == b.Bits && (f.Flags & InputDirections.SourceFlags) == (b.Flags & InputDirections.SourceFlags);
     private static bool Matches(InputField f, AnalogBinding b) => f.Interface == b.Interface && f.ReportId == b.ReportId &&
-        f.BitOffset == b.BitOffset && f.Bits == b.Bits && (f.Flags & 3) == (b.Flags & 3);
+        f.BitOffset == b.BitOffset && f.Bits == b.Bits && (f.Flags & InputDirections.SourceFlags) == (b.Flags & InputDirections.SourceFlags);
     // Only assignments confirmed in this session establish an X/Y coordinate.
     // Existing profile axes are retained for Skip/Cancel, never used to infer
     // the physical layout or the direction of a newly measured input.
@@ -362,21 +380,22 @@ internal sealed class StickCalibration
     internal bool Confirm()
     {
         if (!CanConfirm || Candidate is not InputAxis axis) return false;
-        if (fromSaved) draft.Axes[Step].Analog.Flags = (byte)((draft.Axes[Step].Analog.Flags & 3) | (Invert ? 4 : 0));
+        bool profileInvert = AxisDirections.ProfileInvert(Step, Invert);
+        if (fromSaved) draft.Axes[Step].Analog.Flags = (byte)((draft.Axes[Step].Analog.Flags & InputDirections.SourceFlags) | (profileInvert ? 4 : 0));
         else
         {
             ushort deadzone = draft.Axes[Step].Mode == 1 ? draft.Axes[Step].Analog.Deadzone : (ushort)5;
             int minimum = axis.NegativeReady ? axis.Minimum : axis.Center;
             int maximum = axis.PositiveReady ? axis.Maximum : axis.Center;
             if (minimum >= maximum) return false;
-            draft.Axes[Step] = new AxisBinding { Mode = 1, Analog = axis.Field.Analog(minimum, axis.Center, maximum, deadzone, Invert) };
+            draft.Axes[Step] = new AxisBinding { Mode = 1, Analog = axis.Field.Analog(minimum, axis.Center, maximum, deadzone, profileInvert) };
         }
         draft.Encode(); confirmed[Step] = visited[Step] = true; Advance(); return true;
     }
     private AxisRange SavedRange(int step, bool? invert = null)
     {
         AnalogBinding a = draft.Axes[step].Analog;
-        return new AxisRange(a.Minimum < a.Center ? 1 : 0, a.Maximum > a.Center ? 1 : 0).Flip(invert ?? (a.Flags & 4) != 0);
+        return new AxisRange(a.Minimum < a.Center ? 1 : 0, a.Maximum > a.Center ? 1 : 0).Flip(invert ?? AxisDirections.ProfileInvert(step, (a.Flags & 4) != 0));
     }
     internal StickView View(int stick)
     {
@@ -385,7 +404,8 @@ internal sealed class StickCalibration
         AxisRange x = sourceX is null ? new() : SavedRange(ix), y = sourceY is null ? new() : SavedRange(iy);
         bool readyX = sourceX is not null, readyY = sourceY is not null;
         int colorX = sourceX?.ColorIndex ?? -1, colorY = sourceY?.ColorIndex ?? -1;
-        bool invX = (draft.Axes[ix].Analog.Flags & 4) != 0, invY = (draft.Axes[iy].Analog.Flags & 4) != 0;
+        bool invX = AxisDirections.ProfileInvert(ix, (draft.Axes[ix].Analog.Flags & 4) != 0),
+            invY = AxisDirections.ProfileInvert(iy, (draft.Axes[iy].Analog.Flags & 4) != 0);
         if (active)
         {
             // Only the current output starts a fresh detection band. Keep every

@@ -82,7 +82,7 @@ internal sealed partial class RegistrationWizard : Form
         {
             review.Items.Clear();
             for (int i = 0; i < 18; i++) review.Items.Add(new ListViewItem([DeviceProfile.Targets[i], profile.Buttons[i].ToString()]));
-            for (int i = 0; i < 4; i++) review.Items.Add(new ListViewItem([DeviceProfile.AxisNames[i], profile.Axes[i].ToString()]));
+            for (int i = 0; i < 4; i++) review.Items.Add(new ListViewItem([DeviceProfile.AxisNames[i], AxisDirections.Describe(i, profile.Axes[i])]));
             if (profile.Shift.Keys.Count != 0)
             {
                 review.Items.Add(new ListViewItem([L.T("シフトキー（AND）", "Shift keys (AND)"), string.Join(" + ", profile.Shift.Keys.Select(k => ShiftSettings.DescribeKey(k, fields)))]));
@@ -109,6 +109,7 @@ internal sealed partial class RegistrationWizard : Form
     }
     public void OnInput(InputField f, int value) { if (step == 1) editor.OnInput(f, value); }
     public void ObserveAxisWizard(InputField f, int value, uint time) { if (step == 1) editor.ObserveAxisWizard(f, value, time); }
+    internal void GyroEventsLost() => editor.GyroEventsLost();
     public void RefreshAxisWizard() { if (step == 1) editor.RefreshAxisWizard(); }
     internal void ShowInputLog()
     {
