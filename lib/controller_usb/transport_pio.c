@@ -8,7 +8,10 @@
 
 static ut_result completed[PIO_USB_EP_POOL_CNT];
 static uint16_t lengths[PIO_USB_EP_POOL_CNT];
-static uint32_t next_frame;
+static uint32_t next_frame,feedback_frame;
+uint8_t uc_feedback_endpoint;
+extern void uc_pio_feedback_frame(void);
+extern bool uc_pio_feedback_slice(uint8_t endpoint);
 static ut_metrics metrics;
 static uint32_t received_us[PIO_USB_EP_POOL_CNT];
 
@@ -84,7 +87,7 @@ void __not_in_flash_func(ut_pump)(void) {
     next_frame += 1000;
     // Never burst several frames to catch up after enumeration/log work.
     if (delay >= 1000) next_frame = now + 1000;
-    pio_usb_host_frame();
+    if(uc_feedback_endpoint)uc_pio_feedback_frame();else pio_usb_host_frame();
     uint32_t elapsed = time_us_32() - now;
     if (elapsed > metrics.max_frame_us) metrics.max_frame_us = elapsed;
 }
@@ -235,4 +238,18 @@ void ut_metrics_get(ut_metrics *out) { *out = metrics; }
 uint32_t ut_received_us(uint8_t address, uint8_t endpoint) {
     int i=find_ep(address,endpoint);
     return i<0 ? time_us_32() : received_us[i];
+}
+
+void ut_idle_output(uint8_t endpoint) { uc_feedback_endpoint=endpoint; }
+void __not_in_flash_func(ut_idle_output_service)(void) {
+    if(uc_feedback_endpoint && feedback_frame!=next_frame && ut_idle_budget_us()>=250) {
+        feedback_frame=next_frame;uc_pio_feedback_slice(uc_feedback_endpoint);
+    }
+}
+void ut_abort(uint8_t address,uint8_t endpoint) { pio_usb_host_endpoint_abort_transfer(0,address,endpoint); }
+uint8_t ut_data_toggle(uint8_t address,uint8_t endpoint) {
+    int i=find_ep(address,endpoint);return i<0?0:PIO_USB_ENDPOINT(i)->data_id;
+}
+void ut_set_data_toggle(uint8_t address,uint8_t endpoint,uint8_t toggle) {
+    int i=find_ep(address,endpoint);if(i>=0)PIO_USB_ENDPOINT(i)->data_id=toggle;
 }

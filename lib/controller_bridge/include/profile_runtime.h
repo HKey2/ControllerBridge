@@ -20,6 +20,7 @@
 #define UPR_FEATURE_GYRO_STEERING (1u<<27)
 #define UPR_FEATURE_GYRO_DRIFT_PROTECTION (1u<<28)
 #define UPR_FEATURE_INPUT_DIRECTIONS (1u<<29)
+#define UPR_FEATURE_RUMBLE (1u<<30)
 #define UPR_FEATURE_PROFILE_CONVERSION (1u<<24)
 #define UPR_FEATURE_BANK_TRANSFER 2048u
 #define UPR_FEATURE_PROFILE_OUTPUT 4096u
@@ -38,6 +39,8 @@ void upr_init(const udk_settings *common);
 const udk_settings *upr_direction_settings(void);
 // True means the outgoing state must be reset to neutral (new device/profile).
 bool upr_event(const uc_event *event);
+uint8_t upr_gyro_axes(void);
+bool upr_rumble_enabled(void);
 bool upr_apply(const uc_event *event,uint32_t now_us,bool output_ready,sw_report *report);
 bool upr_tick(uint32_t now_us,bool output_ready,sw_report *report);
 bool upr_ready(void);

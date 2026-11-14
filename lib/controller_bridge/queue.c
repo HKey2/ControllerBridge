@@ -36,6 +36,15 @@ bool ub_queue_push(ub_queue *q,const ub_frame *f) {
     unsigned depth=ub_queue_depth(q); if(depth>q->max_depth)q->max_depth=depth;
     return true;
 }
+bool ub_queue_push_gyro(ub_queue *q,const ub_frame *f,uint8_t axes) {
+    if(!axes || !q->have_latest)return ub_queue_push(q,f);
+    sw_report previous=q->latest.report,current=f->report;
+    uint8_t *a=&previous.lx,*b=&current.lx;
+    for(unsigned i=0;i<4;++i)if(axes&(1u<<i))a[i]=b[i]=128;
+    if(memcmp(&previous,&current,sizeof(current)) || q->latest.hold_directions!=f->hold_directions ||
+       q->latest.direction_key!=f->direction_key)return ub_queue_push(q,f);
+    q->latest=*f;q->latest.transition=false;return true;
+}
 void ub_queue_clear_hold(ub_queue *q) {
     q->latest.hold_directions=0;
     for(unsigned i=0;i<UB_TRANSITIONS;++i)q->pending[i].hold_directions=0;

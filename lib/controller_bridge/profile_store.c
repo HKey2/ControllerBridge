@@ -15,10 +15,10 @@ bool up_registry_load(up_bank *bank,const udk_settings *defaults) {
         *bank=scratch;active_store=5;return true;
     }
     if(first) { active_store=4;return true; }
-    // Current v8 copies win. Otherwise migrate the newest valid published v6 copy.
+    // Current copies win. Otherwise migrate the newest valid published v8/v6 copy.
     bool migrated=false;
     for(unsigned slot=4;slot<=5;++slot) {
-        if(ub_store_load(slot,&scratch,sizeof(scratch)) && up_bank_upgrade_v6(&scratch,defaults) &&
+        if(ub_store_load(slot,&scratch,sizeof(scratch)) && (up_bank_upgrade_v8(&scratch) || up_bank_upgrade_v6(&scratch,defaults)) &&
            (!migrated || (int32_t)(scratch.generation-bank->generation)>0)) {
             *bank=scratch;active_store=(int)slot;migrated=true;
         }

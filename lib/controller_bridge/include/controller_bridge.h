@@ -77,6 +77,7 @@ void ub_hist_add(ub_histogram *histogram, uint32_t value_us);
 void ub_queue_reset(ub_queue *queue);
 // Queue only state transitions. Repeated input updates the latest snapshot.
 bool ub_queue_push(ub_queue *queue, const ub_frame *frame);
+bool ub_queue_push_gyro(ub_queue *queue,const ub_frame *frame,uint8_t gyro_axes);
 bool ub_queue_pop(ub_queue *queue, ub_frame *frame);
 unsigned ub_queue_depth(const ub_queue *queue);
 void ub_queue_clear_hold(ub_queue *queue);

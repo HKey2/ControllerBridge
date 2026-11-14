@@ -27,6 +27,7 @@ internal sealed partial class MainForm : Form
     private readonly NumericUpDown interval = new() { Minimum = 0, Maximum = 255, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown mouseGain = new() { Minimum = 1, Maximum = 256, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown paddleGain = new() { Minimum = 1, Maximum = 10, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
+    private readonly CheckBox rumbleOn = new DarkCheckBox { Text = L.T("振動を有効にする（Pro出力）", "Enable rumble (Pro output)"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox trackballOn = new() { Text = L.T("トラックボール ON", "Trackball ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox paddleOn = new() { Text = L.T("パドル ON", "Paddle ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertX = new() { Text = L.T("X方向を反転", "Invert X"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -102,11 +103,12 @@ internal sealed partial class MainForm : Form
         BufferedTableLayoutPanel metadata = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Padding = new(2, 0, 2, 4) };
         metadata.ColumnStyles.Add(new(SizeType.Percent, 100)); metadata.ColumnStyles.Add(new(SizeType.Absolute, 190));
         metadata.RowStyles.Add(new(SizeType.AutoSize));
-        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+        BufferedTableLayoutPanel nameRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty };
         nameRow.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 4; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 5; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3);
+        nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3); nameRow.Controls.Add(rumbleOn, 0, 4);
+        SetTip(rumbleOn, L.T("共通設定のPro出力と、初代Switch ProコントローラーのUSB接続で使います。ゲームパッド単独のプロファイルに対応します。", "Use Pro output in Shared settings and an original Switch Pro Controller connected by USB. Supported with gamepad-only profiles."));
         metadata.Controls.Add(nameRow, 0, 0);
         BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 4, Padding = new(8, 0, 0, 0) };
         profileActions.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -152,8 +154,8 @@ internal sealed partial class MainForm : Form
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
         Label intervalHelp = Ui.Label(L.T("0 = 標準値（X出力は互換動作）", "0 = default (X: compatibility)"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
-        string intervalTip = L.T("入力間隔を指定します。X出力にも適用し、0は従来の互換動作、1～255は指定したms間隔を要求します。X出力の間隔変更を保存・適用するとUSBが再接続されます。実際の取得周期は接続先にも依存します。",
-            "Sets the input interval and X gamepad output polling. Zero retains compatibility timing; 1–255 requests that interval in ms. Applying a changed X interval reconnects USB. The host also determines the actual polling cadence.");
+        string intervalTip = L.T("入力間隔を指定します。X出力にも適用し、0は従来の互換動作、1～255は指定したms間隔を要求します。X出力の間隔変更を保存・適用するとUSBが再接続されます。実際の取得周期は接続先にも依存します。Switch 2 Proは振動OFFでも1msを指定できます（0は機器既定の4ms）。",
+            "Sets the input interval and X gamepad output polling. Zero retains compatibility timing; 1–255 requests that interval in ms. Applying a changed X interval reconnects USB. The host also determines the actual polling cadence. Switch 2 Pro can use 1 ms with rumble off (0 uses its 4 ms default).");
         SetTip(interval, intervalTip); SetTip(intervalHelp, intervalTip);
         outputContent.Controls.Add(timing, 0, 0);
         BufferedTableLayoutPanel tuning = pointingTuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
@@ -194,6 +196,7 @@ internal sealed partial class MainForm : Form
         slots.MoveRequested += async (_, e) => await MoveSlot(e.Source, e.Destination);
         InitializeProfileMenu();
         name.TextChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].Name = name.Text; MarkDirty(); };
+        rumbleOn.CheckedChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].RumbleEnabled = rumbleOn.Checked; MarkDirty(); };
         interval.ValueChanged += (_, _) => { if (loading) return; profiles[selected].InputInterval = (byte)interval.Value; MarkDirty(); };
         foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) { mapping.Modified += (_, _) => MarkDirty(); mapping.PrepareLearningAsync = PrepareLearning; }
         outputTabs.Selecting += (_, e) =>
@@ -281,6 +284,7 @@ internal sealed partial class MainForm : Form
         SyncOutputControls();
         name.Text = p.Enabled ? p.Name : L.T("未使用", "Unused"); name.ReadOnly = !p.Enabled;
         delete.Text = p.Enabled ? L.T("プロファイル削除", "Delete profile") : L.T("コントローラーを追加", "Add controller"); Ui.ButtonColors(delete, !p.Enabled);
+        rumbleOn.Checked = p.RumbleEnabled;
         interval.Value = p.InputInterval; trackballOn.Checked = p.Mouse.TrackballEnabled; paddleOn.Checked = p.Mouse.PaddleEnabled;
         mouseGain.Value = p.Mouse.TrackballGain; paddleGain.Value = p.Mouse.PaddleGain; paddleAxis.SelectedIndex = (int)p.Mouse.PaddleAxis;
         invertX.Checked = p.Mouse.InvertX; invertY.Checked = p.Mouse.InvertY; invertPaddle.Checked = p.Mouse.InvertPaddle; trackballKeys.Checked = p.Mouse.TrackballToDpad; paddleKeys.Checked = p.Mouse.PaddleToDpad;
@@ -305,6 +309,7 @@ internal sealed partial class MainForm : Form
         UpdateOutputAvailability();
         name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
         interval.Enabled = enabled && !working;
+        rumbleOn.Visible = enabled; rumbleOn.Enabled = enabled && !working && profiles[selected].OutputMode == 0 && (caps is null || caps.SupportsRumble);
         delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration && fields.Any(f => f.Learnable && f.Valid)));
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;
         ledSettings.Enabled = conversionSettings.Enabled = enabled && !working;

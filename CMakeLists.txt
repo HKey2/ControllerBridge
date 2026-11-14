@@ -12,6 +12,8 @@ add_subdirectory(third_party/Pico-PIO-USB)
 include(cmake/pio_input_timestamp.cmake)
 
 add_library(controller_usb STATIC
+    lib/controller_usb/feedback.c
+    lib/controller_usb/switch_rumble.c
     lib/controller_usb/host.c
     lib/controller_usb/bootsel.c
     lib/controller_usb/transport_pio.c
@@ -38,7 +40,7 @@ target_link_libraries(controller_bridge PUBLIC controller_usb controller_device 
 target_compile_options(controller_bridge PRIVATE -Wall -Wextra -Werror)
 
 add_executable(ControllerBridge apps/egret_switch/main.c apps/egret_switch/egret_switch_profile.c
-    apps/egret_switch/status_led.c)
+    apps/egret_switch/status_led.c apps/egret_switch/switch_output.c)
 target_include_directories(ControllerBridge PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 pico_generate_pio_header(ControllerBridge ${CMAKE_CURRENT_LIST_DIR}/apps/egret_switch/status_led.pio)
 target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore pico_unique_id hardware_watchdog hardware_pio)

@@ -1,6 +1,6 @@
 # Latency and polling policy
 
-Current normal firmware: 0.25.1. The input and X output scheduling changes described below were introduced in 0.24.1.
+Current normal firmware: 0.27.0. The input and X output scheduling changes described below were introduced in 0.24.1.
 
 The target is the interval from a physical switch changing state to the host's input library accepting that state. It does not include the game's simulation or display. ControllerBridge can timestamp received USB reports and its own output completion, but cannot observe the controller's contacts or the host library. Consequently, the total-latency conclusions below are conditional deductions, not new end-to-end measurements.
 
@@ -21,6 +21,12 @@ Only gamepad IN81's `bInterval` changes in the X descriptor. The identity, initi
 S gamepad and USB mouse output retain their separate legacy output interval, normally 1 ms. The mouse in an X combined device remains independent. No new setting or saved-data field is added. Saving a profile is verified before applying the output change; changing the active X interval reconnects USB, using the existing delayed reconnect path. This also applies to an on-device profile switch. Auto's already chosen result is retained. Editing an inactive profile with the same active timing does not reconnect output.
 
 An interval is a scheduling request. The host may choose a different effective period; a controller may NAK requests without new data. Neither a descriptor value nor a count of repeated packets establishes the contact scan rate.
+
+## Switch 2 Pro profiles
+
+For wired Switch 2 Pro, **Input interval = 1** requests input every millisecond; **0** uses its 4 ms descriptor default. This setting is independent of the profile's **Rumble** option. A precision-control profile can keep rumble off and use 1 ms input. A separate profile may enable rumble with either interval. The saved interval and rumble preference follow profile selection and reconnection.
+
+When rumble is off, Pro2 uses the ordinary input path without vibration conversion or periodic motor transfers. When rumble is enabled, both packet preparation and motor transmission wait for available time before the next input poll. Pro output still uses the first-generation Pro protocol toward the console; the console determines its own USB polling period. See [Pro output and rumble](configurator-guide.md#pro-output-and-rumble).
 
 ## Reference measurements and their boundaries
 

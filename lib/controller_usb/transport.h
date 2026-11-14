@@ -10,6 +10,11 @@ typedef struct {
 void ut_init(uint8_t dp_pin);
 void ut_pump(void);
 uint32_t ut_idle_budget_us(void);
+void ut_idle_output(uint8_t endpoint);
+void ut_idle_output_service(void);
+void ut_abort(uint8_t address,uint8_t endpoint);
+uint8_t ut_data_toggle(uint8_t address,uint8_t endpoint);
+void ut_set_data_toggle(uint8_t address,uint8_t endpoint,uint8_t toggle);
 void ut_delay_ms(uint32_t ms);
 // Leave the bus idle without traffic; the next reset resumes discovery.
 void ut_wait_for_device(uint32_t ms);

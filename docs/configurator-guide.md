@@ -1,6 +1,6 @@
 # ControllerBridge user guide
 
-Windows x64 configurator 0.26.0 and RP2350-USB-A firmware 0.26.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
+Windows x64 configurator 0.27.0 and RP2350-USB-A firmware 0.27.0. The application follows the Windows display language: Japanese on Japanese Windows, English otherwise. This guide and reference screenshots use English. Saved profile names are not translated.
 
 The window and text follow each monitor's Windows display scaling, including movement between monitors with different scaling. If a settings dialog is taller or wider than the usable screen, use its scrollbars or Tab navigation to reach the remaining controls. The main window's mapping area can also scroll on shorter displays. Changing Windows scaling to 100% is not required.
 
@@ -10,7 +10,7 @@ The window and text follow each monitor's Windows display scaling, including mov
 2. Connect USB-C to a Windows PC.
 3. Run `ControllerBridge.exe`.
 4. A factory-state RP2350-USB-A automatically opens the firmware installation guide, whether connected before startup or while the tool is running. The dialog immediately waits for reconnection with BOOT held and shows only **Cancel**. Follow its numbered steps; after BOOT is detected, the final **Yes/No** overwrite confirmation opens automatically. A detected bridge with a different or unreadable version also opens guidance; **Firmware update** is available manually. See [firmware update](firmware-update.md).
-5. Check the connection status and the **Profile list**. Settings from 0.16.0–0.20.21 migrate to v8 automatically; v5 gains disabled shift, while v6 retains its first three shift keys. Installing this release over firmware older than 0.16.0 starts with all 16 slots unused; choose **Add controller** to register each controller again. New registrations persist across restarts.
+5. Check the connection status and the **Profile list**. Supported v5/v6/v8 settings migrate to v9 automatically with rumble off; v5 gains disabled shift, while v6 retains its first three shift keys. Installing this release over firmware older than 0.16.0 starts with all 16 slots unused; choose **Add controller** to register each controller again. New registrations persist across restarts.
 
 The executable includes its runtime; no separate .NET installation is required. Only one instance can run. Close other bridge configuration tools while using the GUI. When the board is disconnected, the application retries about every two seconds. **Connect / Reconnect** starts an attempt immediately. An empty USB-A port shows a stable waiting message during enumeration retries.
 
@@ -98,7 +98,7 @@ Save pending edits before reordering. A completed move is saved immediately and 
 
 Per-profile output modes, button behavior, shift settings, and LED colors are included. Common diagnostic settings and saved measurements are separate. Save or discard drafts before either operation.
 
-New backups use `ControllerBridge.Slots`, JSON version 5, with a SHA-256 checksum. JSON v2/v3 backups are verified and converted; v2/v5 has shift disabled and v3/v6 retains its first three modifiers. Missing shared conversion settings use the import defaults described under [compatibility](#import-and-upgrade-compatibility). JSON v1 remains unsupported. Keep a pre-upgrade backup if returning to old firmware: it cannot read v8 banks or JSON v5. The board validates payload, generation, CRC and profiles before writing the inactive copy; an interrupted transfer before commit leaves the active bank intact.
+New backups use `ControllerBridge.Slots`, JSON version 6, with a SHA-256 checksum. JSON v2/v3/v5 backups are verified and converted. Binary v5 gains disabled shift; binary v6 retains its first three modifiers; v8 retains its assignments and migrates with rumble off. Missing shared conversion settings use the import defaults described under [compatibility](#import-and-upgrade-compatibility). JSON v1/v4 remain unsupported. Keep a pre-upgrade backup if returning to old firmware: it cannot read v9 banks or JSON v6. The board validates payload, generation, CRC and profiles before writing the inactive copy; an interrupted transfer before commit leaves the active bank intact.
 
 ### Included sample slots
 
@@ -110,7 +110,7 @@ For occasional individual transfers, right-click a registered row and choose **E
 
 Export includes current edits. Import creates an unsaved draft; **Save profile to device** persists it. Occupied slots cannot be overwritten this way. Duplicate names receive a number; missing IDs or IDs conflicting with another slot receive a new ID. Unique names and IDs remain unchanged. Canceling or rejecting a file preserves existing drafts.
 
-Individual files use `ControllerBridge.Profile`, JSON version 4. Version-2/profile-v5 exports migrate with shift disabled; earlier exports are rejected. They exclude slot order, shortcuts, and active selection, and cannot replace whole-slot backups.
+Individual files use `ControllerBridge.Profile`, JSON version 6. JSON v2/v3/v5 exports are accepted and converted with rumble off. Version-2/profile-v5 exports migrate with shift disabled; version-3/profile-v6 retains the first three modifiers. JSON v1/v4 remain unsupported. Individual files exclude slot order, shortcuts, and active selection, and cannot replace whole-slot backups.
 
 ## Map inputs and calibrate axes
 
@@ -148,7 +148,7 @@ If input events are missed, measurement continues with the values received, pres
 
 The DUALSHOCK 3 gyro measures one rotation axis, perpendicular to the face of the controller. Use it like a steering wheel: turn the controller left or right and hold it at the desired steering position. This is relative steering, with a learned range; the display shows a percentage rather than a measured angle in degrees. Other rotation axes and Bluetooth motion input are not supported.
 
-Install the bundled 0.26.0 firmware and connect the DS3 by USB. Update both the EXE and UF2 for drift protection; the configurator checks firmware support before saving gyro settings. Press PS if input is waiting. The bridge reads the attached unit's factory calibration on each connection and applies the gyro initialization appropriate to that unit. The Gyro button becomes available when this calibration is readable. A fixed calibration value from another controller is not used.
+Install the bundled 0.27.0 firmware and connect the DS3 by USB. Update both the EXE and UF2 for drift protection; the configurator checks firmware support before saving gyro settings. Press PS if input is waiting. The bridge reads the attached unit's factory calibration on each connection and applies the gyro initialization appropriate to that unit. The Gyro button becomes available when this calibration is readable. A fixed calibration value from another controller is not used.
 
 1. Open **Setup wizard**. Use **Gyro** at the lower left of the left-stick panel for **LX**, or at the lower right of the right-stick panel for **RX**. Each button opens that side's own setup. The Y axis and other stick keep their existing mappings.
 2. The wheel responds to input as soon as the dialog receives it, including before calibration. **Input preview (not calibrated)** uses a temporary resting estimate to show movement. Hold the controller at the intended neutral orientation and choose **Calibrate neutral** below the graph. Keep it still for three seconds while its resting bias and noise are measured. The instruction, live stillness duration, restart count and progress bar are grouped below the graph. If the timer restarts, an amber message explains whether gyro variation, acceleration changes, missing input or a sensor limit prevented calibration. Rest the controller on a stable surface. If calibration keeps restarting even while untouched, reconnect it and use **Restart calibration**. The bar reports confirmed continuous stillness; an unstable reading is not accepted merely because three seconds have elapsed.
@@ -182,7 +182,7 @@ Analog/pressure pairs and digital-button pairs are separate alternatives. Select
 
 **Whole-axis calibration:** select the input directly, or use **Move to detect an input axis**. Choose **Measure range**, move to both ends, release the control and choose **Record center**. **Restore input range** returns to the descriptor limits. The numeric fields can also be edited directly. Input loss cancels unfinished detection or recording; a controller disconnection closes the dialog. Saved inputs and calibration remain editable without a connected controller. A configured gyro can be retained or cleared here; use **Gyro** in the stick wizard to change its calibration or Recenter settings.
 
-Choose **Apply**, then **Save profile to device** in the profile screen. Canceling the dialog discards its changes. Paired analog settings require the matching bundled firmware; the application requests an update before saving them to older firmware. The four output axes remain LX, LY, RX and RY, and the profile size is unchanged. This selection layout works with the existing 0.26.0 firmware.
+Choose **Apply**, then **Save profile to device** in the profile screen. Canceling the dialog discards its changes. Paired analog settings require the matching bundled firmware; the application requests an update before saving them to older firmware. The four output axes remain LX, LY, RX and RY, and the profile size is unchanged. Save profiles using the matching bundled firmware.
 
 ### Rapid fire
 
@@ -200,9 +200,9 @@ Choose **Apply to draft**, then **Save profile to device** (or complete registra
 
 See [Button shift](button-shift.md) for an example, the difference between overriding an output and moving a physical input, shared mouse buttons, rapid-fire settings, and conflicts with permanent profile shortcuts.
 
-## S / Auto / X host mode
+## S / Auto / X / Pro host mode
 
-Open **Shared settings** and use the last group. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference.
+Open **Shared settings** and use the last group. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference. **Pro** selects the original Switch Pro protocol for gamepad profiles and enables rumble forwarding when the profile also enables Rumble. Mouse layouts use S while Pro is selected. See [Pro output and rumble](#pro-output-and-rumble).
 
 Choose **Save to device** to persist a change and reconnect USB. The configurator reconnects through its separate settings interface, preserving all profile drafts. When the active output is X, the face-button grid becomes Y at the top, X at the left, B at the right and A at the bottom. Existing mappings retain their physical positions. HOME becomes Guide; Capture has no Xbox 360 counterpart and is unavailable in X. See [wire mapping, Windows behavior and Switch 2 Pro setup](xinput-output.md).
 
@@ -210,7 +210,7 @@ Choose **Save to device** to persist a change and reconnect USB. The configurato
 
 | Tab | Output |
 |---|---|
-| Gamepad | Mapped buttons, directions, and stick axes using the active S or X protocol |
+| Gamepad | Mapped buttons, directions, and stick axes using the active S, X or Pro protocol |
 | USB mouse | Relative movement and buttons as a standard USB mouse |
 | Mouse + Gamepad | Separate USB mouse and gamepad interfaces, with the gamepad using the active S or X protocol |
 
@@ -309,14 +309,35 @@ In USB mouse or Mouse + Gamepad, choose **X axis** or **Y axis** in the Paddle *
 
 ## Import and upgrade compatibility
 
-Current device profiles and banks use version 8; exports use JSON version 4. v5 device banks (0.16.0–0.19.0), v6 banks (0.20.x), and JSON v2/v3 exports are accepted. Main bindings, axes, IDs, selection, shortcuts, RGB and rapid-fire settings are retained. v5 has shift disabled; v6 keeps the first three modifiers and drops only a fourth. Shifted output mappings remain intact.
+Current device profiles and banks use version 9; exports use JSON version 6. Published v5, v6 and v8 device banks, and JSON v2/v3/v5 exports, are accepted. Migrated profiles retain rumble off. Main bindings, axes, IDs, selection, shortcuts, RGB and rapid-fire settings are retained. v5 has shift disabled; v6 keeps the first three modifiers and drops only a fourth. Shifted output mappings remain intact.
 
 Device migration copies the saved shared maps, modes, stick/reversal and rotation step into every profile, then writes and verifies the inactive bank before adopting it. The old source remains available if that first write is interrupted. A v5 migration first uses Bank A so its two smaller legacy copies remain untouched. New tuning defaults only initialize missing records; existing valid timings and sensitivity survive.
 
-Old JSON lacks the former common conversion settings. Imports use migration defaults retained in a connected device, or standard defaults if disconnected, and show a notice. Those values cannot recover a different device's missing shared settings; check targets/modes/step before saving. This operation does not copy common tuning into the profile. JSON v1 and binary v1–v4 remain unsupported. Old firmware cannot read v8; keep an old-format backup before upgrading for any downgrade.
+Old JSON lacks the former common conversion settings. Imports use migration defaults retained in a connected device, or standard defaults if disconnected, and show a notice. Those values cannot recover a different device's missing shared settings; check targets/modes/step before saving. This operation does not copy common tuning into the profile. JSON v1 and binary v1–v4 remain unsupported. Old firmware cannot read v9; keep an old-format backup before upgrading for any downgrade.
 
 ## Switch profiles without a PC
 
 Use **Profile switching...** to select a roughly one-second BOOT hold or a controller shortcut for all profiles matching that controller. A shortcut needs at least two nonconflicting buttons or directions pressed within 100 ms. Release them before repeating it. Shortcut inputs also reach the game. A permanent profile shortcut cannot share a physical input with a shift modifier; choose different inputs. Shift itself is a separate hold action, does not use the 100 ms shortcut window, and does not change the selected profile.
 
 The shortcut method disables BOOT monitoring. Purple LED flashes indicate the matching profile's number. Selection is saved and survives reconnection. See [LED behavior](status-led.md) and [device compatibility](compatibility.md).
+
+## Pro output and rumble
+
+Version 0.27.0 adds a fixed **Pro** mode using the original Nintendo Switch Pro protocol. It accepts the console's HD rumble commands and sends them, in order, to a wired first-generation Switch Pro (`057E:2009`) or Switch 2 Pro (`057E:2069`) controller. Install the matching EXE and firmware together.
+
+1. Connect ControllerBridge USB-C to the Windows PC and the Pro controller to its USB-A port using a data cable. Register the controller if it has no profile.
+2. Open **Shared settings**, select **Pro** under host output, and save. This reconnects the bridge's USB output.
+3. Select the Pro controller's **Gamepad** profile, enable **Rumble** (Japanese: **振動を有効にする**), and save the profile to the device.
+4. Move the bridge's USB-C connection to the Switch or Switch 2 dock. Enable **Pro Controller Wired Communication** and controller vibration in the console settings. Press the Pro controller's **HOME** button if input is waiting, then use a game with vibration or **Controllers → Find Controllers**.
+
+Rumble starts only when the console sends an enabled effect. Existing and newly created profiles default to rumble off. S, X and Auto keep their previous behavior; this version forwards rumble only through Pro to the first-generation Pro and Switch 2 Pro controllers. DUALSHOCK 3 and Xbox motor output are not yet supported. Pro is an explicit selection and is not part of Auto detection.
+
+Switch 2 Pro uses a separate vibration format. The bridge converts the two motors, frequency changes and intermediate samples, with a bounded amplitude. The feel can differ from a first-generation Pro because the actuators differ; native Switch 2 HD Rumble 2 commands are not exposed by the bridge's first-generation Pro output.
+
+For a precision-control profile, leave **Rumble** off, set **Input interval (ms)** to **1**, and save. This requests Pro2 input every millisecond without running vibration conversion or periodic motor output. The input interval is independent of the Rumble checkbox and can also be 1 ms in a rumble-enabled profile. **0** uses Pro2's 4 ms descriptor default. Profiles retain their own interval and rumble choice across switching and reconnecting. Input report frequency does not specify the controller's internal button-scanning period or the console/game response time; the output host schedules its own USB polls.
+
+Pro output uses the normal profile button and stick mappings. Mouse-only and combined mouse/gamepad profiles use S output and display **Pro (S)** while Pro remains selected. Their saved rumble preference is retained but inactive. Native gyro/accelerometer packets, NFC, controller audio and console wake-up are not provided by Pro output; existing DS3 gyro-to-stick mapping remains a separate feature.
+
+Switching profiles, disconnecting, entering USB suspend or saving settings stops the effect. After a suspension or settings write, a fresh host command is required to resume. The bridge retains command order and applies backpressure when the output queue fills. If the controller stops accepting commands, it makes bounded stop attempts and disables feedback until a new session.
+
+Profiles and banks use format v9 and JSON backups use v6. Published v5/v6/v8 banks migrate with rumble off, preserving previous assignments. Keep a pre-update backup if returning to older firmware. Ordinary profiles keep the existing input path; the gyro and rumble paths run only when those functions are in use.

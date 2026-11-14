@@ -1,5 +1,6 @@
 #include "controller_usb.h"
 #include "transport.h"
+#include "controller_feedback.h"
 #include "input_protocol.h"
 #include "xbox_one.h"
 #include "switch2.h"
@@ -64,6 +65,7 @@ static void __attribute__((noinline)) __not_in_flash_func(pause_point)(void) {
     atomic_store_explicit(&pause_acknowledged,0,memory_order_release);
 }
 bool uc_host_pause(uint32_t timeout_ms) {
+    if(!ucf_quiesce(timeout_ms*1000))return false;
     atomic_store_explicit(&pause_requested,1,memory_order_release);
     uint32_t start=time_us_32();
     while (!atomic_load_explicit(&pause_acknowledged,memory_order_acquire)) {
@@ -175,11 +177,11 @@ static bool switch_start(hid_interface *iface,input_endpoint *ep) {
         if(result==UT_OK && !switch_reply(ep,0x21,3))result=UT_TIMEOUT;
     }
 done:
-    ut_close_endpoint(1,out);
+    if(result==UT_OK)ucf_attach(iface->output_descriptor,1);else ut_close_endpoint(1,out);
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
     return result==UT_OK;
 }
-static bool switch2_start(void) {
+static bool switch2_start(hid_interface *iface) {
     uint8_t bulk[2][7],request[28],reply[64];uint8_t step=0;
     if(!uc_switch2_config(configuration,config_length,bulk))return false;
     if(!ut_open(1,bulk[0]) || !ut_open(1,bulk[1]))return false;
@@ -194,6 +196,7 @@ static bool switch2_start(void) {
         if(result!=UT_OK)break;
     }
     ut_close_endpoint(1,bulk[0][2]);ut_close_endpoint(1,bulk[1][2]);
+    if(result==UT_OK)ucf_attach_switch2(iface->output_descriptor);
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
     return result==UT_OK;
 }
@@ -558,7 +561,7 @@ static bool enumerate(void) {
         if(!xbox_start(&interfaces[i]))return false;
     }
     for(unsigned i=0;i<interface_count;++i)if(interfaces[i].protocol==UC_PROTOCOL_SWITCH2) {
-        if(!switch2_start())return false;
+        if(!switch2_start(&interfaces[i]))return false;
     }
     stats.generation++;
     stats.poll_interval_ms = interval_override ? interval_override : endpoints[0].native_interval;
@@ -592,6 +595,7 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
         uc_bootsel_host_service();
         commands();
         if (!ready) {
+            ucf_detach();
             if (!enumerate()) {
                 status(UC_ENUM_FAILED,stats.attempts);
                 // No response at address zero: leave the bus idle between probes
@@ -621,6 +625,7 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
                     ep->errors = 0;
                     // Initialization/status replies are not controller input reports.
                     bool valid=uc_input_packet_valid(ep->protocol,ep->buffer,actual);
+                    if(ep->protocol==UC_PROTOCOL_SWITCH_PRO)ucf_input(ep->buffer,actual);
                     if(ep->protocol==UC_PROTOCOL_XBOX_ONE && !xbox_input(ep,actual)) {
                         stats.transfer_errors++;ready=false;ut_close_device(1);
                         status(UC_DISCONNECTED,UT_ERROR);break;
@@ -650,6 +655,7 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
                 }
             }
         }
+        if(ready && ucf_pending())ucf_service();
         uint32_t now = time_us_32();
         if ((uint32_t)(now-last_statistics) >= 1000000 || atomic_exchange_explicit(&request_statistics,0,memory_order_acquire)) {
             last_statistics = now;

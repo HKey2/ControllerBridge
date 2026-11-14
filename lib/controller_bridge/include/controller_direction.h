@@ -18,7 +18,7 @@ typedef struct {
     uint8_t paddle_mode,rolling_flags; // 0 clicks / 1 Virtual Rolling; bit 0 invert, bit 1 left stick.
     uint8_t trackball_mode,trackball_hold_threshold; // 0 legacy clicks / 1 Hold; raw points 1..127.
     uint8_t rolling_step_deg; // Legacy migration default; effective value comes from the profile.
-    uint8_t host_mode; // 0=S (Switch-compatible HID), 1=X (wired Xbox 360 XInput), 2=Auto (X then S once).
+    uint8_t host_mode; // 0=S (Switch-compatible HID), 1=X (wired Xbox 360 XInput), 2=Auto (X then S once), 3=Switch Pro.
     uint16_t inertia_threshold,inertia_interval_ms;
     uint8_t inertia_decay_percent,inertia_enabled; // Enable is supplied only by the active profile.
 } udk_settings;
@@ -77,7 +77,7 @@ static inline uint8_t udk_target(uint8_t direction,const uint8_t targets[4]) {
     return targets && targets[direction]?targets[direction]:defaults[direction];
 }
 static inline bool udk_settings_valid(const udk_settings *s) {
-    return s && s->host_mode<=2 && s->threshold && s->threshold<=65535u &&
+    return s && s->host_mode<=3 && s->threshold && s->threshold<=65535u &&
         s->inertia_threshold>=1 && s->inertia_interval_ms>=1 && s->inertia_interval_ms<=1000 &&
         s->inertia_decay_percent<=99 && s->inertia_enabled<=1 &&
         s->trackball_gain10>=10 && s->trackball_gain10<=2560 &&

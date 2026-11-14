@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum { UH_SWITCH, UH_XINPUT, UH_AUTO };
+enum { UH_SWITCH, UH_XINPUT, UH_AUTO, UH_SWITCH_PRO };
 enum { UH_FIXED, UH_WAITING, UH_PROBING, UH_CONFIRMED, UH_FALLBACK };
 #define UH_PROBE_US 5000000u
 typedef struct {

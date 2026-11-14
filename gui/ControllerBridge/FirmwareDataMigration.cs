@@ -5,7 +5,7 @@ namespace ControllerBridge;
 internal static class FirmwareDataMigration
 {
     // Legacy firmware exposes the loaded bank and whether it came from valid
-    // saved storage. Read only that metadata; do not decode through the v8-only
+    // saved storage. Read only that metadata; do not decode through the current
     // editing client or start a bank upload during update discovery.
     private static bool SavedBank(byte[] caps, out ushort profileBytes, out uint generation)
     {
@@ -22,11 +22,10 @@ internal static class FirmwareDataMigration
         {
             byte[] before = await command(20, null);
             if (!SavedBank(before, out ushort profileBytes, out uint generation)) return false;
-            // Profile-conversion firmware is current or an unpublished intermediate format.
-            // Only published v5/v6 automatic migration is advertised here.
-            if ((Wire.U32(before, 44) & 16777216) != 0) return false;
+            // Rumble-capable firmware already uses the current v9 bank.
+            if ((Wire.U32(before, 44) & 1073741824u) != 0) return false;
             uint bankBytes = profileBytes == 488 ? 8148u : 13908u;
-            uint version = profileBytes == 488 ? 5u : 6u;
+            uint version = profileBytes == 488 ? 5u : (Wire.U32(before, 44) & 16777216) != 0 ? 8u : 6u;
             byte[] info = await command(40, null);
             if (info.Length != 56 || !info.AsSpan(0, 4).SequenceEqual("UPB1"u8) ||
                 Wire.U32(info, 4) != bankBytes || Wire.U32(info, 8) != generation) return false;

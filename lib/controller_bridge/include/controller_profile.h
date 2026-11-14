@@ -11,14 +11,14 @@
 #define UP_AXIS_COUNT 4
 #define UP_PROFILE_BYTES 848
 #define UP_SHIFT_KEYS 3
-#define UP_PROFILE_VERSION 8u
+#define UP_PROFILE_VERSION 9u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
 #define UP_ID_BYTES 16
 #define UP_RAPID_MIN_HZ 1
 #define UP_RAPID_MAX_HZ 60
-enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8 };
+enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8, UP_RUMBLE=16 };
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4, UP_GYRO=8, UP_BIG_ENDIAN=16, UP_SOURCE_REVERSED=32 };
 #define UP_SOURCE_FLAGS (UP_SIGNED|UP_REPORT_ID|UP_BIG_ENDIAN|UP_SOURCE_REVERSED)
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
@@ -119,6 +119,7 @@ typedef struct {
     up_gyro gyro;
     sw_report last_output;
     bool have_output;
+    uint8_t gyro_axes;
 } up_mapper;
 
 // Keep the triggering physical bindings until all are released, even if the
@@ -171,6 +172,7 @@ void up_release_guard_begin(up_release_guard *guard,const up_profile *profile,ui
 void up_release_guard_apply(up_release_guard *guard,uint8_t interface_number,const uint8_t *report,unsigned length);
 // Load four-sector slots 4/5, or migrate the read-only v5 banks in RAM.
 bool up_registry_load(up_bank *bank,const udk_settings *defaults);
+bool up_bank_upgrade_v8(up_bank *bank);
 bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
 void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
 void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);

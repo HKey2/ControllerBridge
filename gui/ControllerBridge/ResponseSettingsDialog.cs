@@ -12,6 +12,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly TableLayoutPanel values;
     private bool saving;
     private readonly DarkRadioButton hostS = new() { Text = "S", AutoSize = true },
+        hostPro = new() { Text = "Pro", AutoSize = true },
         hostAuto = new() { Text = "Auto", AutoSize = true },
         hostX = new() { Text = "X", AutoSize = true };
     internal MouseUdlrSettings Result { get; private set; }
@@ -19,7 +20,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly decimal[] initialValues;
     internal bool Saved { get; private set; }
     private static NumericUpDown Number(decimal min, decimal max) => new() { Minimum = min, Maximum = max, Width = 115, Anchor = AnchorStyles.Left };
-    internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist)
+    internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist, bool supportsRumble = false)
     {
         original = Result = current; this.persist = persist;
         using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(640, 800));
@@ -71,14 +72,16 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         Row(paddle, L.T("回転感度", "Rotation sensitivity"), rollingGain, "°/pt");
         TableLayoutPanel host = Group(L.T("出力モード", "Host mode"), 3);
         FlowLayoutPanel modes = new() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new(4, 2, 4, 6) };
-        foreach (RadioButton radio in new[] { hostS, hostAuto, hostX }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
+        foreach (RadioButton radio in new[] { hostS, hostAuto, hostX, hostPro }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
+        hostPro.Enabled = supportsRumble; hostPro.AccessibleName = L.T("Pro：Switch Pro互換・振動対応", "Pro: Switch Pro compatible with rumble");
+        hostPro.Checked = current.HostMode == 3;
         hostS.AccessibleName = L.T("S：Switch互換", "S: Switch compatible");
         hostAuto.AccessibleName = L.T("Auto：Xを優先し、不成立ならSへ一度だけ切替", "Auto: try X first, then S once if needed");
         hostX.AccessibleName = L.T("X : Xbox360互換", "X: Xbox 360 XInput");
         hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1; hostAuto.Checked = current.HostMode == 2;
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
-        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nモードの変更を保存するとUSBが再接続されます。",
-            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nSaving a mode change reconnects USB."));
+        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Proへの振動転送に対応。各プロファイルで振動を有効にしてください。\nマウスを含むプロファイルはSで動作します。\nモードの変更を保存するとUSBが再接続されます。",
+            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble forwarding to original Pro and Switch 2 Pro controllers; enable rumble per profile.\nProfiles with mouse output use S.\nSaving a mode change reconnects USB."));
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;
@@ -102,13 +105,14 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             control.ValueChanged += (_, _) => UpdateSaveButton();
             control.TextChanged += (_, _) => UpdateSaveButton();
         }
+        hostPro.CheckedChanged += (_, _) => UpdateSaveButton();
         hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton(); hostAuto.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
         FormClosing += (_, e) => { if (saving) e.Cancel = true; }; Controls.Add(root); Ui.ThemeInputs(this);
     }
     private bool HasChanges()
     {
-        bool changed = (hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode;
+        bool changed = (hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode;
         for (int i = 0; i < editors.Length; i++)
         {
             NumericUpDown control = editors[i];
@@ -130,7 +134,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         {
             MouseUdlrSettings next = original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
                 Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value, InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
-                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
+                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
             saving = true; values.Enabled = save.Enabled = cancel.Enabled = false;
             MouseUdlrSettings actual = await persist(original, next);
             if (actual != next) throw new IOException(L.T("保存結果が一致しません。", "Saved values do not match."));
@@ -151,7 +155,7 @@ internal sealed partial class MainForm
         try
         {
             MouseUdlrSettingsClient client = new(bridge.RawAsync);
-            using MouseUdlrSettingsDialog dialog = new(await client.ReadAsync(), client.SaveAsync);
+            using MouseUdlrSettingsDialog dialog = new(await client.ReadAsync(), client.SaveAsync, caps.SupportsRumble);
             if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Saved)
             {
                 // Save/readback is complete before asking the device to detach.

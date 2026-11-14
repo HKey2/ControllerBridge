@@ -6,6 +6,8 @@
 // Full-speed input interface 0, EP0 plus interrupt IN1 and optional OUT1/OUT2.
 // Optional interface 1 is vendor Feature HID, auxiliary bulk, or a second HID input.
 // Call from core 0. Completion/feature callbacks run in its USB IRQ and must not block.
+enum { UD_BUS_RESET=1,UD_BUS_SUSPEND,UD_BUS_DISCONNECT };
+
 typedef struct {
     const uint8_t *device, *configuration, *report;
     uint16_t device_length, configuration_length, report_length;
@@ -31,6 +33,9 @@ typedef struct {
     uint16_t (*get_feature)(uint8_t *data, uint16_t capacity, void *context);
     void (*set_feature)(const uint8_t *data, uint16_t length, void *context);
     void (*output)(const uint8_t *data, uint16_t length, void *context);
+    // Optional lossless output sink: false holds OUT/EP0 status until service.
+    bool (*try_output)(const uint8_t *data,uint16_t length,void *context);
+    void (*bus_event)(unsigned event,void *context);
     void (*auxiliary_output)(const uint8_t *data, uint16_t length, void *context);
     // Optional read-only control request. -1 uses standard handling; -2 explicitly stalls.
     int (*control_read)(const uint8_t setup[8], uint8_t *data, uint16_t capacity, void *context);
@@ -46,6 +51,8 @@ typedef struct {
 
 void ud_init(const ud_options *options);
 bool ud_ready(void);
+void ud_output_service(void);
+void ud_output_discard(void);
 bool ud_busy(void);
 bool ud_send(const uint8_t *data, uint16_t length, uint32_t cookie, uint32_t *armed_us);
 // Safely abort a still-pending repeat. False includes the packet having just

@@ -5,6 +5,8 @@
 #include "switch_protocols.h"
 #include <string.h>
 static uint8_t device[18],configuration[80];
+// A local, synthetic USB identity. This bridge has no Bluetooth radio or pairing keys.
+static const uint8_t pro_mac[6]={2,0,0,0x23,0x50,1};
 static const uint8_t nso_report[]={
     5,1,9,5,0xa1,1,0x85,5,5,0xff,9,1,0x15,0,0x26,0xff,0,0x95,63,0x75,8,0x81,2,
     0x85,10,9,1,0x95,2,0x81,2,5,9,0x19,1,0x29,21,0x25,1,0x95,21,0x75,1,0x81,2,
@@ -118,17 +120,38 @@ static uint8_t flash_byte(uint32_t address) {
 bool sp_command(sp_state *s,const uint8_t *c,unsigned n,const sw_report *input,uint8_t r[64],uint32_t now) {
     s->output_count++;
     if(n>=2 && c[0]==0x80) {
+        if(c[1]==4) { s->active=true;return false; }
+        if(c[1]!=1 && c[1]!=2 && c[1]!=3 && c[1]!=5) { s->unknown_count++;return false; }
         memset(r,0,64); r[0]=0x81; r[1]=c[1];
         if(c[1]<32)s->handshake_mask|=1u<<c[1];
-        if(c[1]==1) { r[3]=3; const uint8_t mac[6]={2,0,0,0x23,0x50,1}; memcpy(r+4,mac,6); }
+        if(c[1]==1) { r[3]=3; memcpy(r+4,pro_mac,6); }
         return true;
     }
     if(n<11 || c[0]!=1) { if(n && c[0]!=0x10)s->unknown_count++; return false; }
     uint8_t sub=c[10]; s->subcommand_mask|=1u<<(sub&31);
     sp_encode(SP_PRO1,input,r,now); r[0]=0x21; r[13]=0x80; r[14]=sub;
-    if(sub==2) {
+    if(sub==1 && n>=12 && c[11]>=1 && c[11]<=4 && (c[11]!=1 || n>=18)) {
+        // USB registration uses the manual-pairing exchange even with wired communication on.
+        // Type 4 is also used when the console already knows the USB identity.
+        // Respond locally; never send the console's pairing data to the physical controller.
+        r[13]=0x81;r[15]=c[11];
+        if(c[11]==1) {
+            for(unsigned i=0;i<6;++i)r[16+i]=pro_mac[5-i];
+            r[22]=0;r[23]=0x25;r[24]=8;memcpy(r+25,"Pro Controller",14);r[45]=0x68;
+        } else if(c[11]==2) {
+            // Synthetic registration bytes, not a usable radio link key.
+            for(unsigned i=0;i<16;++i)r[16+i]=(uint8_t)((0x31u+17u*i)^0xaa);
+        }
+    } else if(sub==2) {
         r[13]=0x82; const uint8_t info[12]={3,0x48,3,2,2,0,0,0x23,0x50,1,1,1}; memcpy(r+15,info,12);
-    } else if(sub==3 && n>=12)s->mode=c[11];
+    } else if(sub==3 && n>=12 && c[11]==0x30)s->mode=c[11];
+    else if(sub==8 && n>=12 && c[11]==0) { /* Exit shipment sleep: USB-powered bridge is already awake. */ }
+    else if(sub==0x48 && n>=12 && c[11]<=1)s->rumble_enabled=c[11]!=0;
+    else if(sub==0x30 && n>=12)s->player_lights=c[11];
+    else if(sub==0x31) { r[13]=0xb0;r[15]=s->player_lights; }
+    else if(sub==0x40 && n>=12 && c[11]<=1) { /* No native IMU; gyro steering is mapped to sticks. */ }
+    else if(sub==0x41 && n>=15) { /* Accept sensor settings for the neutral IMU stream. */ }
+    else if(sub==0x38 && n>=12) { /* HOME light is not exposed on the bridge. */ }
     else if(sub==0x10 && n>=16) {
         uint32_t address; memcpy(&address,c+11,4); unsigned length=c[15]; if(length>44)length=44;
         r[13]=0x90; memcpy(r+15,c+11,4); r[19]=length;
@@ -136,6 +159,7 @@ bool sp_command(sp_state *s,const uint8_t *c,unsigned n,const sw_report *input,u
     } else if(sub==4)r[13]=0x83;
     else if(sub==0x21)r[13]=0xa0;
     else if(sub==0x50) { r[13]=0xd0; r[15]=0x90; r[16]=6; }
+    else { r[13]=0;s->unknown_count++; }
     return true;
 }
 

@@ -45,7 +45,7 @@ static bool digital_valid(const up_digital *d,bool allow_rapid) {
 }
 static bool profile_valid(const up_profile *p,unsigned version) {
     bool legacy=version==6;
-    if(p->version!=version || (p->flags&~15u) || !memchr(p->name,0,sizeof(p->name)))return false;
+    if(p->version!=version || (p->flags&~(version>=9?31u:15u)) || !memchr(p->name,0,sizeof(p->name)))return false;
     const up_mouse_options *m=&p->mouse;
     unsigned gain=up_mouse_trackball_gain10(m);
     if(gain<10 || gain>2560u || m->paddle_gain10<10 || m->paddle_gain10>100)return false;
@@ -202,6 +202,7 @@ void up_mapper_attach(up_mapper *m,const up_profile *p) {
     if(m->profile)for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         const up_analog *a=&p->axes[i].analog;
         if(((p->axis_modes>>(2*i))&3)!=UP_AXIS_ANALOG || !(a->flags&UP_GYRO))continue;
+        m->gyro_axes|=(uint8_t)(1u<<i);
         if(!found) { bias=a->center;found=true; }
         if(a->reserved>noise)noise=a->reserved;
     }
@@ -262,6 +263,12 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(keys&(1u<<i))
         for(unsigned k=0;k<p->shift.count;++k)if(up_digital_overlap(&p->digital[i],&p->shift.keys[k]))return true;
     return false;
+}
+bool up_bank_upgrade_v8(up_bank *b) {
+    if(b->magic!=UP_BANK_MAGIC || b->version!=8 || b->bytes!=sizeof(*b))return false;
+    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!profile_valid(&b->profiles[i],8))return false;
+    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)b->profiles[i].version=UP_PROFILE_VERSION;
+    b->version=UP_PROFILE_VERSION;return up_bank_valid(b);
 }
 bool up_bank_upgrade_v6(up_bank *b,const udk_settings *defaults) {
     if(b->magic!=UP_BANK_MAGIC || b->version!=6 || b->bytes!=sizeof(*b) || !udk_settings_valid(defaults))return false;

@@ -27,6 +27,10 @@ static control_state control;
 static uint8_t control_data[512], last_input[64];
 static uint16_t control_length, control_offset, control_expected;
 static bool control_zlp, control_stall_zlp, feature_out;
+static volatile bool output_pending,control_pending;
+static uint8_t pending_output[64];
+static uint16_t pending_output_length;
+static uint32_t delivery_order,output_order,control_order;
 static uint8_t ep0_pid, ep1_pid, out1_pid, idle_rate;
 static volatile uint8_t protocol=1;
 static bool remote_wakeup;
@@ -138,6 +142,8 @@ static void notify_secondary_cancel(void) {
     }
 }
 static void reset_input(void) {
+    output_pending=control_pending=false;
+    if(opt.bus_event)opt.bus_event(UD_BUS_RESET,opt.context);
     notify_cancel();
     notify_secondary_cancel();
     for(unsigned ep=1;ep<16;++ep) {
@@ -217,6 +223,29 @@ static void control_send(const void *data, uint16_t available, uint16_t requeste
     control_next_in();
 }
 static void control_status(void) { control=C_STATUS_IN; ep0_in(NULL,0,1); }
+static void deliver_pending(void) {
+    for(unsigned i=0;i<2;++i) {
+        bool out=output_pending && (!control_pending || (int32_t)(output_order-control_order)<0);
+        if(!out && !control_pending)return;
+        const uint8_t *data=out?pending_output:control_data;
+        uint16_t length=out?pending_output_length:control_offset;
+        if(!opt.try_output(data,length,opt.context))return;
+        if(out) { output_pending=false;if(!output_halted)arm_output(); }
+        else { control_pending=false;control_status(); }
+    }
+}
+void ud_output_service(void) {
+    if(!output_pending && !control_pending)return;
+    uint32_t irq=save_and_disable_interrupts();
+    if(opt.try_output)deliver_pending();
+    restore_interrupts(irq);
+}
+void ud_output_discard(void) {
+    uint32_t irq=save_and_disable_interrupts();
+    if(output_pending) { output_pending=false;if(!output_halted)arm_output(); }
+    if(control_pending) { control_pending=false;control_status(); }
+    restore_interrupts(irq);
+}
 static void descriptor_request(const setup_packet *s) {
     uint8_t type=s->value>>8,index=s->value;
     if (type==1 && index==0 && s->kind==0x80) {
@@ -264,7 +293,7 @@ static void setup_received(void) {
     HW_CLR->buf_status=3;
     usb_hw->ep_stall_arm=0;
     release_abort(3);
-    control=C_IDLE; ep0_pid=1; pending_address=pending_config=-1; feature_out=false;
+    control=C_IDLE; ep0_pid=1; pending_address=pending_config=-1; feature_out=false;control_pending=false;
     HW_CLR->sie_status=USB_SIE_STATUS_SETUP_REC_BITS;
     control_stall_zlp=s.kind==0x80 && s.request==6 && (s.value>>8)==3 &&
         (s.value&255)<32 && (opt.short_string_stall_mask&(1u<<(s.value&255)));
@@ -303,6 +332,8 @@ static void setup_received(void) {
                 uint32_t mask=EP1_BIT|(opt.output_endpoint?(1u<<(2*opt.output_endpoint+1)):0);
                 if(!abort_mask(mask)) { stall_control();return; }
                 notify_cancel();usb_dpram->ep_buf_ctrl[1].in=0;ep1_pid=0;halted=false;
+                output_pending=false;
+                if(opt.bus_event)opt.bus_event(UD_BUS_RESET,opt.context);
                 if(opt.output_endpoint) { usb_dpram->ep_buf_ctrl[opt.output_endpoint].out=0;out1_pid=0;output_halted=false; }
                 HW_CLR->buf_status=mask;release_abort(mask);
                 if(opt.output_endpoint)arm_output();
@@ -338,7 +369,7 @@ static void setup_received(void) {
             output_halted=s.request==3;out1_pid=0;
             usb_dpram->ep_buf_ctrl[opt.output_endpoint].out=output_halted?USB_BUF_CTRL_STALL:0;
             HW_CLR->buf_status=mask;release_abort(mask);
-            if(!output_halted)arm_output();
+            if(!output_halted && !output_pending)arm_output();
             control_status();return;
         }
         if (s.kind==2 && (s.request==1 || s.request==3) && s.index==0x81 && !s.value && !s.length) {
@@ -413,10 +444,15 @@ static void completed_buffers(void) {
     if(done&output_bit) {
         uint16_t n=usb_dpram->ep_buf_ctrl[opt.output_endpoint].out&USB_BUF_CTRL_LEN_MASK;
         HW_CLR->buf_status=output_bit;
-        if(n<=64 && opt.output) {
-            uint8_t data[64]; dpram_read(data,usb_dpram->epx_data+64,n); opt.output(data,n,opt.context);
+        if(n<=64 && opt.try_output) {
+            dpram_read(pending_output,usb_dpram->epx_data+64,n);pending_output_length=n;
+            output_order=++delivery_order;output_pending=true;deliver_pending();
+        } else {
+            if(n<=64 && opt.output) {
+                uint8_t data[64];dpram_read(data,usb_dpram->epx_data+64,n);opt.output(data,n,opt.context);
+            }
+            if(!output_halted)arm_output();
         }
-        if(!output_halted)arm_output();
     }
     if (done&EP1_BIT) {
         uint32_t now=time_us_32(); HW_CLR->buf_status=EP1_BIT;
@@ -446,8 +482,12 @@ static void completed_buffers(void) {
             control_offset+=n;
             if (control_offset==control_expected) {
                 if (feature_out && opt.set_feature) opt.set_feature(control_data,control_offset,opt.context);
-                if (!feature_out && opt.output) opt.output(control_data,control_offset,opt.context);
-                control_status();
+                if(!feature_out && opt.try_output) {
+                    control_order=++delivery_order;control_pending=true;deliver_pending();
+                } else {
+                    if(!feature_out && opt.output)opt.output(control_data,control_offset,opt.context);
+                    control_status();
+                }
             } else if(n==control_packet_size()) {
                 uint16_t left=control_expected-control_offset;
                 ep0_pid^=1;
@@ -499,6 +539,8 @@ static void __not_in_flash_func(usb_irq)(void) {
     }
     if (ints&USB_INTS_DEV_SUSPEND_BITS) {
         stat.suspended=1; HW_CLR->sie_status=USB_SIE_STATUS_SUSPENDED_BITS;
+        if(opt.try_output)ud_output_discard();
+        if(opt.bus_event)opt.bus_event(UD_BUS_SUSPEND,opt.context);
     }
     if (ints&USB_INTS_DEV_RESUME_FROM_HOST_BITS) {
         stat.suspended=0; HW_CLR->sie_status=USB_SIE_STATUS_RESUME_BITS;
@@ -587,6 +629,7 @@ bool ud_mouse_send(bool secondary,bool report_protocol,const uint8_t *data,uint1
     restore_interrupts(irq);return sent;
 }
 void ud_disconnect(void) {
+    if(opt.bus_event)opt.bus_event(UD_BUS_DISCONNECT,opt.context);
     // Stop callbacks before callers replace descriptors or clear queued reports.
     // ud_init re-enables this IRQ when the new layout is ready.
     irq_set_enabled(USBCTRL_IRQ,false);

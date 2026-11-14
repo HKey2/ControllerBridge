@@ -411,8 +411,10 @@ bool upr_event(const uc_event *e) {
     }
     return false;
 }
+uint8_t upr_gyro_axes(void) { return mapper.gyro_axes; }
+bool upr_rumble_enabled(void) { return mapper.profile && (mapper.profile->flags&(UP_ENABLED|UP_RUMBLE))==(UP_ENABLED|UP_RUMBLE); }
 bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
-    bool motion=up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us);
+    bool motion=mapper.gyro_axes && up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us);
     if(!up_mapper_apply(&mapper,e->interface_number,e->data,e->length,out) && !motion)return false;
     up_mapper_tick(&mapper,now,output_ready,out);return true;
 }
@@ -430,7 +432,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS|UPR_FEATURE_RUMBLE);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
         break;

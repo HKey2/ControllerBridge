@@ -3,7 +3,7 @@
 #include "controller_device.h"
 #include "switch_wired.h"
 enum { SP_POWERA, SP_POWERA_USB2, SP_POWERA_PACKET8, SP_HORI, SP_PRO8, SP_PRO1, SP_NSO4, SP_NSO1, SP_COUNT };
-typedef struct { uint32_t handshake_mask, subcommand_mask, output_count, unknown_count; uint8_t mode; bool active; } sp_state;
+typedef struct { uint32_t handshake_mask, subcommand_mask, output_count, unknown_count; uint8_t mode,player_lights; bool active,rumble_enabled; } sp_state;
 // Build descriptors in persistent internal buffers; call only while disconnected.
 void sp_descriptors(unsigned profile, ud_options *options);
 void sp_encode(unsigned profile,const sw_report *input,uint8_t output[64],uint32_t now_us);

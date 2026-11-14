@@ -41,8 +41,11 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsGyroSteering => (Features & (1u << 27)) != 0;
     public bool SupportsGyroDriftProtection => (Features & (1u << 28)) != 0;
     public bool SupportsInputDirections => (Features & (1u << 29)) != 0;
+    public bool SupportsRumble => (Features & (1u << 30)) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
+        if (!SupportsRumble)
+            throw new InvalidDataException(L.T("この版のプロファイルを保存する前に、画面上部の「ファームウェア更新」で同梱ファームウェアへ更新してください。", "Before saving profiles with this version, choose Firmware update at the top of the window to install the bundled firmware."));
         if (InputDirections.UsesNormalizedInput(profile) && !SupportsInputDirections)
             throw new InvalidDataException(InputDirections.UpdateMessage);
         if ((profile.GyroRecenterButtons != 0 || profile.Axes.Any(a => a.Mode == 1 && (a.Analog.Flags & 24) != 0) ||
@@ -180,6 +183,7 @@ internal sealed class HidBridge : IDisposable
                     if (!SetupDiGetDeviceInterfaceDetailW(set, ref iface, detail, size, out _, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error());
                     string path = Marshal.PtrToStringUni(detail + 4) ?? "";
                     if (!path.Contains("vid_20d6&pid_a713", StringComparison.OrdinalIgnoreCase) &&
+                        !(path.Contains("vid_057e&pid_2009", StringComparison.OrdinalIgnoreCase) && path.Contains("mi_01", StringComparison.OrdinalIgnoreCase)) &&
                         !path.Contains("vid_cafe&pid_4004", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4005", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase) &&

@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-- Output mode : Switch-compatible,XInput-compatible (POLYMEGA) -> Can be toggled via common settings
+- Output mode : Switch-compatible, Switch Pro-compatible, XInput-compatible (POLYMEGA) -> Can be toggled via common settings
 - Support for a wide range of controllers, including paddles, trackballs, and flight sticks.
 - Fully customizable controls and settings.
 - Combined mouse and gamepad output.
@@ -20,7 +20,7 @@
 
 ## Overview
 
-ControllerBridge turns USB controllers into Switch-compatible HID, Xbox 360 XInput and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to a Switch 2 (S mode) / Windows PC (X mode) for play.
+ControllerBridge turns USB controllers into Switch-compatible HID, Xbox 360 XInput and mouse inputs using an unmodified **Waveshare RP2350-USB-A** board. Connect the input controller to USB-A and USB-C to a Windows PC for configuration, or to a Switch 2 (S or Pro mode) / Windows PC (X mode) for play.
 
 [![ControllerBridge in its clear PETG case, with the LED illuminating the lid in a dark setting](docs/images/case/led-dark.jpg)](docs/case.md)
 
@@ -28,7 +28,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.26.0 (firmware 0.26.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.27.0 (firmware 0.27.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.27.0:** Adds **Pro** output using the original Switch Pro protocol and HD rumble forwarding to wired first-generation Switch Pro and Switch 2 Pro controllers. Select **Pro** in **Shared settings**, then enable **Rumble** in that controller’s gamepad profile and save it. Existing profiles keep rumble off. Switch 2 Pro input can use a 1 ms interval even with rumble disabled; save this per profile for precision controls. S/X/Auto remain available; mouse layouts use S when Pro is selected. Pro output does not forward motion sensors, NFC or audio. See [Pro output and rumble](docs/configurator-guide.md#pro-output-and-rumble).
 
 **0.26.0:** Individual axis settings use toggle selections for the whole axis or either direction, with direct digital-button learning on the same screen. Adds single-axis DUALSHOCK 3 gyro steering for LX or RX, with separate setup entry points, per-unit factory calibration, still calibration and a live steering display. Steering remains at the held position. Strong drift protection combines stillness-based zero tracking, noise filtering and a minimum 5% output deadzone. Hold Recenter still for about two seconds to relearn a shifted zero; slow, small turns are suppressed. A Recenter button or chord is shared by both sticks; three accelerometer inputs are available for manual analog assignments. Install the matching configurator and bundled firmware. See [DS3 gyro steering](docs/configurator-guide.md#ds3-gyro-steering).
 
@@ -163,13 +165,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 139,060; persistent storage 49,152 | 1,908,940 |
-| SRAM, 532,480 bytes | Static data 159,580; two stacks 8,192 | 364,708 |
+| Flash, 2,097,152 bytes | Code/initial values 154,468; persistent storage 49,152 | 1,893,532 |
+| SRAM, 532,480 bytes | Static data 163,040; two stacks 8,192 | 361,248 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 40,400, and BSS 118,908 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 278,528 bytes.
+Static SRAM consists of vector table 272, initialized data 42,416, and BSS 120,244 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 309,248 bytes.
 
 ## Repository contents and license
 

@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.25.1. Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.27.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
