@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.28.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.28.1. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -70,7 +70,7 @@ Since 0.25.1, X gamepad output uses VID **045E**, PID **028E**, device class/sub
 
 At profile Input interval 0, the first four interface descriptors, including the advertised accessory/security functions, match the reference byte for byte. An explicit nonzero interval changes only gamepad IN81's bInterval in those interfaces. Device revision is **0114**. The measured strings are **8BitDo** (including its terminal UTF-16 NUL), **Controller**, and **157F8F8**. Exact-length string reads succeed. Over-reading manufacturer or serial returns 16 bytes followed by STALL, reproducing the observed reference behavior; string index 4 is unsupported. Device GET_STATUS returns `02 00`, as observed.
 
-The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Version 0.28.0 forwards XInput motor commands to supported wired DUALSHOCK 3 controllers when Rumble is enabled in the active gamepad profile. The large motor accepts variable strength; the small motor is on/off. Other input controllers and player-LED forwarding are not supported. POLYMEGA-specific vibration behavior requires confirmation on that host.
+The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Version 0.28.0 forwards XInput motor commands to supported wired DUALSHOCK 3 controllers when Rumble is enabled in the active gamepad profile. The large motor accepts variable strength; the small motor is on/off. Other input controllers and player-LED forwarding are not supported. From 0.28.1, X output reports its supported inputs and rumble during connection. Install the matching firmware; enabling Rumble is still required in the active gamepad profile. This capability belongs to the bridge and remains available when changing profiles or input controllers. POLYMEGA-specific vibration behavior requires confirmation on that host.
 
 ### Configurator connection
 
@@ -84,7 +84,7 @@ The mapper retains the existing 8-bit axis resolution and digital trigger bindin
 
 Linux xpad v4.14 and v6.6 select wired Xbox 360 interfaces using **VID 045E + class/subclass/protocol FF/5D/01**. Their Microsoft-vendor entry does not require PID 028E. Both ControllerBridge X layouts match this entry; the configuration HID interface does not. The gamepad interface provides the two interrupt endpoints required by the probe path. The former CAFE VID did not match that entry.
 
-The v6.6 wired startup path issues a 20-byte vendor interface read: `bmRequestType=C1`, `bRequest=01`, `wValue=0100`, `wIndex=0000`. Version 0.23.2 returns the connected reference’s **single zero byte**, rather than the 20-byte capabilities supplied by 0.23.1. The motor-capability request with `wValue=0000`, normally requesting 8 bytes, likewise returns one zero byte. Both short responses were observed on the working reference. Unknown vendor requests remain unsupported.
+Host capability queries are answered for the gamepad interface. Unsupported vendor features remain unavailable; rumble support does not add headset audio, wireless connectivity or expansion modules.
 
 In upstream xpad v6.6, the USB helper treats the short response as an error and the startup code logs a warning, **but continues successfully**. The local verification preserves this behavior; it does not suppress the warning or replace the measured response with a fabricated longer packet. The older v4.14 startup path does not issue this query. Both versions’ matching and input-decoding logic accept the emitted report format.
 
@@ -118,6 +118,7 @@ The original 0.23.0 physical validation covered Windows recognition, configurati
 - [GP2040-CE wired XInput descriptors](https://github.com/OpenStickCommunity/GP2040-CE/blob/main/headers/drivers/xinput/XInputDescriptors.h): original gamepad descriptor, 20-byte report and Guide bit.
 - [Linux xpad v4.14](https://github.com/torvalds/linux/blob/v4.14/drivers/input/joystick/xpad.c) and [v6.6](https://github.com/torvalds/linux/blob/v6.6/drivers/input/joystick/xpad.c): device matching, endpoint checks, wired startup and report decoding. No GPL implementation code is included in product sources.
 - [SDL Xbox 360 driver](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_xbox360.c): input and motor capability packet layout.
+- [Santroller XInput device](https://github.com/Santroller/Santroller/blob/e0fa2ba602c6efb39a95b5adde0e73594dc1a8ff/src/emulation/usb/xinput_device.cpp): published wired motor-capability format. Only protocol facts were used; no implementation code was copied.
 - [Published wired startup sequence](https://github.com/MiSTle-Dev/C64Nano/discussions/150): the four OUT packets validated on the connected Arcade Stick.
 - [TinyUSB device enumeration](https://github.com/hathach/tinyusb/blob/master/src/device/usbd.c): initial descriptor discovery with an 8-byte EP0 before SET_ADDRESS.
 - [Microsoft XINPUT_CAPABILITIES](https://learn.microsoft.com/en-us/windows/win32/api/xinput/ns-xinput-xinput_capabilities): capability masks and significant-bit resolution.

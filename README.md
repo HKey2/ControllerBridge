@@ -29,7 +29,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.28.0 (firmware 0.28.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.28.1 (firmware 0.28.1).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.28.1:** X output now identifies its supported inputs and rumble to the host during connection. Install the matching firmware to use this change. Rumble still requires a supported controller and an enabled gamepad profile. POLYMEGA rumble compatibility remains unconfirmed.
 
 **0.28.0:** Adds wired DUALSHOCK 3 rumble with **Pro** and **X** output. Enable **Rumble** in its gamepad profile and save. The large motor supports variable strength; the small motor switches on/off. DS3 gyro steering remains available during rumble, with resting calibration protected from vibration. Input setup and recenter-button holds temporarily stop rumble. X output prioritizes input changes in gyro/rumble profiles while ordinary profiles keep their previous timing. Read [Pro output and rumble](docs/configurator-guide.md#pro-output-and-rumble) for setup and limits.
 
@@ -168,7 +170,7 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 160,140; persistent storage 49,152 | 1,887,860 |
+| Flash, 2,097,152 bytes | Code/initial values 160,212; persistent storage 49,152 | 1,887,788 |
 | SRAM, 532,480 bytes | Static data 163,600; two stacks 8,192 | 360,688 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |

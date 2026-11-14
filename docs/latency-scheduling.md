@@ -1,6 +1,6 @@
 # Latency and polling policy
 
-Current normal firmware: 0.28.0. The input and X output scheduling changes described below were introduced in 0.24.1.
+Current normal firmware: 0.28.1. The input and X output scheduling changes described below were introduced in 0.24.1.
 
 The target is the interval from a physical switch changing state to the host's input library accepting that state. It does not include the game's simulation or display. ControllerBridge can timestamp received USB reports and its own output completion, but cannot observe the controller's contacts or the host library. Consequently, the total-latency conclusions below are conditional deductions, not new end-to-end measurements.
 
@@ -16,7 +16,7 @@ The existing per-profile **Input interval (ms)** now also controls the **X gamep
 | 1 | 1 ms | 1 ms | Arm changes immediately when the endpoint/ordered queue permits |
 | 2–255 | Specified number of milliseconds | Same specified interval | Same immediate scheduling; no additional 11 ms gate |
 
-Only gamepad IN81's `bInterval` changes in the X descriptor. The identity, initialization replies, accessory interfaces and OUT endpoint remain the reference-compatible implementation. At value 0, the existing 4 ms reference descriptor is retained. Ordinary profiles also retain the 11 ms producer cadence. From 0.28.0, gyro/rumble profiles bypass that producer wait so continuous input changes do not accumulate behind it. Switching back to an ordinary profile restores the reference cadence. At nonzero values the polling/cadence intentionally differ from the reference; POLYMEGA acceptance has not been established.
+Only gamepad IN81's `bInterval` changes in the X descriptor. The identity, accessory interfaces and OUT endpoint retain their existing behavior. Version 0.28.1 adds input and rumble capability reporting during connection without changing input scheduling. At value 0, the existing 4 ms reference descriptor is retained. Ordinary profiles also retain the 11 ms producer cadence. From 0.28.0, gyro/rumble profiles bypass that producer wait so continuous input changes do not accumulate behind it. Switching back to an ordinary profile restores the reference cadence. At nonzero values the polling/cadence intentionally differ from the reference; POLYMEGA acceptance has not been established.
 
 S gamepad and USB mouse output retain their separate legacy output interval, normally 1 ms. The mouse in an X combined device remains independent. No new setting or saved-data field is added. Saving a profile is verified before applying the output change; changing the active X interval reconnects USB, using the existing delayed reconnect path. This also applies to an on-device profile switch. Auto's already chosen result is retained. Editing an inactive profile with the same active timing does not reconnect output.
 

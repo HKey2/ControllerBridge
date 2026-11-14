@@ -110,14 +110,26 @@ int xw_composite_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capa
     } else if(setup[0]==0xc1 && setup[1]==0x20 && value==0 && index==5) {
         reply=properties;length=sizeof(properties);
     }
-    // Both capability reads return one zero byte on the measured Arcade
-    // Stick, including successful Windows initialization. Do not substitute
-    // invented 20/8-byte capabilities for this reference behavior.
-    static const uint8_t capabilities[1]={0};
-    if(setup[0]==0xc1 && setup[1]==1 && index==0 && (value==0x0100 || value==0)) {
-        reply=capabilities;length=sizeof(capabilities);
+    // XUSB capability reports describe the bridge's stable gamepad interface,
+    // not its current profile or the temporarily attached input controller.
+    // Layout: SDL FetchXInputCapabilities; motor report: Santroller XInput.
+    // Buttons include Guide but exclude reserved bit 11. Triggers are binary;
+    // each normalized stick axis has 8 significant bits (see xw_encode).
+    // Flag 0x0001 advertises feedback; no voice, wireless or expansion support.
+    static const uint8_t input_capabilities[20]={
+        0x00,0x14,0xff,0xf7,0x80,0x80,
+        0x00,0xff,0x00,0xff,0x00,0xff,0x00,0xff,
+        0x00,0x00,0x00,0x00,0x01,0x00
+    };
+    // Both host motor channels accept 8-bit strength. Profile permission and
+    // physical motor conversion remain in the feedback path, not enumeration.
+    static const uint8_t motor_capabilities[8]={0x00,0x08,0x00,0xff,0xff,0x00,0x00,0x00};
+    if(setup[0]==0xc1 && setup[1]==1 && index==0) {
+        if(value==0x0100) { reply=input_capabilities;length=sizeof(input_capabilities); }
+        else if(value==0) { reply=motor_capabilities;length=sizeof(motor_capabilities); }
     }
-    // Unknown requests still stall; never claim unimplemented controls or motors.
+    // EP0 clips these complete reports to wLength and terminates over-reads.
+    // Unknown requests still stall; do not invent responses for other features.
     if(!reply || capacity<length)return -1;
     memcpy(data,reply,length);return length;
 }
