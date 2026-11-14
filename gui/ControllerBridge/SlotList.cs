@@ -21,7 +21,7 @@ internal sealed class SlotList : ListBox
         Dock = DockStyle.Fill; DrawMode = DrawMode.OwnerDrawFixed; IntegralHeight = false;
         BorderStyle = BorderStyle.Fixed3D; AllowDrop = true; ItemHeight = 58;
         AccessibleName = L.T("プロファイルリスト", "Profile list");
-        AccessibleDescription = L.T("ドラッグして並べ替え。Altと上下キーでも移動できます。", "Drag to reorder. You can also use Alt and the arrow keys.");
+        AccessibleDescription = L.T("ダブルクリックで接続中の機器に対応する保存済みプロファイルへ切替。ドラッグまたはAltと上下キーで並べ替え。", "Double-click to activate a saved profile matching the connected controller. Drag or use Alt and the arrow keys to reorder.");
         scrollTimer.Tick += (_, _) =>
         {
             Point at = PointToClient(Cursor.Position); int edge = LogicalToDeviceUnits(28);

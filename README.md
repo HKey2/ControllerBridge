@@ -9,7 +9,8 @@
 - Shift-button switching between primary and alternate button mappings.
 - Per-button rapid fire, adjustable in one-press-per-second increments.
 - Map mouse, trackball, and paddle movement to any button.
-- DS3 pressure-sensitivity values ​​can be assigned to any analog stick axis.
+- DS3 pressure-sensitive values ​​and gyro data can be mapped to any analog stick axis.
+- Supports vibration for the Switch Pro Controller and DS controllers
 - Virtual rolling switch mode.
 - Internal input processing within 1 ms.
 - Configurable input polling interval (1–255 ms).
@@ -28,7 +29,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current release
 
-**Current development release: v0.27.0 (firmware 0.27.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current development release: v0.28.0 (firmware 0.28.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.28.0:** Adds wired DUALSHOCK 3 rumble with **Pro** and **X** output. Enable **Rumble** in its gamepad profile and save. The large motor supports variable strength; the small motor switches on/off. DS3 gyro steering remains available during rumble, with resting calibration protected from vibration. Input setup and recenter-button holds temporarily stop rumble. X output prioritizes input changes in gyro/rumble profiles while ordinary profiles keep their previous timing. Read [Pro output and rumble](docs/configurator-guide.md#pro-output-and-rumble) for setup and limits.
 
 **0.27.0:** Adds **Pro** output using the original Switch Pro protocol and HD rumble forwarding to wired first-generation Switch Pro and Switch 2 Pro controllers. Select **Pro** in **Shared settings**, then enable **Rumble** in that controller’s gamepad profile and save it. Existing profiles keep rumble off. Switch 2 Pro input can use a 1 ms interval even with rumble disabled; save this per profile for precision controls. S/X/Auto remain available; mouse layouts use S when Pro is selected. Pro output does not forward motion sensors, NFC or audio. See [Pro output and rumble](docs/configurator-guide.md#pro-output-and-rumble).
 
@@ -111,7 +114,7 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Shared settings** saves common thresholds, timings, sensitivity, inertia tuning and S/X host mode. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
-Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. Browsing the list does not change the active device profile; **Use this profile** activates another matching saved profile.
+Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. A single click in the list opens a profile for editing. Double-click another saved profile for the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. Profiles with unsaved edits or for another controller cannot be activated this way.
 
 | Output tab | Behavior |
 |---|---|
@@ -165,13 +168,13 @@ Normal firmware allocation figures, calculated from its binary and linker sectio
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 154,468; persistent storage 49,152 | 1,893,532 |
-| SRAM, 532,480 bytes | Static data 163,040; two stacks 8,192 | 361,248 |
+| Flash, 2,097,152 bytes | Code/initial values 160,140; persistent storage 49,152 | 1,887,860 |
+| SRAM, 532,480 bytes | Static data 163,600; two stacks 8,192 | 360,688 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 42,416, and BSS 120,244 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 309,248 bytes.
+Static SRAM consists of vector table 272, initialized data 42,784, and BSS 120,544 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 320,512 bytes.
 
 ## Repository contents and license
 

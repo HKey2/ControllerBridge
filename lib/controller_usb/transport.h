@@ -12,6 +12,10 @@ void ut_pump(void);
 uint32_t ut_idle_budget_us(void);
 void ut_idle_output(uint8_t endpoint);
 void ut_idle_output_service(void);
+// DS3 Output SET_REPORT, progressed one packet at a time between input frames.
+bool ut_idle_control_begin(uint8_t iface,uint8_t data[48]);
+ut_result ut_idle_control_service(void);
+void ut_idle_control_abort(void);
 void ut_abort(uint8_t address,uint8_t endpoint);
 uint8_t ut_data_toggle(uint8_t address,uint8_t endpoint);
 void ut_set_data_toggle(uint8_t address,uint8_t endpoint,uint8_t toggle);

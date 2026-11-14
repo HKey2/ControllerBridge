@@ -444,6 +444,9 @@ static void ds3_motion_initialize(uint8_t iface) {
         unsigned size=uc_ds3_calibration_output(&cal,request);
         if(size)valid=control(1,0x21,9,0x0201,iface,(uint16_t)size,request,NULL)==UT_OK;
     }
+    // Sony paths 1/2 have non-overlapping motor and gyro-trim fields.
+    // Keep ordinary input available for other revisions without guessing their output format.
+    if(valid && (cal.path==1 || cal.path==2))ucf_attach_ds3(iface,request);
     if(valid) {
         event.sequence=cal.path;event.length=sizeof(cal.values);
         memcpy(event.data,cal.values,sizeof(cal.values));

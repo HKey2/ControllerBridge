@@ -69,6 +69,7 @@ internal sealed partial class MappingEditor : UserControl
     private AnalogStickWizard? stickWizard;
     private readonly Button axisWizard;
     private int learningRequest;
+    internal bool LearningActive => learner is not null || axisDialog is not null || stickWizard is not null || shiftDialog is not null;
     public event EventHandler? Modified;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<Task<bool>>? PrepareLearningAsync { get; set; }

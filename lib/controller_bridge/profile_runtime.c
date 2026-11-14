@@ -1,4 +1,5 @@
 #include "profile_runtime.h"
+#include "controller_feedback.h"
 #include "input_protocol.h"
 #include "controller_mouse.h"
 #include <string.h>
@@ -414,7 +415,11 @@ bool upr_event(const uc_event *e) {
 uint8_t upr_gyro_axes(void) { return mapper.gyro_axes; }
 bool upr_rumble_enabled(void) { return mapper.profile && (mapper.profile->flags&(UP_ENABLED|UP_RUMBLE))==(UP_ENABLED|UP_RUMBLE); }
 bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
-    bool motion=mapper.gyro_axes && up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us);
+    bool motion=false;
+    if(mapper.gyro_axes) {
+        ucf_calibration_held(up_mapper_recenter_held(&mapper,e->interface_number,e->data,e->length));
+        motion=up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us,ucf_learning_allowed(e->time_us));
+    }
     if(!up_mapper_apply(&mapper,e->interface_number,e->data,e->length,out) && !motion)return false;
     up_mapper_tick(&mapper,now,output_ready,out);return true;
 }

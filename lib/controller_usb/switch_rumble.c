@@ -116,6 +116,9 @@ static const uint16_t switch2_amplitude[257]={
     318,325,332,340,347,355,362,370,378,387,395,404,413,422,431,440,
     450,
 };
+uint8_t sr_amplitude8(int16_t logarithmic) {
+    return (uint8_t)((switch2_amplitude[clamp(logarithmic,-256,0)+256]*255u+225u)/450u);
+}
 unsigned sr_switch2(const sr_state *s,const sr_samples *samples,uint8_t sequence,uint8_t report[64]) {
     unsigned count=1;
     if(samples)for(unsigned i=0;i<2;++i)if(samples->count[i]>count)count=samples->count[i];

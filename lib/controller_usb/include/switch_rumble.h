@@ -11,6 +11,7 @@ typedef struct { sr_motor motor[2]; } sr_state;
 typedef struct { sr_motor motor[2][3];uint8_t count[2]; } sr_samples;
 void sr_decode_samples(sr_state *state,const uint8_t data[8],sr_samples *samples);
 unsigned sr_switch2(const sr_state *state,const sr_samples *samples,uint8_t sequence,uint8_t report[64]);
+uint8_t sr_amplitude8(int16_t logarithmic);
 void sr_reset(sr_state *state);
 void sr_decode(sr_state *state,const uint8_t data[8]);
 void sr_absolute(const sr_state *state,uint8_t data[8]);

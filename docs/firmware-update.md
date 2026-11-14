@@ -1,6 +1,6 @@
 # Firmware update
 
-ControllerBridge 0.27.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.28.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
 
 Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferences. Before returning to firmware through 0.20.18, save those profiles in a gamepad mode or clear their conversion flags using 0.20.19; the older validator rejects that combination.
 
@@ -8,7 +8,7 @@ Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferen
 
 The main window checks the firmware identity before reading capabilities or profile data. Only an exact match with the bundled version proceeds to normal settings reads. Detection runs at startup and about every two seconds while waiting for a usable connection.
 
-- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.27.0?** confirmation follows. Lower and higher versions are treated alike.
+- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.28.0?** confirmation follows. Lower and higher versions are treated alike.
 - A factory-state RP2350-USB-A exposing Pico SDK CDC/reset USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge without readable firmware information shows **Device unsupported** and automatically opens the BOOT connection guide. It immediately monitors for BOOT connection and shows only **Cancel**. A valid BOOT connection advances to the final overwrite confirmation automatically. This works both when the board is already connected at startup and when it is detected while the tool is running.
 - With no recognized board, the tool shows **Device not connected** and waits without opening an update guide or recording a startup error. Unrelated USB peripherals do not trigger installation. Other firmware with unrecognized USB identities can still use **Firmware update** manually.
 
@@ -26,11 +26,11 @@ The factory-state screenshot was captured on 2026-10-31 with the supplied RP2350
 
 1. Choose **Firmware update**. The dialog shows **Checking firmware version...**.
 2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing. Opening the updater preserves unsaved profile edits. Before restarting the Windows app to use a newer executable, export any unsaved profiles from the profile list’s context menu and import them again after restarting.
-3. If a supported device reports a different version, the dialog asks **Install v0.27.0?**. **No** exits; **Yes** starts automatic programming.
+3. If a supported device reports a different version, the dialog asks **Install v0.28.0?**. **No** exits; **Yes** starts automatic programming.
 4. If no supported version response is available, the dialog immediately shows **Waiting for reconnection with BOOT held...** and only a **Cancel** button. Unplug the RP2350-USB-A's USB-C cable, hold **BOOT**, reconnect to the same PC USB port, then release BOOT. This wait has no timeout. **Cancel**, Escape, or the window close button exits without writing.
 5. Once the target's RP2350 BOOT USB identity and disk information are validated, the dialog automatically shows **Confirm firmware write** with **Yes/No** buttons. It states that BOOT connection was confirmed and names the bundled version. Only **Yes** starts the transfer; **No** exits without writing. If the board was already in validated BOOT mode, this final confirmation appears directly after detection.
 
-When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.27.0?**. A confirmed saved v5/v6/v8 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
+When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.28.0?**. A confirmed saved v5/v6/v8 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
 
 A BOOT-only connection does not provide this saved-bank information through the supported updater interface, so **Confirm firmware write** has no data-update notice. The actual firmware migration still runs when applicable; absence of the notice is not a promise that the saved data format will stay unchanged.
 
@@ -54,7 +54,7 @@ Pico SDK USB identity is shared across boards, and BOOTSEL identifies the RP2350
 
 Manual BOOT reconnection waits until detection or cancellation. The automatic BOOT transition after confirming a readable version mismatch still has a 30-second timeout; restart verification has a 45-second timeout. If either times out, the dialog reports failure and gives recovery instructions. The updater does not retry a write automatically. Reconnect while holding BOOT and run **Firmware update** again. The embedded image is reused; no separate firmware download is needed.
 
-Unsaved profile edits remain in the main window; the updater does not save them. At first startup, firmware 0.27.0 migrates published v5/v6/v8 banks to v9 with rumble off and persists a verified separate copy. v8 retains all existing settings. v5 gains disabled shift; v6 retains the first three modifiers and removes only a fourth. Main mappings, shifted assignments, rates, axes, IDs, selection, shortcuts, output and RGB survive. Former common conversion maps/modes/step are copied to each profile, using its old Paddle axis to select the two targets. Shared tuning retains valid values; Inertia tuning defaults to 8 / 90% / 100 ms and enable defaults to off in every migrated profile.
+Unsaved profile edits remain in the main window; the updater does not save them. At first startup, firmware 0.28.0 migrates published v5/v6/v8 banks to v9 with rumble off and persists a verified separate copy. v8 retains all existing settings. v5 gains disabled shift; v6 retains the first three modifiers and removes only a fourth. Main mappings, shifted assignments, rates, axes, IDs, selection, shortcuts, output and RGB survive. Former common conversion maps/modes/step are copied to each profile, using its old Paddle axis to select the two targets. Shared tuning retains valid values; Inertia tuning defaults to 8 / 90% / 100 ms and enable defaults to off in every migrated profile.
 
 Back up all slots before updating for downgrade recovery. Old firmware cannot read v9; this updater does not convert it back or restore an older backup. JSON v5 can be imported with existing assignments. Older JSON v2/v3 can also be imported, but lacks common conversion settings and requires the notified device/default supplementation. Pre-0.16.0 storage remains unsupported and starts with unused slots.
 

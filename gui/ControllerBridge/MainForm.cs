@@ -27,7 +27,7 @@ internal sealed partial class MainForm : Form
     private readonly NumericUpDown interval = new() { Minimum = 0, Maximum = 255, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown mouseGain = new() { Minimum = 1, Maximum = 256, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown paddleGain = new() { Minimum = 1, Maximum = 10, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
-    private readonly CheckBox rumbleOn = new DarkCheckBox { Text = L.T("振動を有効にする（Pro出力）", "Enable rumble (Pro output)"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox rumbleOn = new DarkCheckBox { Text = L.T("振動を有効にする", "Enable rumble"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox trackballOn = new() { Text = L.T("トラックボール ON", "Trackball ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox paddleOn = new() { Text = L.T("パドル ON", "Paddle ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertX = new() { Text = L.T("X方向を反転", "Invert X"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -87,7 +87,7 @@ internal sealed partial class MainForm : Form
         listPane.ColumnStyles.Add(new(SizeType.Percent, 100));
         listPane.RowStyles.Add(new(SizeType.AutoSize)); listPane.RowStyles.Add(new(SizeType.Percent, 100)); listPane.RowStyles.Add(new(SizeType.AutoSize));
         listPane.Controls.Add(Ui.Label(L.T("プロファイルリスト", "Profile list"), 12, true), 0, 0); listPane.Controls.Add(slots, 0, 1);
-        Label dragHint = Ui.Label(L.T("ドラッグで順番を変更", "Drag profiles to change their order"), 9); dragHint.ForeColor = Ui.Muted; listPane.Controls.Add(dragHint, 0, 2);
+        Label dragHint = Ui.Label(L.T("ダブルクリックで切替・ドラッグで並べ替え", "Double-click to activate; drag to reorder"), 9); dragHint.ForeColor = Ui.Muted; listPane.Controls.Add(dragHint, 0, 2);
         left.Controls.Add(listPane, 0, 0);
         RaisedTableLayoutPanel files = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
         files.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -108,7 +108,7 @@ internal sealed partial class MainForm : Form
         for (int i = 0; i < 5; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3); nameRow.Controls.Add(rumbleOn, 0, 4);
-        SetTip(rumbleOn, L.T("共通設定のPro出力と、初代Switch ProコントローラーのUSB接続で使います。ゲームパッド単独のプロファイルに対応します。", "Use Pro output in Shared settings and an original Switch Pro Controller connected by USB. Supported with gamepad-only profiles."));
+        SetTip(rumbleOn, L.T("Pro出力では初代Switch Pro・Switch 2 Pro・DUALSHOCK 3のUSB接続に対応します。DS3はX出力にも対応します。ゲームパッド単独のプロファイルで使用でき、DS3の入力調整中は振動を一時停止します。", "Pro output supports original Switch Pro, Switch 2 Pro and DUALSHOCK 3 controllers over USB. DS3 also supports X output. Use a gamepad-only profile; DS3 rumble pauses during input setup."));
         metadata.Controls.Add(nameRow, 0, 0);
         BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 4, Padding = new(8, 0, 0, 0) };
         profileActions.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -152,10 +152,10 @@ internal sealed partial class MainForm : Form
         combinedXNotice.Margin = new(12, 0, 2, 0); combinedXNotice.Visible = false;
         timing.Controls.Add(combinedXNotice, 3, 0);
         Label intervalLabel = Ui.Label(L.T("入力間隔 (ms)", "Input interval (ms)"), 10); intervalLabel.Anchor = AnchorStyles.Left;
-        Label intervalHelp = Ui.Label(L.T("0 = 標準値（X出力は互換動作）", "0 = default (X: compatibility)"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
+        Label intervalHelp = Ui.Label(L.T("0 = 標準値", "0 = default"), 9); intervalHelp.Anchor = AnchorStyles.Left; intervalHelp.ForeColor = Ui.Muted;
         timing.Controls.Add(intervalLabel, 0, 0); timing.Controls.Add(interval, 1, 0); timing.Controls.Add(intervalHelp, 2, 0);
-        string intervalTip = L.T("入力間隔を指定します。X出力にも適用し、0は従来の互換動作、1～255は指定したms間隔を要求します。X出力の間隔変更を保存・適用するとUSBが再接続されます。実際の取得周期は接続先にも依存します。Switch 2 Proは振動OFFでも1msを指定できます（0は機器既定の4ms）。",
-            "Sets the input interval and X gamepad output polling. Zero retains compatibility timing; 1–255 requests that interval in ms. Applying a changed X interval reconnects USB. The host also determines the actual polling cadence. Switch 2 Pro can use 1 ms with rumble off (0 uses its 4 ms default).");
+        string intervalTip = L.T("入力間隔を指定します。X出力にも適用し、0は標準値、1～255は指定したms間隔を要求します。Xの0は通常プロファイルで従来の互換動作を維持し、ジャイロ・振動を使う場合は入力の変化を優先して送信します。X出力の間隔変更を保存・適用するとUSBが再接続されます。実際の取得周期は接続先にも依存します。Switch 2 Proは振動OFFでも1msを指定できます（0は機器既定の4ms）。",
+            "Sets the input interval and X gamepad output polling. Zero uses defaults; 1–255 requests that interval in ms. At zero, ordinary X profiles keep compatibility timing; gyro/rumble profiles prioritize input changes. Applying a changed X interval reconnects USB. The host also determines the actual polling cadence. Switch 2 Pro can use 1 ms with rumble off (0 uses its 4 ms default).");
         SetTip(interval, intervalTip); SetTip(intervalHelp, intervalTip);
         outputContent.Controls.Add(timing, 0, 0);
         BufferedTableLayoutPanel tuning = pointingTuning = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3, Padding = new(10, 2, 6, 4) };
@@ -192,6 +192,13 @@ internal sealed partial class MainForm : Form
 
         slots.DrawItem += DrawSlot;
         slots.SelectedIndexChanged += (_, _) => { if (loading || slots.SelectedIndex < 0) return; AbortLearning(); selected = slots.SelectedIndex; BindSelected(); };
+        slots.MouseDoubleClick += async (_, e) =>
+        {
+            if (loading || e.Button != MouseButtons.Left) return;
+            int slot = slots.IndexFromPoint(e.Location);
+            if (slot < 0 || slot != selected || !slots.GetItemRectangle(slot).Contains(e.Location)) return;
+            await UseProfile();
+        };
         slots.CanMove = i => i >= 0 && i < profiles.Length && profiles[i].Enabled && !working && !dirty.Any(x => x) && (bridge is not null && caps?.SupportsBankTransfer == true);
         slots.MoveRequested += async (_, e) => await MoveSlot(e.Source, e.Destination);
         InitializeProfileMenu();
@@ -334,7 +341,7 @@ internal sealed partial class MainForm : Form
         paddleAxis.Enabled = enabled && !working && paddleOn.Checked;
         paddleKeys.Text = L.T("変換を有効", "Enable conversion");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
-        useProfile.Enabled = online && !working && !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } && caps.ActiveSlot != selected && profiles[selected].Matches(caps);
+        useProfile.Enabled = CanUseSelectedProfile;
     }
     private bool ConfirmDiscard() => !dirty.Any(x => x) || MessageBox.Show(this, L.T("未保存の編集を破棄して、デバイスから読み直しますか？", "Discard unsaved edits and reload the device?"),
         L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
@@ -362,6 +369,7 @@ internal sealed partial class MainForm : Form
         string? guidance = null;
         try
         {
+            await ReleaseCalibrationQuiet();
             bridge?.Dispose(); bridge = null;
             using ConnectionRead read = await ConnectionRead.OpenAsync(bundledFirmware.Value.Version);
             if (closing || !showErrors && (working || ModalEditorOpen)) return;
@@ -525,6 +533,7 @@ internal sealed partial class MainForm : Form
         polling = true;
         try
         {
+            await MaintainCalibrationQuiet();
             PollResult result = await bridge.PollAsync(cursor, generation); if (closing) return;
             bool emptyRetry = NoInput(caps) && NoInput(result.Caps);
             if (!emptyRetry && (result.GenerationChanged || result.Caps.FieldCount != fields.Count || result.Caps.DescriptorHash != caps?.DescriptorHash))
@@ -563,6 +572,7 @@ internal sealed partial class MainForm : Form
         catch (Exception ex)
         {
             AbortLearning(); wizard?.ConnectionLost(); bridge?.Dispose(); bridge = null; reconnectAfter = DateTime.UtcNow.AddSeconds(2);
+            calibrationQuiet = null;
             ClearDeviceState();
             SetConnectionDetail(ex.Message); SetText(connection, L.T("デバイスの再接続待ち。編集内容は保持しています。", "Waiting for the device to reconnect. Your edits are kept.")); UpdateEnabled();
         }
@@ -574,6 +584,7 @@ internal sealed partial class MainForm : Form
         working = true; await WaitForPoll();
         try
         {
+            if (!await PrepareCalibrationQuiet()) return false;
             for (int attempt = 0; attempt < 8; attempt++)
             {
                 PollResult result = await bridge.PollAsync(cursor, generation);
@@ -678,9 +689,12 @@ internal sealed partial class MainForm : Form
             outputTabs.SelectedIndex = profile.OutputMode; SyncMousePage(); }
         finally { syncingOutput = previousSync; }
     }
+    private bool CanUseSelectedProfile => bridge is not null && !working && !connecting && !closing &&
+        !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } &&
+        caps.ActiveSlot != selected && profiles[selected].Matches(caps);
     private async Task UseProfile()
     {
-        if (bridge is null || working || dirty[selected]) return;
+        if (!CanUseSelectedProfile || bridge is null) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try { bankGeneration = observedBankGeneration = await bridge.SelectProfileAsync(selected, bankGeneration); await RefreshDevice(); BindSelected();
             SetText(saved, L.T("選択したプロファイルへ切り替えました。", "Switched to the selected profile.")); }
@@ -806,6 +820,7 @@ internal sealed partial class MainForm : Form
         if (dirty.Any(x => x) && MessageBox.Show(this, L.T("デバイスに保存していない編集があります。終了しますか？", "There are unsaved edits. Close ControllerBridge?"),
             L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
         e.Cancel = true; closing = true; timer.Stop(); while (polling) await Task.Delay(5);
+        await ReleaseCalibrationQuiet();
         bridge?.Dispose(); bridge = null; timer.Dispose(); tips.Dispose(); BeginInvoke(Close);
     }
 }

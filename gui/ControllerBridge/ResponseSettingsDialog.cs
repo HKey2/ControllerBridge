@@ -80,8 +80,8 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         hostX.AccessibleName = L.T("X : Xbox360互換", "X: Xbox 360 XInput");
         hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1; hostAuto.Checked = current.HostMode == 2;
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
-        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Proへの振動転送に対応。各プロファイルで振動を有効にしてください。\nマウスを含むプロファイルはSで動作します。\nモードの変更を保存するとUSBが再接続されます。",
-            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble forwarding to original Pro and Switch 2 Pro controllers; enable rumble per profile.\nProfiles with mouse output use S.\nSaving a mode change reconnects USB."));
+        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Pro・DS3への振動転送に対応。DS3はXでも振動を利用できます。\n各プロファイルで振動を有効にしてください。マウスを含むプロファイルはSで動作します。\nモードの変更を保存するとUSBが再接続されます。",
+            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble to original Pro, Switch 2 Pro and DS3; DS3 also supports rumble with X.\nEnable rumble per profile. Profiles with mouse output use S.\nSaving a mode change reconnects USB."));
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;

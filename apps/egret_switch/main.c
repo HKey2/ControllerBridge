@@ -10,6 +10,7 @@
 #include "xinput_portal.h"
 #include "host_output.h"
 #include "switch_output.h"
+#include "xinput_feedback.h"
 #include "switch_protocols.h"
 #include "controller_feedback.h"
 #include "egret_switch_profile.h"
@@ -23,7 +24,7 @@
 
 #define EVENT_COUNT 128
 enum { CMD_INFO=1,CMD_GET_CONFIG,CMD_SET_CONFIG,CMD_SAVE_CONFIG,CMD_START,CMD_STOP,
-       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53,CMD_HOST_OUTPUT=54,CMD_RUMBLE=55 };
+       CMD_SELECT_SNAPSHOT,CMD_READ_SNAPSHOT,CMD_BOOTSEL,CMD_ARM_BOOT,CMD_REBOOT=14,CMD_LED=31,CMD_BUTTON=34,CMD_MOUSE=36,CMD_MOUSE_WIRE=38,CMD_APPLY_OUTPUT=46,CMD_FIRMWARE=47,CMD_DIRECTION_KEYS=49,CMD_DIRECTION_TIMING=51,CMD_DIRECTION_SETTINGS=52,CMD_SAVE_DIRECTION_SETTINGS=53,CMD_HOST_OUTPUT=54,CMD_RUMBLE=55,CMD_CALIBRATION_QUIET=56 };
 _Static_assert(UPR_CMD_PROFILE_ID>CMD_LED,"Profile identity command must not overlap application commands");
 enum { MEASURE_IDLE,MEASURE_STARTING,MEASURE_RUNNING,MEASURE_STOPPING };
 static uc_event events[EVENT_COUNT];
@@ -126,9 +127,10 @@ static int host_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capac
     if(result>=0 && uh_xinput_control(setup))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
     return result;
 }
-static void host_output_received(const uint8_t *data,uint16_t length,void *context) {
+static bool host_output_received(const uint8_t *data,uint16_t length,void *context) {
     (void)context;
     if(uh_xinput_output(data,length))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
+    return xfo_receive(data,length,context);
 }
 static void input_complete(uint32_t cookie,uint32_t time_us,bool acked,void *context) {
     (void)context;
@@ -272,8 +274,8 @@ static void schedule_output(void) {
         ub_queue_push(&outgoing,&release);
     }
     if(atomic_load_explicit(&ack_pending,memory_order_acquire))return;
-    // Profile interval 0 retains the reference's 11 ms producer / 4 ms poll.
-    // Explicit intervals remove this producer wait; the host schedules IN.
+    // Ordinary interval-0 profiles retain the reference 11 ms producer.
+    // Gyro/rumble and explicit intervals avoid that backlog; IN stays host-paced.
     if(active_host_mode==UH_SWITCH_PRO) {
         if(pro_reply_flight)return;
         const uint8_t *reply=spo_reply();
@@ -390,8 +392,16 @@ static void end_measurement(uint32_t time_us) {
     }
     save_pending=auto_save;
 }
+static void feedback_stop(void) {
+    ucf_calibration_cancel();
+    if(active_host_mode==UH_SWITCH_PRO)spo_stop();
+    else if(active_host_mode==UH_XINPUT)xfo_stop();
+}
 static void reset_output(uint32_t timestamp) {
+    ucf_calibration_cancel();
+    if(active_host_mode==UH_XINPUT)xfo_stop();
     active_gyro_axes=upr_gyro_axes();
+    xw_set_responsive(&xinput_clock,active_gyro_axes || (upr_rumble_enabled() && !mouse_mode()),timestamp);
     if(active_host_mode==UH_SWITCH_PRO) {
         pro_current_crc=upr_profile_crc();
         if(active_pro_profile_crc!=pro_current_crc)spo_stop();
@@ -424,7 +434,7 @@ static bool request_profile_output(uint32_t now) {
         if(desired!=active_output_options) { active_output_options=desired;reset_output(now); }
         output_change_requested=false;return false;
     }
-    if(active_host_mode==UH_SWITCH_PRO)spo_stop();
+    feedback_stop();
     output_change_requested=true;output_change_at=now+250000;
     return true;
 }
@@ -443,7 +453,9 @@ static void cycle_profile(uint32_t now) {
     bool had_direction_keys=upr_direction_enabled();
     if(!upr_cycle_profile())return;
     active_gyro_axes=upr_gyro_axes();
-    if(active_host_mode==UH_SWITCH_PRO) { pro_current_crc=upr_profile_crc();spo_stop(); }
+    xw_set_responsive(&xinput_clock,active_gyro_axes || (upr_rumble_enabled() && !mouse_mode()),now);
+    if(active_host_mode==UH_SWITCH_PRO)pro_current_crc=upr_profile_crc();
+    feedback_stop();
     config.input_interval_ms=upr_input_interval();profile_switches++;
     // Preserve the chord's already queued press before releasing the old mapping.
     ub_frame neutral={.received_us=now,.sequence=++input_sequence};sw_neutral(&neutral.report);
@@ -492,6 +504,7 @@ static void handle_mouse_only_input(const uc_event *e,bool mapped,ub_frame *fram
     } else { um_flush(&mouse_queue,buttons);upr_mouse_reset(); }
 }
 static void handle_host_event(const uc_event *e) {
+    if(active_host_mode==UH_XINPUT && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED))feedback_stop();
     if(active_host_mode==UH_SWITCH_PRO && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED)) {
         pro_input_changed=true;spo_stop();
     }
@@ -653,7 +666,7 @@ static void handle_command(void) {
         break;
     }
     case CMD_BOOTSEL: case CMD_REBOOT:
-        if(active_host_mode==UH_SWITCH_PRO)spo_stop();
+        feedback_stop();
         reboot_at=time_us_32()+250000; reboot_to_bootsel=local[5]==CMD_BOOTSEL; break;
     case CMD_LED:
         if(phase!=MEASURE_IDLE && arg[0])reply[7]=2;
@@ -719,7 +732,14 @@ static void handle_command(void) {
         memcpy(payload,"HOS1",4);payload[4]=direction_settings.host_mode;payload[5]=active_host_mode;
         payload[6]=host_output.state;payload[7]=!mouse_mode() || combined_mode();
         put32(payload+8,UH_PROBE_US/1000u);break;
-    case CMD_RUMBLE: spo_status(payload);break;
+    case CMD_RUMBLE:
+        spo_status(payload);put32(payload+16,upr_bank_generation());break;
+    case CMD_CALIBRATION_QUIET: {
+        bool valid=arg[0]<=2 && !arg[1] && !arg[2] && !arg[3];
+        for(unsigned i=20;i<56;++i)if(arg[i])valid=false;
+        if(!valid || !ucf_calibration_command(arg[0],get32(arg+4),get32(arg+8),get32(arg+12),get32(arg+16),upr_bank_generation()))reply[7]=4;
+        spo_status(payload);put32(payload+16,upr_bank_generation());break;
+    }
     case CMD_MOUSE_WIRE:
         memcpy(payload,"MWR1",4);payload[4]=ud_mouse_protocol(combined_mode());payload[5]=UM_REPORT_BYTES;
         payload[6]=mouse_mode();payload[7]=combined_mode();
@@ -737,7 +757,7 @@ static void handle_command(void) {
         if(!upr_command(local[5],arg,payload,&reply[7],phase!=MEASURE_IDLE,&changed))reply[7]=1;
         if(local[5]==20 && !reply[7])put32(payload+44,get32(payload+44)|32u|128u|256u|1024u);
         if(changed) {
-            if(active_host_mode==UH_SWITCH_PRO)spo_stop();
+            feedback_stop();
             config.input_interval_ms=upr_input_interval();input_ready=upr_ready();reset_output(time_us_32());
             switch_inputs=upr_switch_inputs();boot_controls_idle=switch_inputs==0 && upr_switch_released();
             hotkey=(profile_hotkey){.previous=switch_inputs&upr_switch_keys(),.initialized=true};
@@ -753,8 +773,12 @@ static void start_usb_output(uint8_t options) {
     uh_select(&host_output,effective_host_selection(options));
     active_output_options=options;active_host_mode=host_output.active;
     pro_reply_flight=pro_input_changed=false;active_pro_profile_crc=pro_current_crc=upr_profile_crc();active_gyro_axes=upr_gyro_axes();
+    ucf_calibration_cancel();
     if(active_host_mode==UH_SWITCH_PRO)spo_init();
-    xinput_clock=(xw_clock){.requested_interval=upr_input_interval()};
+    else if(active_host_mode==UH_XINPUT)xfo_init();
+    else ucf_select(false);
+    xinput_clock=(xw_clock){.requested_interval=upr_input_interval(),
+        .responsive=active_gyro_axes || (upr_rumble_enabled() && !mouse_mode())};
     configuration_portal=(xw_portal){0};
     memcpy(configuration_portal.device_id,configuration_device_id.id,sizeof(configuration_portal.device_id));
     atomic_store_explicit(&xinput_accepted,false,memory_order_release);
@@ -825,7 +849,7 @@ static void start_usb_output(uint8_t options) {
         output.configuration_interface=combined?5:4;output.configuration_endpoint=combined?6:5;
         if(!combined) { output.configuration_report=NULL;output.configuration_report_length=0; }
         output.secondary_interface=4;output.secondary_endpoint=5;
-        output.output_endpoint=1;output.control_read=host_control_read;output.output=host_output_received;
+        output.output_endpoint=1;output.control_read=host_control_read;output.try_output=host_output_received;output.bus_event=xfo_bus_event;
         output.short_string_stall_mask=(1u<<1)|(1u<<3);
         output.manufacturer=NULL;output.product=NULL;output.serial=NULL; // Exact raw strings in xw_control_read.
         output.input_length=XW_REPORT_BYTES;
@@ -933,10 +957,15 @@ int __not_in_flash_func(main)(void) {
                 if(active_gyro_axes)ub_queue_push_gyro(&outgoing,&frame,active_gyro_axes);else ub_queue_push(&outgoing,&frame);
             }
         }
+        if(ucf_calibration_pending())ucf_calibration_tick(time_us_32(),upr_bank_generation());
         if(active_host_mode==UH_SWITCH_PRO) {
             sw_report current;if(outgoing.have_latest)current=outgoing.latest.report;else sw_neutral(&current);
             spo_service(&current,upr_rumble_enabled() && input_ready && ud_ready() && !output_change_requested && !reboot_at &&
                 !pro_input_changed && active_pro_profile_crc==pro_current_crc);
+            ud_output_service();
+        } else if(active_host_mode==UH_XINPUT) {
+            if(upr_rumble_enabled() || xfo_pending())xfo_service(upr_rumble_enabled() && !mouse_mode() &&
+                input_ready && ud_ready() && !output_change_requested && !reboot_at);
             ud_output_service();
         }
         schedule_output(); handle_command();

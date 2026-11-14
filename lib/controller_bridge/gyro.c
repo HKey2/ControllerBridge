@@ -22,8 +22,9 @@ static void learn(up_gyro *g,bool noise) {
     stop(g);
 }
 up_gyro_step up_gyro_update(up_gyro *g,uint16_t raw,const uint16_t accel[3],
-                          bool accel_valid,uint32_t time,uint32_t maximum_gap,bool held) {
+                          bool accel_valid,uint32_t time,uint32_t maximum_gap,bool held,bool allow_learning) {
     up_gyro_step result={0};
+    if(!allow_learning)forget_window(g);
     bool recenter=g->pending_recenter || (held && !g->held);
     if(held!=g->held) { g->held_us=0;g->hold_done=false; }
     g->held=held;g->pending_recenter=false;
@@ -61,7 +62,7 @@ up_gyro_step up_gyro_update(up_gyro *g,uint16_t raw,const uint16_t accel[3],
         if(accel[i]>1023)accel_valid=false;
         if(g->samples && maximum(g->accel_high[i],accel[i])-minimum(g->accel_low[i],accel[i])>8)restart=true;
     }
-    if(!accel_valid)forget_window(g);
+    if(!accel_valid || !allow_learning)forget_window(g);
     else {
         if(restart) {
             forget_window(g);g->low=g->high=(uint16_t)sample;

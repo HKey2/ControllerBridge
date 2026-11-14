@@ -161,7 +161,8 @@ uint32_t up_crc32(const void *data,unsigned length);
 void up_mapper_attach(up_mapper *mapper,const up_profile *profile);
 uint32_t up_profile_recenter_keys(const up_profile *profile);
 // Integrate at USB receipt timestamps, before ordinary mapping resolves output.
-bool up_mapper_motion(up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigned length,uint32_t time_us);
+bool up_mapper_motion(up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigned length,uint32_t time_us,bool allow_learning);
+bool up_mapper_recenter_held(const up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigned length);
 bool up_mapper_apply(up_mapper *mapper,uint8_t interface_number,const uint8_t *report,unsigned length,sw_report *output);
 void up_mapper_report(const up_mapper *mapper,sw_report *output);
 void up_mapper_seed(up_mapper *mapper,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value);

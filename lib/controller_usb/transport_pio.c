@@ -253,3 +253,43 @@ uint8_t ut_data_toggle(uint8_t address,uint8_t endpoint) {
 void ut_set_data_toggle(uint8_t address,uint8_t endpoint,uint8_t toggle) {
     int i=find_ep(address,endpoint);if(i>=0)PIO_USB_ENDPOINT(i)->data_id=toggle;
 }
+
+// Runtime control transfers own EP0 only until their status stage completes.
+// 0x80 selects the input-first scheduler and excludes both EP0 directions.
+static unsigned idle_control_stage;
+static uint32_t idle_control_started;
+static uint8_t idle_control_setup[8],*idle_control_data;
+bool ut_idle_control_begin(uint8_t iface,uint8_t data[48]) {
+    if(idle_control_stage || uc_feedback_endpoint)return false;
+    int i=find_ep(1,0);if(i<0)return false;
+    const uint8_t setup[8]={0x21,9,1,2,iface,0,48,0};
+    memcpy(idle_control_setup,setup,8);idle_control_data=data;
+    uc_feedback_endpoint=0x80;completed[i]=UT_PENDING;
+    if(!pio_usb_host_send_setup(0,1,idle_control_setup)) { uc_feedback_endpoint=0;return false; }
+    idle_control_stage=1;idle_control_started=time_us_32();return true;
+}
+void ut_idle_control_abort(void) {
+    if(idle_control_stage)ut_abort(1,0);
+    idle_control_stage=0;
+    if(uc_feedback_endpoint==0x80)uc_feedback_endpoint=0;
+}
+ut_result ut_idle_control_service(void) {
+    if(!idle_control_stage)return UT_ERROR;
+    if((uint32_t)(time_us_32()-idle_control_started)>=20000) {
+        ut_idle_control_abort();return UT_TIMEOUT;
+    }
+    ut_result result=ut_result_for(1,0,NULL);
+    if(result!=UT_PENDING) {
+        if(result!=UT_OK) { ut_idle_control_abort();return result; }
+        if(idle_control_stage==1) {
+            if(!ut_submit(1,0,idle_control_data,48)) { ut_idle_control_abort();return UT_ERROR; }
+            idle_control_stage=2;
+        } else if(idle_control_stage==2) {
+            if(!ut_submit(1,0x80,NULL,0)) { ut_idle_control_abort();return UT_ERROR; }
+            idle_control_stage=3;
+        } else {
+            idle_control_stage=0;uc_feedback_endpoint=0;return UT_OK;
+        }
+    }
+    ut_idle_output_service();return UT_PENDING;
+}

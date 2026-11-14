@@ -23,5 +23,5 @@ void up_gyro_init(up_gyro *g,int32_t bias_q8,uint16_t noise_q8);
 void up_gyro_begin_calibration(up_gyro *g);
 void up_gyro_recenter(up_gyro *g);
 up_gyro_step up_gyro_update(up_gyro *g,uint16_t raw,const uint16_t accel[3],
-                          bool accel_valid,uint32_t time,uint32_t maximum_gap,bool held);
+                          bool accel_valid,uint32_t time,uint32_t maximum_gap,bool held,bool allow_learning);
 #endif

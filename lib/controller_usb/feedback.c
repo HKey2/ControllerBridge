@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define FEEDBACK_COUNT 8u
-typedef struct { uint32_t epoch;uint8_t data[8]; } feedback_frame;
+typedef struct { uint32_t epoch;uint8_t data[8],motors; } feedback_frame;
 static feedback_frame queue[FEEDBACK_COUNT];
 static atomic_uint head,tail,request,published,acknowledged;
 static uint32_t observed,started,last_send,flight_epoch,play_until;
@@ -14,6 +14,12 @@ static uint8_t descriptor[7],buffer[64],sequence,kind,failures,toggle,backend,sa
 static bool flight_active;
 static bool attached,opened,busy,ack_wait,ack_seen,initialized,need_stop,failed;
 static sr_state decoded;
+static atomic_uint pad_generation,motion_guard,motion_after;
+static uint8_t ds3_template[48],ds3_iface;
+static uint8_t ds3_strong,ds3_weak,ds3_sent_strong,ds3_sent_weak;
+static uint8_t ds3_flight_strong,ds3_flight_weak,ds3_peak_strong,ds3_peak_weak;
+static uint32_t ds3_peak_at,ds3_pulse_until;
+static bool ds3_peak_pending,ds3_pulse;
 enum { SEND_STOP=1,SEND_ENABLE,SEND_EFFECT,SEND_REFRESH };
 static void publish(unsigned state) {
     atomic_store_explicit(&published,state|(attached?(256u|((unsigned)backend<<16)):0)|(observed&1?512u:0),memory_order_release);
@@ -24,7 +30,16 @@ void ucf_select(bool enabled) {
     atomic_store_explicit(&request,(next&~1u)|(enabled?1u:0),memory_order_release);
 }
 uint32_t ucf_epoch(void) { return atomic_load_explicit(&request,memory_order_acquire)&~1u; }
-uint32_t ucf_status(void) { return atomic_load_explicit(&published,memory_order_acquire); }
+bool ucf_learning_allowed(uint32_t time) {
+    uint32_t guard=atomic_load_explicit(&motion_guard,memory_order_acquire);
+    return !guard || (guard==2 && (int32_t)(time-atomic_load_explicit(&motion_after,memory_order_relaxed))>=0);
+}
+uint32_t ucf_status(void) {
+    uint32_t state=atomic_load_explicit(&published,memory_order_acquire);
+    if(!ucf_learning_allowed(time_us_32()))state|=1024u|2048u;
+    return state;
+}
+uint32_t ucf_pad_generation(void) { return atomic_load_explicit(&pad_generation,memory_order_acquire); }
 bool ucf_quiesce(uint32_t timeout_us) {
     uint32_t wanted=atomic_load_explicit(&request,memory_order_acquire);
     if(!(wanted&1) && (ucf_status()&255)==UCF_OFF && atomic_load_explicit(&acknowledged,memory_order_acquire)==wanted)return true;
@@ -37,20 +52,24 @@ bool ucf_quiesce(uint32_t timeout_us) {
         tight_loop_contents();
     }
 }
-bool ucf_submit_pair(const uint8_t first[8],const uint8_t data[8]) {
+static bool submit(const uint8_t first[8],const uint8_t data[8],bool motors) {
     uint32_t epoch=atomic_load_explicit(&request,memory_order_acquire);
-    if(!(epoch&1))return true;
+    if(!(epoch&1) || ucf_inhibited())return true;
     uint32_t status=ucf_status();
-    if(!(status&256) || (status&255)==UCF_FAULT)return true;
+    if(!(status&256) || (status&255)==UCF_FAULT || (motors && ((status>>16)&255)!=1))return true;
     unsigned write=atomic_load_explicit(&head,memory_order_relaxed),read=atomic_load_explicit(&tail,memory_order_acquire);
     unsigned count=first?2u:1u;
     if((read+FEEDBACK_COUNT-write-1)%FEEDBACK_COUNT<count)return false;
-    if(first) { queue[write].epoch=epoch;memcpy(queue[write].data,first,8);write=(write+1)%FEEDBACK_COUNT; }
+    if(first) { queue[write].epoch=epoch;queue[write].motors=0;memcpy(queue[write].data,first,8);write=(write+1)%FEEDBACK_COUNT; }
     unsigned next=(write+1)%FEEDBACK_COUNT;
-    queue[write].epoch=epoch;memcpy(queue[write].data,data,8);
+    queue[write].epoch=epoch;queue[write].motors=motors;memcpy(queue[write].data,data,8);
     atomic_store_explicit(&head,next,memory_order_release);return true;
 }
-bool ucf_submit(const uint8_t data[8]) { return ucf_submit_pair(NULL,data); }
+bool ucf_submit_pair(const uint8_t first[8],const uint8_t data[8]) { return submit(first,data,false); }
+bool ucf_submit(const uint8_t data[8]) { return submit(NULL,data,false); }
+bool ucf_submit_motors(uint8_t strong,uint8_t weak) {
+    const uint8_t data[8]={strong,weak};return submit(NULL,data,true);
+}
 static void discard(void) { atomic_store_explicit(&tail,atomic_load_explicit(&head,memory_order_acquire),memory_order_release); }
 static void discard_stale(uint32_t epoch) {
     unsigned read=atomic_load_explicit(&tail,memory_order_relaxed),write=atomic_load_explicit(&head,memory_order_acquire);
@@ -61,6 +80,7 @@ static void close_output(void) {
     if(opened) { toggle=ut_data_toggle(1,descriptor[2]);ut_idle_output(0);ut_close_endpoint(1,descriptor[2]);opened=false; }
 }
 static void attach(const uint8_t d[7],uint8_t next_sequence,uint8_t type,bool is_open) {
+    atomic_fetch_add_explicit(&pad_generation,1,memory_order_release);
     memcpy(descriptor,d,7);attached=true;opened=is_open;backend=type;play_until=0;toggle=0;busy=ack_wait=ack_seen=initialized=failed=false;
     sequence=next_sequence;failures=0;observed=atomic_load_explicit(&request,memory_order_acquire);
     discard();sr_reset(&decoded);need_stop=(observed&1)!=0;
@@ -69,12 +89,22 @@ static void attach(const uint8_t d[7],uint8_t next_sequence,uint8_t type,bool is
 }
 void ucf_attach(const uint8_t d[7],uint8_t next_sequence) { attach(d,next_sequence,4,true); }
 void ucf_attach_switch2(const uint8_t d[7]) { attach(d,0,5,false); }
+void ucf_attach_ds3(uint8_t iface,const uint8_t output[48]) {
+    static const uint8_t ep0[7]={7,5,0,0,64,0,0};
+    attach(ep0,0,1,false);ds3_iface=iface;memcpy(ds3_template,output,48);
+    ds3_strong=ds3_weak=ds3_sent_strong=ds3_sent_weak=0;
+    ds3_peak_pending=ds3_pulse=false;
+}
 void ucf_detach(void) {
+    if(backend==1)ut_idle_control_abort();
+    atomic_fetch_add_explicit(&pad_generation,1,memory_order_release);
+    atomic_store_explicit(&motion_guard,0,memory_order_release);
     ut_idle_output(0);attached=opened=busy=ack_wait=initialized=need_stop=false;failed=false;
     observed=atomic_load_explicit(&request,memory_order_acquire);discard();sr_reset(&decoded);publish(UCF_OFF);
 }
 bool ucf_pending(void) {
-    return observed!=atomic_load_explicit(&request,memory_order_acquire) || busy || ack_wait || need_stop || (attached && (observed&1) && !failed);
+    return observed!=atomic_load_explicit(&request,memory_order_acquire) || busy || ack_wait || need_stop ||
+        atomic_load_explicit(&motion_guard,memory_order_relaxed)==2 || (attached && (observed&1) && !failed);
 }
 static bool open_output(void) {
     if(opened)return true;
@@ -101,6 +131,7 @@ static bool send(unsigned next_kind,const uint8_t hd[8]) {
     busy=true;ack_seen=false;return true;
 }
 static void fault(void) {
+    if(backend==1)ut_idle_control_abort();
     failed=true;initialized=ack_wait=false;need_stop=false;discard();sr_reset(&decoded);close_output();publish(UCF_FAULT);
 }
 void ucf_input(const uint8_t *data,unsigned length) {
@@ -108,13 +139,129 @@ void ucf_input(const uint8_t *data,unsigned length) {
         if(data[13]&0x80)ack_seen=true;else { failed=true;need_stop=true; }
     }
 }
+// DS3 has one proportional low-frequency motor and one binary high-frequency
+// motor. HD samples are decoded in order; bounded peaks preserve an unsent
+// pulse while the terminal state always controls subsequent holds/stops.
+static void ds3_offer(uint8_t strong,uint8_t weak,uint32_t now) {
+    weak=weak!=0;
+    if(strong || weak) {
+        if(ds3_peak_pending && (uint32_t)(now-ds3_peak_at)>10000)ds3_peak_pending=false;
+        if(!ds3_peak_pending) { ds3_peak_at=now;ds3_peak_strong=ds3_peak_weak=0; }
+        ds3_peak_pending=true;
+        if(strong>ds3_peak_strong)ds3_peak_strong=strong;
+        if(weak>ds3_peak_weak)ds3_peak_weak=weak;
+    }
+    ds3_strong=strong;ds3_weak=weak;
+}
+static void ds3_collect(uint32_t now) {
+    unsigned read=atomic_load_explicit(&tail,memory_order_relaxed);
+    if(read==atomic_load_explicit(&head,memory_order_acquire))return;
+    feedback_frame f=queue[read];
+    if(f.epoch==observed) {
+        if(f.motors)ds3_offer(f.data[0],f.data[1],now);
+        else {
+            sr_samples samples={0};sr_decode_samples(&decoded,f.data,&samples);
+            unsigned count=samples.count[0]>samples.count[1]?samples.count[0]:samples.count[1];
+            if(!count)count=1;
+            for(unsigned j=0;j<count;++j) {
+                uint8_t levels[2]={0};
+                for(unsigned i=0;i<2;++i) {
+                    const sr_motor *m=j<samples.count[i]?&samples.motor[i][j]:&decoded.motor[i];
+                    for(unsigned b=0;b<2;++b) {
+                        uint8_t v=sr_amplitude8(m->amplitude[b]);if(v>levels[b])levels[b]=v;
+                    }
+                }
+                ds3_offer(levels[0],levels[1],now);
+            }
+        }
+    }
+    atomic_store_explicit(&tail,(read+1)%FEEDBACK_COUNT,memory_order_release);
+}
+static bool ds3_send(uint8_t strong,uint8_t weak,unsigned next_kind,uint32_t now) {
+    memcpy(buffer,ds3_template,48);buffer[0]=1;
+    buffer[1]=0xff;buffer[2]=weak!=0;buffer[3]=0xff;buffer[4]=strong;
+    if(!ut_idle_control_begin(ds3_iface,buffer))return false;
+    ds3_flight_strong=strong;ds3_flight_weak=weak!=0;
+    if(strong || weak)atomic_store_explicit(&motion_guard,1,memory_order_release);
+    started=now;flight_epoch=observed;kind=(uint8_t)next_kind;busy=true;last_send=now;return true;
+}
+static void ds3_stopped(uint32_t now) {
+    if(atomic_load_explicit(&motion_guard,memory_order_relaxed)) {
+        atomic_store_explicit(&motion_after,now+100000,memory_order_relaxed);
+        atomic_store_explicit(&motion_guard,2,memory_order_release);
+    }
+}
+static void ds3_service(uint32_t now) {
+    // Decode at most one queued command per pass, with room for the next IN.
+    if(initialized && !need_stop && !failed && (observed&1) && ut_idle_budget_us()>=250)ds3_collect(now);
+    if(busy) {
+        ut_result result=ut_idle_control_service();
+        if(result==UT_PENDING)return;
+        busy=false;
+        if(result!=UT_OK) {
+            if(++failures>=3) { fault();return; }
+            failed=true;need_stop=true;initialized=false;ds3_peak_pending=ds3_pulse=false;
+        } else {
+            ds3_sent_strong=ds3_flight_strong;ds3_sent_weak=ds3_flight_weak;
+            if(!ds3_sent_strong && !ds3_sent_weak)ds3_stopped(now);
+            if(flight_epoch==observed) {
+                if(kind==SEND_STOP) {
+                    need_stop=false;initialized=true;
+                    if(failed) { fault();return; }
+                    if(!(observed&1)) { publish(UCF_OFF);return; }
+                }
+                publish(ds3_sent_strong || ds3_sent_weak?UCF_ACTIVE:UCF_READY);
+            }
+        }
+    }
+    if(ut_idle_budget_us()<250)return;
+    if(need_stop) {
+        publish(UCF_STOPPING);
+        if(!ds3_send(0,0,SEND_STOP,now) && ++failures>=3)fault();
+        return;
+    }
+    if(failed || !(observed&1))return;
+    if(ds3_pulse && (int32_t)(now-ds3_pulse_until)<0)return;
+    ds3_pulse=false;
+    if(ds3_peak_pending && (uint32_t)(now-ds3_peak_at)>10000)ds3_peak_pending=false;
+    uint8_t strong=ds3_strong,weak=ds3_weak;
+    bool pulse=ds3_peak_pending && (ds3_peak_strong>strong || ds3_peak_weak>weak) &&
+        (ds3_peak_strong>ds3_sent_strong || ds3_peak_weak>ds3_sent_weak);
+    if(pulse) {
+        if(ds3_peak_strong>strong)strong=ds3_peak_strong;
+        if(ds3_peak_weak>weak)weak=ds3_peak_weak;
+    }
+    if(strong==ds3_sent_strong && weak==ds3_sent_weak) {
+        if(strong || weak)ds3_peak_pending=false;
+        return;
+    }
+    // Zero/lifecycle stop bypasses throttling; an onset is never blocked by
+    // an initialization stop. Continuous intensity changes use 100 Hz at most.
+    if((strong || weak) && (ds3_sent_strong || ds3_sent_weak) && (uint32_t)(now-last_send)<10000)return;
+    if(!ds3_send(strong,weak,SEND_EFFECT,now)) { failed=true;need_stop=true;return; }
+    ds3_peak_pending=false;
+    if(pulse) { ds3_pulse=true;ds3_pulse_until=now+10000; }
+}
+
 void ucf_service(void) {
     uint32_t next=atomic_load_explicit(&request,memory_order_acquire),now=time_us_32();
+    if(atomic_load_explicit(&motion_guard,memory_order_relaxed)==2 &&
+       (int32_t)(now-atomic_load_explicit(&motion_after,memory_order_relaxed))>=0)
+        atomic_store_explicit(&motion_guard,0,memory_order_release);
     if(next!=observed) {
+        // A disabled DS3 session that already acknowledged its stop has no
+        // physical state to change. In particular, ordinary profile saves must
+        // not open a redundant EP0 transfer immediately after the Flash pause.
+        // An active, pending, or failed stop still requires the normal path.
+        bool already_off=backend==1 && !(next&1) && !(observed&1) && !busy && !need_stop && !failed &&
+            (atomic_load_explicit(&published,memory_order_relaxed)&255)==UCF_OFF;
         observed=next;discard_stale(next);sr_reset(&decoded);initialized=ack_wait=failed=false;failures=0;
-        need_stop=attached;play_until=0;publish(attached?UCF_STOPPING:UCF_OFF);
+        need_stop=attached && !already_off;play_until=0;
+        if(backend==1) { ds3_strong=ds3_weak=0;ds3_peak_pending=ds3_pulse=false; }
+        publish(need_stop?UCF_STOPPING:UCF_OFF);
     }
     if(!attached)return;
+    if(backend==1) { ds3_service(now);return; }
     if(busy) {
         ut_idle_output_service();
         ut_result result=ut_result_for(1,descriptor[2],NULL);

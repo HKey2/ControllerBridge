@@ -775,14 +775,14 @@ No toolchain is installed or changed by this separation. The normal GUI remains 
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 154,468; persistent storage 49,152 | 1,893,532 |
-| SRAM, 532,480 bytes | Static data 163,040; two stacks 8,192 | 361,248 |
+| Flash, 2,097,152 bytes | Code/initial values 160,140; persistent storage 49,152 | 1,887,860 |
+| SRAM, 532,480 bytes | Static data 163,600; two stacks 8,192 | 360,688 |
 | One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 42,416, and BSS 120,244 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 309,248 bytes.
+Static SRAM consists of vector table 272, initialized data 42,784, and BSS 120,544 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 320,512 bytes.
 
-The current normal firmware is 0.27.0. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes.
+The current normal firmware is 0.28.0. Common settings use 244 bytes, leaving 3,852; profile/bank/measurement payloads remain 848/13,908/3,784 bytes. The 16-byte conversion area uses 10 bytes and reserves 6. Hold state is 556 bytes (+540); effective settings remain 40 bytes.
 
 The archived local UDLR variant was not rebuilt; its memory figures in dated entries describe those artifacts. GUI buffers use PC memory outside the board totals. Button shift and inertia transitions do not write Flash.

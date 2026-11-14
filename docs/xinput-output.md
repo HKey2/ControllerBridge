@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.27.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.28.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -70,7 +70,7 @@ Since 0.25.1, X gamepad output uses VID **045E**, PID **028E**, device class/sub
 
 At profile Input interval 0, the first four interface descriptors, including the advertised accessory/security functions, match the reference byte for byte. An explicit nonzero interval changes only gamepad IN81's bInterval in those interfaces. Device revision is **0114**. The measured strings are **8BitDo** (including its terminal UTF-16 NUL), **Controller**, and **157F8F8**. Exact-length string reads succeed. Over-reading manufacturer or serial returns 16 bytes followed by STALL, reproducing the observed reference behavior; string index 4 is unsupported. Device GET_STATUS returns `02 00`, as observed.
 
-The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Rumble and player-LED output packets are acknowledged and the gamepad OUT endpoint is rearmed, but forwarding them to the input controller is not implemented.
+The reference’s five accessory endpoints produced transfer errors, rather than useful data. The corresponding endpoints remain inactive in this firmware. Their precise electrical behavior has not been established as identical. GET_INTERFACE on accessory interfaces and GET_STATUS for their endpoints are rejected. No headset audio or Xbox-console authentication is implemented. Version 0.28.0 forwards XInput motor commands to supported wired DUALSHOCK 3 controllers when Rumble is enabled in the active gamepad profile. The large motor accepts variable strength; the small motor is on/off. Other input controllers and player-LED forwarding are not supported. POLYMEGA-specific vibration behavior requires confirmation on that host.
 
 ### Configurator connection
 

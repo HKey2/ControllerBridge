@@ -47,6 +47,7 @@ void spo_bus_event(unsigned event,void *context) {
     atomic_fetch_add_explicit(&bus_epoch,1,memory_order_release);
 }
 void spo_service(const sw_report *input,bool allowed) {
+    allowed=allowed && !ucf_inhibited();
     if(feedback_epoch!=ucf_epoch()) {
         // Flash writes quiesce the physical output. Resume only on a fresh host
         // command; packets held before that stop must not restart an old effect.
@@ -101,7 +102,9 @@ void spo_reply_complete(bool success) {
 void spo_status(uint8_t data[56]) {
     uint32_t status=ucf_status();
     memset(data,0,56);memcpy(data,"RMB1",4);data[4]=1;data[5]=(uint8_t)status;
-    data[6]=(uint8_t)(status>>16);data[7]=(selected?1:0)|((status&256)?2:0)|((status&255)==UCF_ACTIVE?4:0);
-    uint32_t epoch=ucf_epoch(),features=(1u<<3)|(1u<<4)|(1u<<8);
-    memcpy(data+8,&epoch,4);memcpy(data+40,&features,4);
+    data[6]=(uint8_t)(status>>16);data[7]=((status&512)?1:0)|((status&256)?2:0)|
+        ((status&1024) || (status&255)==UCF_ACTIVE?4:0)|((status&2048)?8:0)|(ucf_inhibited()?16:0);
+    uint32_t epoch=ucf_epoch(),pad=ucf_pad_generation(),token=ucf_calibration_token();
+    uint32_t features=(1u<<0)|(1u<<3)|(1u<<4)|(1u<<8)|(1u<<9)|(1u<<10);
+    memcpy(data+8,&epoch,4);memcpy(data+12,&pad,4);memcpy(data+20,&token,4);memcpy(data+40,&features,4);
 }

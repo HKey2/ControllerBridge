@@ -476,7 +476,13 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
     resolve_shift(m);up_mapper_report(m,out);return touched;
 }
 
-bool up_mapper_motion(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,uint32_t time) {
+bool up_mapper_recenter_held(const up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n) {
+    if(!m->gyro_axes || iface || n<49 || raw[0]!=1)return false;
+    uint32_t keys=up_profile_recenter_keys(m->profile);
+    uint32_t pressed=raw[2]|((uint32_t)raw[3]<<8)|((uint32_t)raw[4]<<16);
+    return keys && (pressed&keys)==keys;
+}
+bool up_mapper_motion(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,uint32_t time,bool allow_learning) {
     const up_profile *p=m->profile;
     if(!p || !(p->flags&UP_ENABLED) || p->vid!=0x054c || p->pid!=0x0268 || iface || n<49 || raw[0]!=1)return false;
     uint32_t keys=up_profile_recenter_keys(p),pressed=raw[2]|((uint32_t)raw[3]<<8)|((uint32_t)(raw[4]&1)<<16);
@@ -485,7 +491,7 @@ bool up_mapper_motion(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,u
     uint16_t value=(uint16_t)(((uint16_t)raw[47]<<8)|raw[48]);
     uint32_t maximum_gap=((uint32_t)p->input_interval_ms+20u)*1000u;
     if(maximum_gap<100000u)maximum_gap=100000u;
-    up_gyro_step step=up_gyro_update(&m->gyro,value,accel,true,time,maximum_gap,keys && (pressed&keys)==keys);
+    up_gyro_step step=up_gyro_update(&m->gyro,value,accel,true,time,maximum_gap,keys && (pressed&keys)==keys,allow_learning);
     bool touched=false;
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         const up_analog *a=&p->axes[i].analog;
