@@ -33,6 +33,7 @@ _Static_assert(offsetof(udk_settings,host_mode)==31,"host mode uses existing pad
 #define UDK_TARGET_COUNT 18u
 #define UDK_ROLLING_MODE 1u
 #define UDK_HOLD_MODE 1u
+#define UDK_ANALOG_ANGLE_MODE 2u
 #define UDK_ROLLING_INVERT 1u
 #define UDK_ROLLING_LEFT 2u
 static inline uint32_t udk_rolling_pack(const udk_settings *s) {
@@ -84,7 +85,7 @@ static inline bool udk_settings_valid(const udk_settings *s) {
         s->paddle_gain10>=10 && s->paddle_gain10<=100 &&
         s->hold_ms>=1 && s->hold_ms<=UDK_MAX_HOLD_MS &&
         s->wait_ms>=1 && s->wait_ms<=UDK_MAX_WAIT_MS && udk_targets_valid(s->targets) && udk_targets_valid(s->paddle_targets) &&
-        s->rolling_gain10>=1 && s->rolling_gain10<=100 && s->paddle_mode<=UDK_ROLLING_MODE && s->rolling_flags<=3 && s->trackball_mode<=UDK_HOLD_MODE &&
+        s->rolling_gain10>=1 && s->rolling_gain10<=100 && s->paddle_mode<=UDK_ROLLING_MODE && s->rolling_flags<=3 && s->trackball_mode<=UDK_ANALOG_ANGLE_MODE &&
         s->trackball_hold_threshold>=1 && s->trackball_hold_threshold<=127 && s->rolling_step_deg>=5 && s->rolling_step_deg<=90 && s->rolling_step_deg%5u==0 && 360u%s->rolling_step_deg==0;
 }
 // Editing bounds are narrower than the legacy storage bounds. Reading an older

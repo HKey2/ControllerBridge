@@ -48,6 +48,6 @@ In USB mouse or combined mouse-button behavior, B/A remain the shared left/right
 
 Install matching 0.22.0 firmware and GUI. v5 settings gain disabled shift; v6 settings preserve the first three modifiers, shifted mappings and rapid rates, discarding only the fourth modifier if present. Main mappings, axes, IDs, slot order, selection, shortcuts, RGB and output settings are preserved. Pre-0.16.0 storage remains unsupported.
 
-Exports use JSON v5; old JSON v2/v3 files are accepted. Old files lack common conversion settings, so the import notice explains whether device migration defaults or standard defaults were used. New v8 profiles keep 848 bytes by reusing the old fourth modifier's 16 bytes for 10 bytes of conversion settings plus 6 reserved bytes. Old firmware cannot read the new format; retain a pre-upgrade backup for downgrade recovery.
+This version exports JSON v7 and accepts the supported older profile and slot backups. Shift assignments are retained during the update. To return to older firmware, use the full-slot backup saved before this update.
 
 Migration writes and verifies the inactive bank before adopting it; v5 migration first uses Bank A, away from both old small copies. Later saves alternate two 16 KiB areas. See [storage layout](configurator-design.md#profile-bank-and-flash), [memory budget](../README.md#memory-budget), and [verification limits](verification.md).

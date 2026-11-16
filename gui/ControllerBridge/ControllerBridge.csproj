@@ -16,6 +16,9 @@
     <Product>ControllerBridge</Product>
     <Title>ControllerBridge</Title>
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../firmware-version.txt').Trim())</Version>
+    <GuiRevision>0</GuiRevision>
+    <AssemblyVersion>$(Version).$(GuiRevision)</AssemblyVersion>
+    <FileVersion>$(Version).$(GuiRevision)</FileVersion>
     <FirmwareBuildDirectory Condition="'$(FirmwareBuildDirectory)' == ''">$(MSBuildProjectDirectory)/../../build</FirmwareBuildDirectory>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>../../Resources/ControllerBridge_icon.ico</ApplicationIcon>

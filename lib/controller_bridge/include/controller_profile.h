@@ -9,9 +9,11 @@
 #define UP_PROFILE_COUNT 16
 #define UP_DIGITAL_COUNT 18
 #define UP_AXIS_COUNT 4
-#define UP_PROFILE_BYTES 848
+#define UP_PROFILE_BYTES 856
+#define UP_PREVIOUS_PROFILE_BYTES 848
+#define UP_PREVIOUS_BANK_BYTES 13908
 #define UP_SHIFT_KEYS 3
-#define UP_PROFILE_VERSION 9u
+#define UP_PROFILE_VERSION 10u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
@@ -20,6 +22,8 @@
 #define UP_RAPID_MAX_HZ 60
 enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8, UP_RUMBLE=16 };
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4, UP_GYRO=8, UP_BIG_ENDIAN=16, UP_SOURCE_REVERSED=32 };
+// Output binding behavior; never part of a physical input's identity.
+#define UP_TOGGLE 64u
 #define UP_SOURCE_FLAGS (UP_SIGNED|UP_REPORT_ID|UP_BIG_ENDIAN|UP_SOURCE_REVERSED)
 enum { UP_DISABLED, UP_RANGE, UP_HAT_UP, UP_HAT_RIGHT, UP_HAT_DOWN, UP_HAT_LEFT };
 enum { UP_AXIS_DISABLED, UP_AXIS_ANALOG, UP_AXIS_BUTTON_PAIR, UP_AXIS_ANALOG_PAIR };
@@ -71,13 +75,30 @@ typedef union { up_analog analog; up_digital pair[2]; up_analog_half halves[2]; 
 typedef struct {
     uint8_t targets[4]; // Explicit output IDs, U/D/L/R.
     uint8_t paddle_targets[2]; // Negative/positive after input reversal; independent of pointer axis.
-    uint8_t modes; // bits 0..1 trackball, 2..3 paddle; 0 clicks, 1 Hold/Rolling.
+    uint8_t modes; // bits 0..1 trackball: 0 Repeat, 1 Hold, 2 Analog; bits 2..3 paddle.
     uint8_t rolling_flags; // bit 0 reverse, bit 1 left stick.
     uint8_t rolling_step_deg;
     uint8_t inertia_flags; // bit 0 enables pseudo-inertia for Trackball Hold.
-    uint8_t reserved[6];
+    uint16_t analog_full_speed; // 60001..65000 with curve 20/30 stores virtual Speed * 100 + 60000; otherwise legacy speed.
+    uint8_t analog_flags; // bit 0 right stick; legacy bits 1..2 retained but ignored (main X/Y reversal applies).
+    uint8_t analog_curve; // 20 marks virtual settings; 30 retains the earlier fixed-inertia encoding. Other values are legacy curves.
+    uint8_t analog_min_speed10; // Virtual smoothing period in ms; legacy encoding used a radial speed floor.
+    uint8_t analog_return10; // Virtual inertia limit in 10 ms when analog_curve is 20; zero requests neutral at the next transfer.
 } up_conversion;
-#define UP_DEFAULT_CONVERSION {{15,17,18,16},{18,16},0,0,30,0,{0}}
+#define UP_DEFAULT_CONVERSION {{15,17,18,16},{18,16},0,0,30,0,0,0,0,0,0}
+#define UP_ANALOG_ANGLE_MODE 2u
+#define UP_ANALOG_RIGHT 1u
+#define UP_ANALOG_INVERT_X 2u
+#define UP_ANALOG_INVERT_Y 4u
+static inline bool up_analog_curve_valid(uint8_t code) {
+    return code<=2u || (code>=4u && code<=16u && !(code&1u)) || code==20u || code==30u;
+}
+static inline uint8_t up_analog_curve_code(uint8_t code) {
+    return code==1u?16u:code==2u?8u:code==10u?0u:code;
+}
+static inline unsigned up_analog_full_speed(const up_conversion *c) {
+    return c->analog_full_speed?c->analog_full_speed:1000u;
+}
 typedef struct {
     uint32_t overrides; // One bit per output: 0 inherits, 1 replaces (disabled = mute).
     uint8_t count,gyro_recenter[3]; // Shared DS3 physical chord, little-endian 17-bit mask.
@@ -87,6 +108,14 @@ typedef struct {
     up_digital digital[UP_DIGITAL_COUNT];
 } up_shift;
 typedef struct {
+    uint8_t minimum_percent,maximum_percent,curve;
+    // Zero maximum encodes the default 100%. Old banks expand with zero bytes.
+    uint8_t reserved[5];
+} up_analog_levels;
+static inline unsigned up_analog_maximum(const up_analog_levels *levels) {
+    return levels->maximum_percent?levels->maximum_percent:100u;
+}
+typedef struct {
     uint16_t version,flags,vid,pid,bcd_device;
     uint8_t input_interval_ms,axis_modes;
     uint32_t descriptor_hash;
@@ -95,6 +124,7 @@ typedef struct {
     up_axis axes[UP_AXIS_COUNT];
     up_mouse_options mouse;
     up_shift shift;
+    up_analog_levels analog_levels;
 } up_profile;
 typedef struct {
     uint32_t magic,version,generation,bytes;
@@ -114,6 +144,9 @@ typedef struct {
     uint8_t base_modifiers[UP_DIGITAL_COUNT],back_modifiers[UP_DIGITAL_COUNT];
     uint8_t pair_modifiers[UP_AXIS_COUNT][2],analog_modifiers[UP_AXIS_COUNT];
     uint32_t rapid_configured,rapid_held,rapid_on,physical;
+    // Runtime-only toggle state. Disabled profiles bypass its processing.
+    uint32_t toggle_any,toggle_configured,toggle_latched,toggle_previous;
+    uint32_t toggle_blocked,toggle_updated,toggle_physical,toggle_suppressed;
     uint32_t rapid_time[UP_DIGITAL_COUNT],rapid_phase[UP_DIGITAL_COUNT],rapid_next[UP_DIGITAL_COUNT];
     int64_t gyro_position[UP_AXIS_COUNT]; // Q8 count-us, retained outside output saturation.
     up_gyro gyro;
@@ -138,7 +171,9 @@ _Static_assert(sizeof(up_shift)==360,"button shift wire ABI");
 _Static_assert(sizeof(up_conversion)==16,"conversion wire ABI");
 _Static_assert(offsetof(up_profile,shift.conversion)==544,"conversion offset");
 _Static_assert(offsetof(up_profile,shift.digital)==560,"shifted bindings offset");
-_Static_assert(sizeof(up_bank)==13908,"16 profiles fit four flash sectors with store header");
+_Static_assert(sizeof(up_analog_levels)==8,"analog levels wire ABI");
+_Static_assert(offsetof(up_profile,analog_levels)==848,"existing profile prefix is unchanged");
+_Static_assert(sizeof(up_bank)==14036,"16 profiles fit four flash sectors with store header");
 
 void up_profile_clear(up_profile *profile);
 void up_bank_clear(up_bank *bank);
@@ -165,6 +200,7 @@ bool up_mapper_motion(up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigne
 bool up_mapper_recenter_held(const up_mapper *mapper,uint8_t iface,const uint8_t *raw,unsigned length);
 bool up_mapper_apply(up_mapper *mapper,uint8_t interface_number,const uint8_t *report,unsigned length,sw_report *output);
 void up_mapper_report(const up_mapper *mapper,sw_report *output);
+void up_mapper_release_toggles(up_mapper *mapper);
 void up_mapper_seed(up_mapper *mapper,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value);
 // Apply hold-to-repeat after mapping, independently of USB input report timing.
 // Returns true only when the filtered output changed. No waits or catch-up burst.
@@ -174,6 +210,7 @@ void up_release_guard_apply(up_release_guard *guard,uint8_t interface_number,con
 // Load four-sector slots 4/5, or migrate the read-only v5 banks in RAM.
 bool up_registry_load(up_bank *bank,const udk_settings *defaults);
 bool up_bank_upgrade_v8(up_bank *bank);
+bool up_bank_upgrade_v9(up_bank *bank);
 bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
 void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
 void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);

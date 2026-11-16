@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.28.1. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.29.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -8,7 +8,7 @@ ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of 
 | **Auto** | Tries X first; if acceptance is not observed within five seconds, reconnects as S once. No further mode retries. |
 | **X** | Uses the wired Xbox 360 XInput gamepad protocol for Gamepad and Mouse + Gamepad. |
 
-Choose **Save to device**. The configurator verifies the saved value, asks the board to reconnect USB, and reconnects automatically. All profile mappings and unsaved drafts retain their physical positions. The selected mode persists after restart. USB mouse-only output remains a mouse while retaining the S/Auto/X preference for the gamepad modes.
+Choose **Save to device**. The configurator verifies the saved value, asks the board to reconnect USB, and reconnects automatically. All profile mappings and unsaved drafts retain their saved assignments, names and screen positions. The selected mode persists after restart. USB mouse-only output remains a mouse while retaining the S/Auto/X preference for the gamepad modes.
 
 ![Shared settings with Auto selected](gui-mouse-udlr-settings-en.png)
 
@@ -22,25 +22,27 @@ The result survives bus reset, suspend/resume, profile changes and reapplying th
 
 The five-second interval is an implementation policy, not a measured universal host timeout. A host that postpones X-specific traffic and input reads until an application opens the controller may fall back to S; use fixed X in that case. Likewise, these signals prove protocol use, not that a particular game accepts the controller. Fixed S is appropriate when the user wants immediate Switch-compatible presentation without the Auto wait. Switch/POLYMEGA Auto recognition has not been established by a console-side trace.
 
-Shared settings stores **Auto**, separately from the currently active S/X result. The configurator reads that result and displays **Auto (X)** or **Auto (S)**, with the corresponding button names; existing profile bytes are unchanged. The fallback changes only runtime USB state and does not write Flash.
+Shared settings stores **Auto**, separately from the currently active S/X result. The configurator reads that result and displays **Auto (X)** or **Auto (S)**, while button names and positions remain fixed; existing profile bytes are unchanged. The fallback changes only runtime USB state and does not write Flash.
 
-## Button layout
+## Button names and output correspondence
 
-The internal profile IDs retain their established physical positions. In X, the screen shows **Y at the top, X at the left, B at the right and A at the bottom**. Saving a host-mode change does not rewrite any profile bytes.
+The tool's Switch button names are fixed, readable aliases for its button IDs. They do not identify physical controller markings or guarantee a game's confirm/cancel action. The tool always uses the same names and layout in S, X, Auto and Pro: **X at the top, Y at the left, A at the right and B at the bottom**. Names also stay fixed in rapid fire, toggle, shifted mapping, direction conversion and profile shortcuts. L/R, ZL/ZR, −/+, HOME and CAPTURE are not renamed when the mode changes. The status line shows the active output format.
 
-| Physical position or function | S label | X label/function | XUSB encoding |
-|---|---|---|---|
-| Bottom face button | B | A | 0x1000 |
-| Right face button | A | B | 0x2000 |
-| Left face button | Y | X | 0x4000 |
-| Top face button | X | Y | 0x8000 |
-| Left / right shoulder | L / R | LB / RB | 0x0100 / 0x0200 |
-| Left / right trigger | ZL / ZR | LT / RT | Separate bytes, released 0 / pressed 255 |
-| Minus / plus | − / + | Back / Start | 0x0020 / 0x0010 |
-| Left / right stick click | L / R stick | L / R stick | 0x0040 / 0x0080 |
-| HOME | HOME | Guide | 0x0400 |
-| Capture | CAPTURE | No Xbox 360 counterpart | No bit sent; primary mapping button disabled |
-| D-pad up / down / left / right | Same directions | Same directions | 0x0001 / 0x0002 / 0x0004 / 0x0008 |
+This display change retains the existing output correspondence below and does not rewrite saved assignments or unsaved drafts.
+
+| Tool label | S / Pro output | X output |
+|---|---|---|
+| A | A | B |
+| B | B | A |
+| X | X | Y |
+| Y | Y | X |
+| L / R | L / R | LB / RB |
+| ZL / ZR | ZL / ZR | LT / RT |
+| − / + | − / + | Back / Start |
+| L / R stick | L / R stick click | L / R stick click |
+| HOME | HOME | Guide |
+| CAPTURE | Capture | Unavailable; the caption remains visible |
+| D-pad | Same directions | Same directions |
 
 Guide is sent using the established Xbox 360 wire bit. Windows' ordinary documented `XInputGetState` button list omits Guide; the operating system and Guide-aware consumers handle it separately. The physical test observed HOME through the system's extended XInput state export. Opening a particular overlay depends on that program and the Windows/Game Bar settings.
 
@@ -102,13 +104,13 @@ The connected controller identified itself as Nintendo **057E:2069**, revision *
 
 Initialization follows the ten published SDL commands, retaining open bulk endpoints and USB data toggles throughout the sequence. The controller then sends report **0x05**. The internal schema preserves its raw bit offsets: face buttons at bits 40–43, the remaining button/D-pad fields at their published positions, and four packed 12-bit stick axes at bits 88/100/112/124. The schema exposes 25 fields, including C/GL/GR as optional assignable inputs. A distinct SWP2 fingerprint separates these profiles from original Switch Pro profiles.
 
-For a new controller, choose **Add controller**, assign its physical buttons, and use the normal analog-axis calibration. Unit-specific neutral/range values should be measured from that controller. For the physical trial, the first unused slot was registered as **Switch 2 Pro**, with its axes calibrated from the user's movement. This is a saved configuration on the tested board; firmware does not silently create profiles on other boards.
+For a new controller, choose **Add controller**, assign its physical buttons, and use the normal analog-axis calibration. Unit-specific neutral/range values should be measured from that controller. Register each controller and calibrate its axes before use; firmware does not create a profile automatically.
 
 ![Physical Switch 2 Pro connected in X mode](gui-xinput-en.png)
 
 ## Saved data and verification
 
-Host mode adds an independent 16-byte HSM1 record at common-sector offset 228, leaving all preceding settings records intact. Missing/invalid HSM1 defaults to S. Shared settings use UDSA/schema 10 and guard the old host value together with the other editable values before saving. Profile v8 remains 848 bytes; bank v8 remains 13,908 bytes; runtime common settings remain 40 bytes because host mode uses existing padding. Common Flash usage is 244/4,096 bytes.
+Host mode adds an independent 16-byte HSM1 record at common-sector offset 228, leaving all preceding settings records intact. Missing/invalid HSM1 defaults to S. Shared settings use UDSA/schema 10 and guard the old host value together with the other editable values before saving. The current version uses v10 profiles of 856 bytes and v10 banks of 14,036 bytes; runtime common settings remain 40 bytes because host mode uses existing padding. Common Flash usage is 244/4,096 bytes.
 
 The original 0.23.0 physical validation covered Windows recognition, configuration access, real buttons/Guide and axes, combined output enumeration and S/X return. The dated 0.23.2 entry records the current reference-matching checks separately. Existing profile registrations and common numeric settings are preserved. See the dated [verification record and current memory budget](verification.md).
 

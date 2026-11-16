@@ -7,6 +7,7 @@ internal enum FirmwareResult { AlreadyCurrent, Cancelled, Updated }
 internal interface IFirmwareDevice : IDisposable
 {
     bool RequiresDataUpgrade => false;
+    bool RequiresFeatureUpgrade => false;
     Task<FirmwareInfo?> ProbeAsync();
     Task PrepareAsync(FirmwareInfo? original, CancellationToken cancellationToken = default);
     Task WriteAsync(byte[] image, Action<int> progress);
@@ -23,7 +24,7 @@ internal static class FirmwareWorkflow
         FirmwareInfo? current = await device.ProbeAsync();
         // Deliberately do not sort versions: a lower, higher or prerelease value is
         // simply different from the exact bundled version.
-        if (current?.Version == package.Version) return FirmwareResult.AlreadyCurrent;
+        if (current?.Version == package.Version && !device.RequiresFeatureUpgrade) return FirmwareResult.AlreadyCurrent;
         if (current is not null)
         {
             if (!await confirm(FirmwarePrompt.Replace)) return FirmwareResult.Cancelled;

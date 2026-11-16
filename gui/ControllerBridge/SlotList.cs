@@ -31,6 +31,14 @@ internal sealed class SlotList : ListBox
         };
     }
     protected override void Dispose(bool disposing) { if (disposing) scrollTimer.Dispose(); base.Dispose(disposing); }
+    internal void EnsureVisible(int index)
+    {
+        if (index < 0 || index >= Items.Count || !IsHandleCreated || ClientSize.Height <= 0) return;
+        Rectangle row = GetItemRectangle(index);
+        if (row.Top < 0) TopIndex = index;
+        else if (row.Bottom > ClientSize.Height)
+            TopIndex = Math.Max(0, index - Math.Max(1, ClientSize.Height / ItemHeight) + 1);
+    }
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e); mouseDown = e.Location;

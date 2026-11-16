@@ -7,32 +7,37 @@ internal sealed class ConversionSettingsDialog : Form
     private readonly ComboBox[] targets = Enumerable.Range(0, 6).Select(_ => Choice()).ToArray();
     private readonly CheckBox rollingInvert = new DarkCheckBox { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true };
     private readonly CheckBox inertia = new DarkCheckBox { Text = L.T("疑似慣性を有効にする", "Enable pseudo-inertia"), AutoSize = true };
+    private readonly ComboBox analogStick = Choice();
+    private readonly NumericUpDown analogSpeed = Number(1, 50), analogMinimum = Number(1, 100), analogReturn = Number(0, 2550);
+    private readonly NumericUpDown outputMinimum = Number(0, 99), outputMaximum = Number(1, 100);
+    private readonly AnalogCurvePicker outputCurve = new();
     private static ComboBox Choice() => new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, Anchor = AnchorStyles.Left };
+    private static NumericUpDown Number(int minimum, int maximum) => new() { Minimum = minimum, Maximum = maximum, Increment = 1, Width = 140, Anchor = AnchorStyles.Left, ThousandsSeparator = true };
     internal ConversionSettingsDialog(DeviceProfile profile)
     {
         Result = profile.Conversion.Clone(); Result.Validate();
-        using IDisposable layout = Ui.Form(this, L.T("方向変換の割り当て", "Conversion mapping"), new(580, 610));
-        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 4 };
+        using IDisposable layout = Ui.Form(this, L.T("方向変換の割り当て", "Conversion mapping"), new(660, 820), new(620, 650));
+        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 3 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
-        root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
+        root.RowStyles.Add(new(SizeType.AutoSize));
         Label title = Ui.Label(profile.Name, 12, true); title.MaximumSize = new(520, 0); root.Controls.Add(title, 0, 0);
         DarkTabControl tabs = new() { Dock = DockStyle.Fill, Padding = new(20, 10) }; root.Controls.Add(tabs, 0, 1);
         TableLayoutPanel Page(string name)
         {
-            TabPage page = new(name) { BackColor = Ui.Surface, Padding = new(14) }; tabs.TabPages.Add(page);
+            TabPage page = new(name) { BackColor = Ui.Surface, Padding = new(14), AutoScroll = true }; tabs.TabPages.Add(page);
             TableLayoutPanel grid = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Margin = Padding.Empty };
             grid.ColumnStyles.Add(new(SizeType.Percent, 100)); grid.ColumnStyles.Add(new(SizeType.AutoSize)); page.Controls.Add(grid); return grid;
         }
         static void Row(TableLayoutPanel grid, string label, Control control)
         {
-            int row = grid.RowCount++; grid.RowStyles.Add(new(SizeType.Absolute, 48));
-            Label text = Ui.Label(label); text.Anchor = AnchorStyles.Left; control.Margin = new(4, 8, 4, 8);
+            int row = grid.RowCount++; grid.RowStyles.Add(new(SizeType.Absolute, 40));
+            Label text = Ui.Label(label); text.Anchor = AnchorStyles.Left; control.Margin = new(4, 4, 4, 4);
             control.AccessibleName = label; grid.Controls.Add(text, 0, row); grid.Controls.Add(control, 1, row);
         }
         TableLayoutPanel ball = Page("Trackball"), paddle = Page("Paddle");
-        trackballMode.Items.AddRange(["Virtual Cursor", "Hold"]); trackballMode.SelectedIndex = Result.TrackballMode;
-        paddleMode.Items.AddRange([L.T("ボタンクリック", "Button clicks"), "Virtual Rolling"]); paddleMode.SelectedIndex = Result.PaddleMode;
+        trackballMode.Items.AddRange(["Virtual Cursor(Repeat)", "Virtual Cursor(Hold)", "Virtual Cursor(Analog)"]); trackballMode.SelectedIndex = Result.TrackballMode;
+        paddleMode.Items.AddRange(["Virtual Cursor(Repeat)", "Virtual Rolling"]); paddleMode.SelectedIndex = Result.PaddleMode;
         Row(ball, L.T("変換モード", "Conversion mode"), trackballMode);
         inertia.Checked = Result.InertiaEnabled; Row(ball, L.T("疑似慣性", "Pseudo-inertia"), inertia);
         Row(paddle, L.T("変換モード", "Conversion mode"), paddleMode);
@@ -48,38 +53,96 @@ internal sealed class ConversionSettingsDialog : Form
         rollingInvert.Checked = Result.RollingInvert;
         Row(paddle, L.T("回転刻み (°)", "Rotation step (°)"), rollingStep); Row(paddle, L.T("出力先", "Output stick"), rollingStick);
         Row(paddle, L.T("回転方向", "Rotation direction"), rollingInvert);
+        SunkenTableLayoutPanel analog = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2, Padding = new(12), Margin = new(0, 12, 0, 4), BackColor = Ui.Background, AccessibleName = "Virtual Cursor(Analog)" };
+        analog.ColumnStyles.Add(new(SizeType.Percent, 100)); analog.ColumnStyles.Add(new(SizeType.AutoSize));
+        void Note(TableLayoutPanel grid, string text, bool heading = false)
+        {
+            Label note = Ui.Label(text, heading ? 11 : 9, heading); note.MaximumSize = new(540, 0);
+            note.ForeColor = heading ? Ui.Ink : Ui.Muted; note.Margin = new(4, 3, 4, 6);
+            grid.RowStyles.Add(new(SizeType.AutoSize)); grid.Controls.Add(note, 0, grid.RowCount++); grid.SetColumnSpan(note, 2);
+        }
+        Note(analog, "Virtual Cursor(Analog)", true);
+        analogStick.Items.AddRange([L.T("左スティック", "Left stick"), L.T("右スティック", "Right stick")]); analogStick.SelectedIndex = Result.AnalogRight ? 1 : 0;
+        analogSpeed.Minimum = 0.01m; analogSpeed.DecimalPlaces = 2; analogSpeed.Increment = 0.05m;
+        int originalSmoothing = ConversionSettings.SmoothingPercent(Result.VirtualPeriodMs);
+        analogSpeed.Value = Result.VirtualGain; analogMinimum.Value = originalSmoothing; analogReturn.Increment = 10; analogReturn.Value = Result.VirtualStopMs;
+        outputMinimum.Value = Result.AnalogOutputMinimum; outputMaximum.Value = Result.AnalogOutputMaximum; outputCurve.CurveCode = Result.AnalogOutputCurve;
+        Row(analog, L.T("出力先", "Output stick"), analogStick);
+        Row(analog, L.T("アナログ最小値 (%)", "Analog minimum (%)"), outputMinimum);
+        Row(analog, L.T("アナログ最大値 (%)", "Analog maximum (%)"), outputMaximum);
+        Row(analog, L.T("カーブ", "Curve"), outputCurve);
+        Row(analog, L.T("スピード", "Speed"), analogSpeed);
+        Row(analog, L.T("スムージング (%)", "Smoothing (%)"), analogMinimum);
+        Row(analog, L.T("慣性 (ms)", "Inertia (ms)"), analogReturn);
+        Note(analog, L.T("S / Auto(S)に対応。Proは未対応", "Supports S / Auto(S). Pro is not supported."));
+        ball.RowStyles.Add(new(SizeType.AutoSize)); ball.Controls.Add(analog, 0, ball.RowCount++); ball.SetColumnSpan(analog, 2);
         void UpdateMode()
         {
             inertia.Enabled = trackballMode.SelectedIndex == 1;
+            bool angle = trackballMode.SelectedIndex == 2; analog.Enabled = angle;
+            for (int i = 0; i < 4; i++) targets[i].Enabled = !angle;
             bool rolling = paddleMode.SelectedIndex == 1;
             targets[4].Enabled = targets[5].Enabled = !rolling;
             rollingStep.Enabled = rollingStick.Enabled = rollingInvert.Enabled = rolling;
         }
         paddleMode.SelectedIndexChanged += (_, _) => UpdateMode(); trackballMode.SelectedIndexChanged += (_, _) => UpdateMode(); UpdateMode();
-        Label notice = Ui.Label(L.T("しきい値・時間・感度は「共通設定」で調整します。\nUSBマウス単独では、設定を保持したまま方向変換を停止します。",
-            "Adjust thresholds, timings and sensitivity in Shared settings.\nUSB mouse-only output retains these preferences without running conversion."), 9);
-        notice.MaximumSize = new(520, 0); notice.ForeColor = Ui.Muted; root.Controls.Add(notice, 0, 2);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        static bool NumberChanged(NumericUpDown editor, decimal original) => decimal.TryParse(editor.Text,
+            System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.CurrentCulture, out decimal value) &&
+            decimal.Round(Math.Clamp(value, editor.Minimum, editor.Maximum), editor.DecimalPlaces) != original;
+        bool CurveChanged() => outputCurve.CurveCode != AnalogCurvePicker.NormalizeCode(Result.AnalogOutputCurve);
         bool HasChanges() => trackballMode.SelectedIndex != Result.TrackballMode || paddleMode.SelectedIndex != Result.PaddleMode ||
             inertia.Checked != Result.InertiaEnabled || rollingInvert.Checked != Result.RollingInvert ||
             (rollingStick.SelectedIndex == 1) != Result.RollingLeft || (int)rollingStep.SelectedItem! != Result.RollingStepDeg ||
+            (analogStick.SelectedIndex == 1) != Result.AnalogRight ||
+            NumberChanged(analogSpeed, Result.VirtualGain) || NumberChanged(analogMinimum, originalSmoothing) || NumberChanged(analogReturn, Result.VirtualStopMs) ||
+            NumberChanged(outputMinimum, Result.AnalogOutputMinimum) || NumberChanged(outputMaximum, Result.AnalogOutputMaximum) || CurveChanged() ||
             targets.Where((control, i) => control.SelectedIndex + 1 != (i < 4 ? Result.TrackballTargets[i] : Result.PaddleTargets[i - 4])).Any();
         Button ok = Ui.Button(L.T("編集に反映", "Apply to draft"), (_, _) => {
             if (!HasChanges()) return;
-            Result = new() { TrackballTargets = targets.Take(4).Select(c => (byte)(c.SelectedIndex + 1)).ToArray(),
+            ConversionSettings next = new() { TrackballTargets = targets.Take(4).Select(c => (byte)(c.SelectedIndex + 1)).ToArray(),
                 PaddleTargets = targets.Skip(4).Select(c => (byte)(c.SelectedIndex + 1)).ToArray(), TrackballMode = (byte)trackballMode.SelectedIndex, InertiaEnabled = inertia.Checked,
-                PaddleMode = (byte)paddleMode.SelectedIndex, RollingStepDeg = (byte)(int)rollingStep.SelectedItem!, RollingLeft = rollingStick.SelectedIndex == 1, RollingInvert = rollingInvert.Checked };
-            Result.Validate(); DialogResult = DialogResult.OK; Close();
+                PaddleMode = (byte)paddleMode.SelectedIndex, RollingStepDeg = (byte)(int)rollingStep.SelectedItem!, RollingLeft = rollingStick.SelectedIndex == 1, RollingInvert = rollingInvert.Checked,
+                AnalogFullSpeed = Result.AnalogFullSpeed, AnalogRight = analogStick.SelectedIndex == 1, AnalogCurve = Result.AnalogCurve,
+                AnalogInvertX = Result.AnalogInvertX, AnalogInvertY = Result.AnalogInvertY,
+                AnalogMinimumSpeed = Result.AnalogMinimumSpeed, AnalogReturnMs = Result.AnalogReturnMs,
+                AnalogOutputMinimum = (byte)outputMinimum.Value, AnalogOutputMaximum = (byte)outputMaximum.Value,
+                AnalogOutputCurve = CurveChanged() ? outputCurve.CurveCode : Result.AnalogOutputCurve };
+            if (NumberChanged(analogSpeed, Result.VirtualGain) || NumberChanged(analogMinimum, originalSmoothing) || NumberChanged(analogReturn, Result.VirtualStopMs))
+                next.SetVirtualOptions(analogSpeed.Value, NumberChanged(analogMinimum, originalSmoothing) ?
+                    ConversionSettings.SmoothingPeriodMs((int)analogMinimum.Value) : Result.VirtualPeriodMs,
+                    (int)(decimal.Round(analogReturn.Value / 10, 0, MidpointRounding.AwayFromZero) * 10));
+            try { next.ValidateSources(profile); }
+            catch (InvalidDataException ex) { Ui.Error(this, ex); return; }
+            Result = next; DialogResult = DialogResult.OK; Close();
         }, true);
         void UpdateApplyButton() => ok.Enabled = HasChanges();
-        foreach (ComboBox control in targets.Concat([trackballMode, paddleMode, rollingStep, rollingStick]))
+        foreach (ComboBox control in targets.Concat([trackballMode, paddleMode, rollingStep, rollingStick, analogStick]))
             control.SelectedIndexChanged += (_, _) => UpdateApplyButton();
-        inertia.CheckedChanged += (_, _) => UpdateApplyButton();
-        rollingInvert.CheckedChanged += (_, _) => UpdateApplyButton();
+        foreach (CheckBox control in new[] { inertia, rollingInvert }) control.CheckedChanged += (_, _) => UpdateApplyButton();
+        outputCurve.SelectedIndexChanged += (_, _) => UpdateApplyButton();
+        foreach (NumericUpDown control in new[] { analogSpeed, analogMinimum, analogReturn, outputMinimum, outputMaximum })
+        {
+            control.ValueChanged += (_, _) => UpdateApplyButton(); control.TextChanged += (_, _) => UpdateApplyButton();
+        }
         UpdateApplyButton();
         Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
-        footer.Controls.Add(ok); footer.Controls.Add(cancel); AcceptButton = ok; CancelButton = cancel; root.Controls.Add(footer, 0, 3);
+        footer.Controls.Add(ok); footer.Controls.Add(cancel); AcceptButton = ok; CancelButton = cancel; root.Controls.Add(footer, 0, 2);
         Controls.Add(root); Ui.ThemeInputs(this);
+    }
+}
+
+internal sealed class SunkenTableLayoutPanel : BufferedTableLayoutPanel
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        Rectangle r = ClientRectangle; r.Width--; r.Height--;
+        if (r.Width < 2 || r.Height < 2) return;
+        using Pen shadow = new(Color.FromArgb(8, 8, 8)), light = new(Ui.Stroke);
+        e.Graphics.DrawLine(shadow, r.Left, r.Bottom, r.Left, r.Top); e.Graphics.DrawLine(shadow, r.Left, r.Top, r.Right, r.Top);
+        e.Graphics.DrawLine(light, r.Left, r.Bottom, r.Right, r.Bottom); e.Graphics.DrawLine(light, r.Right, r.Bottom, r.Right, r.Top);
     }
 }
 

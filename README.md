@@ -8,16 +8,25 @@
 - Combined mouse and gamepad output.
 - Shift-button switching between primary and alternate button mappings.
 - Per-button rapid fire, adjustable in one-press-per-second increments.
+- Per-button toggle hold, including press-to-start/stop rapid fire.
 - Map mouse, trackball, and paddle movement to any button.
 - DS3 pressure-sensitive values ​​and gyro data can be mapped to any analog stick axis.
 - Supports vibration for the Switch Pro Controller and DS controllers
 - Virtual rolling switch mode.
+- Conversion from trackball input to analog stick tilt `Virtual Cursor (Analog)`
+- Toggle mode: switches between ON and OFF with each press of the button
 - Internal input processing within 1 ms.
 - Configurable input polling interval (1–255 ms).
 - Up to 16 onboard profiles, with automatic controller matching and shortcut switching.
 - Customizable RGB LED colors for each profile.
 - Standalone operation after setup—no PC required during play.
 - Profile backup and restore.
+
+## Notice
+We have removed the feature—introduced in v0.23.0—that swapped the A/B and X/Y button labels when in "X Mode."
+This change was made because the previous implementation caused button labels to be swapped even when using a profile configured for the Nintendo Switch, leading to a discrepancy between the on-screen labels and the actual buttons used during gameplay.
+Moving forward, the internal button IDs will always be mapped to the standard Nintendo Switch button layout.
+We apologize for any confusion this may have caused.
 
 ## Overview
 
@@ -27,9 +36,11 @@ ControllerBridge turns USB controllers into Switch-compatible HID, Xbox 360 XInp
 
 The reference-board case uses a clear PETG lid with a light-diffusing fin. See the [case introduction, sample photos and STL downloads](docs/case.md). It is a remix of [barrenechea's Waveshare RP2350-USB-A Case](https://www.printables.com/model/1261378-waveshare-rp2350-usb-a-case), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-## Current release
+## Current version
 
-**Current development release: v0.28.1 (firmware 0.28.1).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.29.0 (firmware 0.29.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.29.0:** Adds **Virtual Cursor(Analog)** to convert trackball movement into analog-stick output. Adjust minimum, maximum and curve, plus Speed, Smoothing and Inertia. Defaults are 25% minimum, 100% maximum, linear, Speed 3.00, Smoothing 60% and Inertia 100 ms. Clear reversals prioritize the new direction, while ordinary corners such as up → right → down keep movement continuous. Use S / Auto(S) on Switch or X / Auto(X) on PC; Pro output is unsupported. Update the bundled firmware together with the app. See [setup instructions](docs/configurator-guide.md#trackball-analog-angle).
 
 **0.28.1:** X output now identifies its supported inputs and rumble to the host during connection. Install the matching firmware to use this change. Rumble still requires a supported controller and an enabled gamepad profile. POLYMEGA rumble compatibility remains unconfirmed.
 
@@ -55,7 +66,7 @@ First-generation Switch Pro controllers can reconnect automatically after unplug
 
 **0.23.1:** X output now uses VID `045E`, retaining PIDs `4005` (gamepad) and `4006` (gamepad + mouse). The firmware answers wired Xbox 360 input/motor capability requests used during initialization. Configuration access supports both the old and new identities. Japanese Shared settings now labels the selector **出力モード** and X as **X : Xbox360互換**. See [XInput compatibility and supported scope](docs/xinput-output.md).
 
-**0.23.0:** Shared settings now ends with **S / Auto / X**. S retains the previous output and is the default; Auto is disabled; X uses wired Xbox 360 XInput. X changes the displayed ABXY layout and sends HOME as Guide. The host mode is shared by all profiles and persists after restart. USB reconnects after a verified mode save, and settings remain accessible in X mode. Wired Switch 2 Pro input is also supported. See [XInput output and Switch 2 Pro setup](docs/xinput-output.md).
+**0.23.0:** Shared settings now ends with **S / Auto / X**. S retains the previous output and is the default; Auto is disabled; X uses wired Xbox 360 XInput. X sends HOME as Guide. The current version uses fixed button names and positions in every mode. The host mode is shared by all profiles and persists after restart. USB reconnects after a verified mode save, and settings remain accessible in X mode. Wired Switch 2 Pro input is also supported. See [XInput output and Switch 2 Pro setup](docs/xinput-output.md).
 
 **0.22.0 GUI r4:** The four header actions—Firmware update, Connect / Reconnect, Profile switching and Shared settings—now use equal widths, sized for their labels and the display scale.
 
@@ -95,7 +106,7 @@ Pointer gain remains Trackball 1.0–256.0× (default 16.0) and Paddle 1.0–10.
 4. For a controller without a matching profile, the first available slot is selected automatically. Choose **Add controller**, confirm the device, map its inputs, configure any axes, and save.
 5. Reconnect USB-C to the Switch 2. The board selects the matching saved profile without a PC.
 
-Only one configurator instance can run. Close other bridge configuration tools while using it. **Firmware update** compares only whether the running version equals the bundled version. An equal version finishes without writing; a different version requires confirmation. Firmware without the version-query command follows the BOOT connection and overwrite-confirmation route. See the [firmware update guide](docs/firmware-update.md).
+Only one configurator instance can run. Close other bridge configuration tools while using it. **Firmware update** checks the running version and required features. It exits without writing when both match; a different version or missing toggle/expanded-curve support opens the update confirmation. Firmware without the version-query command follows the BOOT connection and overwrite-confirmation route. See the [firmware update guide](docs/firmware-update.md).
 
 At startup and during background discovery, the tool checks firmware before reading settings. A factory-state RP2350-USB-A exposing Pico SDK USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge with no readable version shows **Device unsupported** and automatically opens the firmware installation guide. A readable different version opens the update guide. With no recognized board, the status is **Device not connected** and no guide opens. Cancelling the wait or declining the final confirmation keeps the unsupported status visible without repeating the guide during that connection; an observed disconnection rearms guidance for the next attachment. Background retries preserve drafts and do not repeatedly disable or repaint the editor. **Firmware update** remains available for manual installation or USB identities outside these recognized cases.
 
@@ -166,17 +177,17 @@ The configurator build also builds the normal firmware and embeds that exact UF2
 
 ## Memory budget
 
-Normal firmware allocation figures, calculated from its binary and linker sections:
+Allocation figures for this virtual-coordinate trial, calculated from its binary and linker sections:
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 160,212; persistent storage 49,152 | 1,887,788 |
-| SRAM, 532,480 bytes | Static data 163,600; two stacks 8,192 | 360,688 |
-| One bank copy, 16,384 bytes | Payload 13,908 + header 16 | 2,460 |
+| Flash, 2,097,152 bytes | Code/initial values 172,740; persistent storage 49,152 | 1,875,260 |
+| SRAM, 532,480 bytes | Static data 164,916; two stacks 8,192 | 359,372 |
+| One bank copy, 16,384 bytes | Payload 14,036 + header 16 | 2,332 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 42,784, and BSS 120,544 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 848 bytes, bank payload 13,908 bytes, and normal UF2 320,512 bytes.
+Static SRAM consists of vector table 272, initialized data 43,512, and BSS 121,132 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 856 bytes, bank payload 14,036 bytes, and UF2 345,600 bytes.
 
 ## Repository contents and license
 

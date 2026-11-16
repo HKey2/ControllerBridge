@@ -54,7 +54,9 @@ internal sealed partial class MainForm : Form
     public MainForm()
     {
         const string productTitle = "ControllerBridge v";
-        using IDisposable formLayout = Ui.Form(this, productTitle + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + "", new(1290, 1100), new(1290, 700));
+        Version? version = typeof(MainForm).Assembly.GetName().Version;
+        string revision = version?.Revision >= 2 ? $" - GUI r{version.Revision}" : "";
+        using IDisposable formLayout = Ui.Form(this, productTitle + version?.ToString(3) + revision, new(1290, 1100), new(1290, 700));
         // Keep the full initial layout, but let the editor scroll on shorter screens.
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
@@ -171,9 +173,9 @@ internal sealed partial class MainForm : Form
         Label buttonBehaviorLabel = Ui.Label(L.T("ボタン動作", "Button behavior"), 10); buttonBehaviorLabel.Anchor = AnchorStyles.Left;
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
-        SetTip(trackballKeys, L.T("ポインタ移動を継続しながら、カーソル移動用の内部感度で方向キーも送ります。画面のポインタ感度とは独立しています。反転適用後のX/Yを個別に蓄積し、デバイス共通の64で↑↓←→を1回押して離します。超過分は捨てます。", "Pointer movement continues while direction clicks use a hidden cursor gain, separate from the pointer gain shown here. Accumulate inverted X/Y independently; at the device-wide threshold of 64, press/release ↑↓←→ once and discard excess."));
-        SetTip(paddleKeys, L.T("マウス UDLR設定のパドルモードを有効にします。ボタンクリックは選択軸の方向入力、Virtual Rollingは選択スティックへ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Mouse UDLR settings: button clicks along the selected axis, or Virtual Rolling on the selected stick. Pointer movement continues."));
-        SetTip(invertPaddle, L.T("ポインタ移動とボタンクリックを反転します。Virtual Rollingの反転はマウス UDLR設定で指定します。", "Reverse pointer movement and button clicks. Virtual Rolling has its own reversal in Mouse UDLR settings."));
+        SetTip(trackballKeys, L.T("「方向変換の割り当て」で選んだVirtual Cursorの動作を有効にします。Repeat / Holdは方向入力、Analogは選択スティックの傾きへ変換します。X/Y反転は全モードへ適用し、ポインタ感度はアナログ変換に影響しません。超過分は捨てます。", "Enable the Virtual Cursor mode chosen in Conversion mapping. Repeat / Hold produce directional input; Analog controls the selected stick tilt. X/Y inversion applies to every mode; pointer gain does not change analog conversion."));
+        SetTip(paddleKeys, L.T("「方向変換の割り当て」で選んだパドルモードを有効にします。Virtual Cursor(Repeat)は選択軸の方向入力、Virtual Rollingは選択スティックへ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Conversion mapping: Virtual Cursor(Repeat) along the selected axis, or Virtual Rolling on the selected stick. Pointer movement continues."));
+        SetTip(invertPaddle, L.T("ポインタ移動とVirtual Cursor(Repeat)を反転します。Virtual Rollingの反転は「方向変換の割り当て」で指定します。", "Reverse pointer movement and Virtual Cursor(Repeat). Virtual Rolling has its own reversal in Conversion mapping."));
         // Keep both editors in the control tree while hidden so they receive
         // the same font and monitor-DPI changes as the visible editor.
         Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -250,6 +252,7 @@ internal sealed partial class MainForm : Form
     {
         using Graphics g = slots.CreateGraphics(); using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f);
         slots.ItemHeight = Math.Max(LogicalToDeviceUnits(58), TextRenderer.MeasureText(g, "Agあ", Font).Height + TextRenderer.MeasureText(g, "Agあ", small).Height + LogicalToDeviceUnits(16));
+        slots.EnsureVisible(selected);
     }
     private int ConnectedSlot => caps is { Connected: true } && caps.ActiveSlot < profiles.Length ? caps.ActiveSlot : -1;
     private void DrawSlot(object? sender, DrawItemEventArgs e)
@@ -283,6 +286,9 @@ internal sealed partial class MainForm : Form
         for (int i = 0; i < profiles.Length; i++) slots.Items.Add($"{i + 1:00} {ProfileSlots.Name(profiles, i)}");
         slots.SelectedIndex = selected; if (top >= 0 && top < slots.Items.Count) slots.TopIndex = Math.Min(top, selected);
         slots.EndUpdate(); loading = false;
+        // Restoring TopIndex above can undo the native selection scroll.
+        // Move only when the selected row is outside the visible area.
+        slots.EnsureVisible(selected);
     }
     private void BindSelected()
     {
@@ -298,7 +304,11 @@ internal sealed partial class MainForm : Form
         identity.Text = p.Enabled ? $"VID {p.Vid:X4} / PID {p.Pid:X4}" + ((p.Flags & 2) != 0 ? L.T($"  •  入力形式 {p.DescriptorHash:X8}", $"  •  Input layout {p.DescriptorHash:X8}") : "") : "";
         loading = false;
         bool learn = bridge is not null && caps is { Connected: true } && p.Matches(caps);
-        foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) mapping.Bind(p, fields, learn, caps?.SupportsRapidFire == true);
+        foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor })
+        {
+            mapping.ReleaseTogglesAsync = caps?.SupportsButtonToggle == true && ConnectedSlot == selected ? ReleaseToggles : null;
+            mapping.Bind(p, fields, learn, caps?.SupportsRapidFire == true, caps?.SupportsButtonToggle == true);
+        }
         UpdateProfileOutputStatus();
         UpdateEnabled();
         details.Visible = identity.Visible = outputStatus.Visible = p.Enabled; duplicate.Visible = ledSettings.Visible = p.Enabled;
@@ -593,6 +603,20 @@ internal sealed partial class MainForm : Form
                 if (unchecked((int)(cursor - caps.EventHead)) >= 0) return true;
             }
             SetText(saved, L.T("操作を止めてから、割り当てるボタンを選び直してください。", "Stop moving the controller, then select the button to assign again.")); return false;
+        }
+        catch (Exception ex) { Ui.Error(this, ex); return false; }
+        finally { working = false; UpdateEnabled(); }
+    }
+    private async Task<bool> ReleaseToggles()
+    {
+        if (bridge is null || working || closing || caps is null || ConnectedSlot != selected) return false;
+        Capabilities expected = caps; int slot = selected;
+        working = true; await WaitForPoll();
+        try
+        {
+            await bridge.ReleaseTogglesAsync(expected, slot);
+            SetText(saved, L.T("トグル保持を解除しました。保存設定は変更していません。", "Held toggles released. Saved settings are unchanged."));
+            return true;
         }
         catch (Exception ex) { Ui.Error(this, ex); return false; }
         finally { working = false; UpdateEnabled(); }

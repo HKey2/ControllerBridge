@@ -13,17 +13,23 @@ internal sealed class FirmwareDevice : IFirmwareDevice
     private UsbDeviceLocation? probeUsb;
     internal Exception? TransferWarning { get; private set; }
     public bool RequiresDataUpgrade { get; private set; }
+    public bool RequiresFeatureUpgrade { get; private set; }
 
     public async Task<FirmwareInfo?> ProbeAsync()
     {
-        probePath = null; probeUsb = null; target = null; TransferWarning = null; RequiresDataUpgrade = false;
+        probePath = null; probeUsb = null; target = null; TransferWarning = null; RequiresDataUpgrade = RequiresFeatureUpgrade = false;
         try
         {
             using HidBridge device = await HidBridge.ConnectAsync();
             probePath = device.DevicePath;
             probeUsb = device.UsbLocation;
             FirmwareInfo? current = await device.ReadFirmwareAsync();
-            if (current is not null) RequiresDataUpgrade = await FirmwareDataMigration.ReadAsync(device.RawAsync);
+            if (current is not null)
+            {
+                RequiresDataUpgrade = await FirmwareDataMigration.ReadAsync(device.RawAsync);
+                try { RequiresFeatureUpgrade = !FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)); }
+                catch (BridgeCommandException ex) when (ex.Status == 1) { RequiresFeatureUpgrade = true; }
+            }
             return current;
         }
         catch (BridgeDiscoveryException ex) when (ex.Matches == 0)
@@ -156,7 +162,12 @@ internal sealed class FirmwareDevice : IFirmwareDevice
                 {
                     using HidBridge device = await HidBridge.ConnectAsync();
                     FirmwareInfo? info = FirmwareInfo.Read(await device.RawAsync(47));
-                    if (info is not null && device.UsbLocation?.Location == target?.Usb.Location) return info;
+                    if (info is not null && device.UsbLocation?.Location == target?.Usb.Location)
+                    {
+                        if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)))
+                            throw new IOException(L.T("書き込み後に必要な機能を確認できませんでした。ファームウェア更新をやり直してください。", "Required features were not found after writing. Run Firmware update again."));
+                        return info;
+                    }
                 }
                 catch (BridgeDiscoveryException ex) when (ex.Matches == 0) { }
                 catch (BridgeCommandException ex) when (ex.Status == 1) { }

@@ -8,6 +8,9 @@ namespace ControllerBridge;
 
 internal sealed record FirmwareInfo(string Version)
 {
+    internal static bool SupportsRequiredFeatures(byte[] caps) => caps.Length == 56 && caps.AsSpan(0, 4).SequenceEqual("UPG1"u8) &&
+        Wire.U16(caps, 4) == 1 && Wire.U16(caps, 6) == DeviceProfile.ByteCount && caps[8] == DeviceProfile.SlotCount &&
+        (Wire.U16(caps, 18) & 224) == 224;
     internal static bool ValidVersion(string value) => Regex.IsMatch(value, @"^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$", RegexOptions.CultureInvariant);
     internal static FirmwareInfo? Read(byte[] data)
     {

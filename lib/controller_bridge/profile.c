@@ -34,10 +34,11 @@ static bool number_fits(int32_t value,uint8_t bits,uint8_t flags) {
     return value>=0 && (bits==32 || (uint32_t)value<((uint32_t)1<<bits));
 }
 static bool digital_valid(const up_digital *d,bool allow_rapid) {
+    if((d->flags&UP_TOGGLE) && (!allow_rapid || d->mode==UP_DISABLED))return false;
     if(d->rapid_hz && (!allow_rapid || d->mode==UP_DISABLED ||
        d->rapid_hz<UP_RAPID_MIN_HZ || d->rapid_hz>UP_RAPID_MAX_HZ))return false;
     if(d->mode==UP_DISABLED)return true;
-    if(d->mode>UP_HAT_LEFT || (d->flags&~(unsigned)UP_SOURCE_FLAGS) ||
+    if(d->mode>UP_HAT_LEFT || (d->flags&~(unsigned)(UP_SOURCE_FLAGS|(allow_rapid?UP_TOGGLE:0))) ||
        !source_valid(d->report_id,d->bit_offset,d->bits,d->flags) || d->low>d->high ||
        !number_fits(d->low,d->bits,d->flags) || !number_fits(d->high,d->bits,d->flags))return false;
     int64_t range=(int64_t)d->high-d->low;
@@ -98,11 +99,22 @@ static bool profile_valid(const up_profile *p,unsigned version) {
         const up_conversion *c=&s->conversion;
         for(unsigned i=0;i<4;++i)if(!c->targets[i] || c->targets[i]>18)return false;
         for(unsigned i=0;i<2;++i)if(!c->paddle_targets[i] || c->paddle_targets[i]>18)return false;
-        if((c->modes&~5u) || c->rolling_flags>3 || c->rolling_step_deg<5 || c->rolling_step_deg>90 ||
+        if((c->modes&~7u) || (c->modes&3u)>UP_ANALOG_ANGLE_MODE || c->rolling_flags>3 || c->rolling_step_deg<5 || c->rolling_step_deg>90 ||
            c->rolling_step_deg%5u || 360u%c->rolling_step_deg)return false;
         if(c->inertia_flags>1u)return false;
-        for(unsigned i=0;i<6;++i)if(c->reserved[i])return false;
+        if(c->analog_flags>7 || !up_analog_curve_valid(c->analog_curve) || up_analog_full_speed(c)<10 ||
+           (unsigned)c->analog_min_speed10*10u>=up_analog_full_speed(c))return false;
+        // Historical v8 banks cannot contain the new optional v9 extension.
+        if(version<9 && ((c->modes&2u) || c->analog_full_speed || c->analog_flags ||
+           c->analog_curve || c->analog_min_speed10 || c->analog_return10))return false;
+        if((m->output_mode&3u)!=UP_OUTPUT_MOUSE && (m->flags&195u)==195u &&
+           c->modes==6u && ((c->analog_flags&UP_ANALOG_RIGHT)!=0)==((c->rolling_flags&UDK_ROLLING_LEFT)==0))return false;
     }
+    const up_analog_levels *levels=&p->analog_levels;
+    if(levels->minimum_percent>=up_analog_maximum(levels) || up_analog_maximum(levels)>100u ||
+       !up_analog_curve_valid(levels->curve))return false;
+    for(unsigned i=0;i<sizeof(levels->reserved);++i)if(levels->reserved[i])return false;
+    if(version<10 && (levels->minimum_percent || levels->maximum_percent || levels->curve))return false;
     return true;
 }
 uint32_t up_profile_recenter_keys(const up_profile *p) {
@@ -208,13 +220,22 @@ void up_mapper_attach(up_mapper *m,const up_profile *p) {
     }
     up_gyro_init(&m->gyro,bias,noise);
     if(!m->profile || !(p->flags&UP_ENABLED))return;
+    unsigned output=p->mouse.output_mode&3u;
+    uint32_t toggle_outputs=output==UP_OUTPUT_MOUSE?0u:0x3ffffu;
+    // Shared B/A bindings remain momentary when they are routed to the mouse.
+    if(output==UP_OUTPUT_COMBINED && !(p->mouse.output_mode&UP_OUTPUT_CONTROLLER_BUTTONS))
+        toggle_outputs&=~((1u<<1)|(1u<<2));
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
         if(p->digital[i].rapid_hz)m->rapid_configured|=1u<<i;
+        if((toggle_outputs&(1u<<i)) && ((p->digital[i].flags&UP_TOGGLE) ||
+           ((p->shift.overrides&(1u<<i)) && (p->shift.digital[i].flags&UP_TOGGLE))))m->toggle_any|=1u<<i;
+        if((m->toggle_any&(1u<<i)) && (p->digital[i].flags&UP_TOGGLE))m->toggle_configured|=1u<<i;
         m->base_modifiers[i]=modifier_mask(p,&p->digital[i]);
         m->back_modifiers[i]=modifier_mask(p,&p->shift.digital[i]);
         for(unsigned j=0;j<UP_DIGITAL_COUNT;++j)
             if((p->shift.overrides&(1u<<j)) && up_digital_overlap(&p->digital[i],&p->shift.digital[j]))m->inherited_conflicts[i]|=1u<<j;
     }
+    m->toggle_blocked=m->toggle_any;
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         if(mode==UP_AXIS_BUTTON_PAIR)for(unsigned j=0;j<2;++j)m->pair_modifiers[i][j]=modifier_mask(p,&p->axes[i].pair[j]);
@@ -264,37 +285,37 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
         for(unsigned k=0;k<p->shift.count;++k)if(up_digital_overlap(&p->digital[i],&p->shift.keys[k]))return true;
     return false;
 }
-bool up_bank_upgrade_v8(up_bank *b) {
-    if(b->magic!=UP_BANK_MAGIC || b->version!=8 || b->bytes!=sizeof(*b))return false;
-    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!profile_valid(&b->profiles[i],8))return false;
-    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)b->profiles[i].version=UP_PROFILE_VERSION;
-    b->version=UP_PROFILE_VERSION;return up_bank_valid(b);
-}
-bool up_bank_upgrade_v6(up_bank *b,const udk_settings *defaults) {
-    if(b->magic!=UP_BANK_MAGIC || b->version!=6 || b->bytes!=sizeof(*b) || !udk_settings_valid(defaults))return false;
-    // Validate the original fourth key before the explicitly permitted removal.
-    for(unsigned i=0;i<UP_PROFILE_COUNT;++i)if(!profile_valid(&b->profiles[i],6))return false;
+static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *defaults) {
+    unsigned stride=version==5?UP_LEGACY_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
+    unsigned bytes=version==5?UP_LEGACY_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
+    if(b->magic!=UP_BANK_MAGIC || b->version!=version || b->bytes!=bytes ||
+       (version<=6 && (!defaults || !udk_settings_valid(defaults))))return false;
+    uint8_t *raw=(uint8_t *)b;
+    // Validate every original profile before any overlapping expansion. In
+    // particular, validate the old fourth shift key before v6 truncation.
     for(unsigned i=0;i<UP_PROFILE_COUNT;++i) {
-        up_profile *p=&b->profiles[i];
-        if(p->shift.count>UP_SHIFT_KEYS)p->shift.count=UP_SHIFT_KEYS;
-        up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);p->version=UP_PROFILE_VERSION;
+        up_profile original={0};memcpy(&original,raw+16+i*stride,stride);
+        if(original.version!=version)return false;
+        if(version==5)original.version=6;
+        if(!profile_valid(&original,version==5?6:version))return false;
     }
-    b->version=UP_PROFILE_VERSION;
+    uint8_t tail[324];memcpy(tail,raw+16+UP_PROFILE_COUNT*stride,sizeof(tail));
+    for(unsigned i=UP_PROFILE_COUNT;i--;) {
+        up_profile *p=&b->profiles[i];
+        memmove(p,raw+16+i*stride,stride);memset((uint8_t *)p+stride,0,sizeof(*p)-stride);
+        if(version<=6) {
+            if(p->shift.count>UP_SHIFT_KEYS)p->shift.count=UP_SHIFT_KEYS;
+            up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);
+        }
+        p->version=UP_PROFILE_VERSION;
+    }
+    memcpy(b->profile_ids,tail,sizeof(tail));b->version=UP_PROFILE_VERSION;b->bytes=sizeof(*b);
     return up_bank_valid(b);
 }
-bool up_bank_upgrade_v5(up_bank *b,const udk_settings *defaults) {
-    if(b->magic!=UP_BANK_MAGIC || b->version!=5 || b->bytes!=UP_LEGACY_BANK_BYTES)return false;
-    uint8_t *raw=(uint8_t *)b,tail[324];
-    memcpy(tail,raw+7824,sizeof(tail));
-    for(unsigned i=UP_PROFILE_COUNT;i--;) {
-        uint16_t version;memcpy(&version,raw+16+i*UP_LEGACY_PROFILE_BYTES,2);
-        if(version!=5)return false;
-        memmove(&b->profiles[i],raw+16+i*UP_LEGACY_PROFILE_BYTES,UP_LEGACY_PROFILE_BYTES);
-        memset(&b->profiles[i].shift,0,sizeof(up_shift));b->profiles[i].version=6;
-    }
-    memcpy(b->profile_ids,tail,sizeof(tail));b->version=6;b->bytes=sizeof(*b);
-    return up_bank_upgrade_v6(b,defaults);
-}
+bool up_bank_upgrade_v9(up_bank *b) { return upgrade_bank(b,9,NULL); }
+bool up_bank_upgrade_v8(up_bank *b) { return upgrade_bank(b,8,NULL); }
+bool up_bank_upgrade_v6(up_bank *b,const udk_settings *defaults) { return upgrade_bank(b,6,defaults); }
+bool up_bank_upgrade_v5(up_bank *b,const udk_settings *defaults) { return upgrade_bank(b,5,defaults); }
 static bool UC_RAM_FUNC(digital_value)(const up_digital *d,uint8_t iface,const uint8_t *raw,unsigned n,bool *pressed) {
     int32_t value;
     if(d->mode==UP_DISABLED || !read_source(d->interface_number,d->report_id,d->bit_offset,d->bits,d->flags,iface,raw,n,&value))return false;
@@ -355,9 +376,38 @@ static void UC_RAM_FUNC(report_buttons)(const up_mapper *m,uint32_t buttons,sw_r
     static const uint8_t hats[3][3]={{7,0,1},{6,15,2},{5,4,3}};
     r->hat=hats[y+1][x+1];r->lx=m->axes[0];r->ly=m->axes[1];r->rx=m->axes[2];r->ry=m->axes[3];
 }
-void UC_RAM_FUNC(up_mapper_report)(const up_mapper *m,sw_report *r) { report_buttons(m,physical_buttons(m),r); }
+static uint32_t toggle_buttons(const up_mapper *m,uint32_t physical) {
+    return (physical&~m->toggle_configured)|(m->toggle_latched&~m->toggle_suppressed);
+}
+static void reset_toggles(up_mapper *m) {
+    m->toggle_latched=0;m->toggle_blocked=m->toggle_any;
+    m->toggle_previous=m->toggle_physical;m->toggle_updated=0;
+    m->rapid_held&=~m->toggle_any;m->rapid_on&=~m->toggle_any;
+}
+void up_mapper_release_toggles(up_mapper *m) {
+    if(!m->toggle_any)return;
+    reset_toggles(m);m->have_output=false;
+}
+static void toggle_tick(up_mapper *m,bool ready) {
+    if(!ready) { reset_toggles(m);return; }
+    uint32_t updated=m->toggle_updated,physical=m->toggle_physical;
+    // Only a real released sample arms a source. A different HID report, a
+    // layer change, or reconnect must never fabricate a new press.
+    m->toggle_blocked&=~(updated&~physical);
+    uint32_t pressed=updated&physical&~m->toggle_previous&~m->toggle_blocked;
+    m->toggle_latched^=pressed&m->toggle_configured&~m->toggle_suppressed;
+    m->toggle_latched&=m->toggle_configured&~m->toggle_suppressed;
+    m->toggle_previous=(m->toggle_previous&~updated)|(physical&updated);
+    m->toggle_updated=0;
+}
+void UC_RAM_FUNC(up_mapper_report)(const up_mapper *m,sw_report *r) {
+    uint32_t buttons=physical_buttons(m);
+    if(m->toggle_any)buttons=toggle_buttons(m,buttons);
+    report_buttons(m,buttons,r);
+}
 bool UC_RAM_FUNC(up_mapper_tick)(up_mapper *m,uint32_t now,bool ready,sw_report *out) {
     uint32_t physical=physical_buttons(m);
+    if(m->toggle_any) { toggle_tick(m,ready);physical=toggle_buttons(m,physical); }
     m->physical=0;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->base_digital[i])m->physical|=1u<<i;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
@@ -386,12 +436,34 @@ bool UC_RAM_FUNC(up_mapper_tick)(up_mapper *m,uint32_t now,bool ready,sw_report 
     bool changed=!m->have_output || memcmp(&m->last_output,out,sizeof(*out));
     m->last_output=*out;m->have_output=true;return changed;
 }
+static void resolve_toggles(up_mapper *m,bool layer_changed,uint8_t blocked,uint32_t overrides_held) {
+    const up_profile *p=m->profile;
+    if(layer_changed) {
+        uint32_t replaced=p->shift.overrides&m->toggle_any;
+        m->toggle_latched&=~replaced;m->toggle_blocked|=replaced;
+    }
+    m->toggle_configured=m->toggle_physical=m->toggle_suppressed=0;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+        uint32_t bit=1u<<i;if(!(m->toggle_any&bit))continue;
+        bool replace=m->shift_active && (p->shift.overrides&bit);
+        const up_digital *d=replace?&p->shift.digital[i]:&p->digital[i];
+        if(d->flags&UP_TOGGLE)m->toggle_configured|=bit;
+        if(replace?m->shift_digital[i]:m->base_digital[i])m->toggle_physical|=bit;
+        if(((replace?m->back_modifiers[i]:m->base_modifiers[i])&blocked) ||
+           (!replace && m->shift_active && (m->inherited_conflicts[i]&overrides_held)))m->toggle_suppressed|=bit;
+    }
+    m->toggle_latched&=m->toggle_configured&~m->toggle_suppressed;
+}
 static void UC_RAM_FUNC(resolve_shift)(up_mapper *m) {
     const up_profile *p=m->profile;
     bool active=p->shift.count && m->shift_held==((1u<<p->shift.count)-1u);
     if(active)m->shift_consumed=true;
     else if(!m->shift_held)m->shift_consumed=false;
-    if(active!=m->shift_active) { m->rapid_held=m->rapid_on=0;m->shift_active=active; }
+    bool layer_changed=active!=m->shift_active;
+    if(layer_changed) {
+        uint32_t reset=m->toggle_any?p->shift.overrides:0x3ffffu;
+        m->rapid_held&=~reset;m->rapid_on&=~reset;m->shift_active=active;
+    }
     uint8_t blocked=m->shift_consumed?m->shift_held:0;
     uint32_t overrides_held=0;
     if(active)for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->shift_digital[i] && (p->shift.overrides&(1u<<i)))overrides_held|=1u<<i;
@@ -404,6 +476,7 @@ static void UC_RAM_FUNC(resolve_shift)(up_mapper *m) {
         if((replace?p->shift.digital[i].rapid_hz:p->digital[i].rapid_hz))m->rapid_configured|=1u<<i;
         if(m->base_digital[i])m->physical|=1u<<i;
     }
+    if(m->toggle_any)resolve_toggles(m,layer_changed,blocked,overrides_held);
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         m->axes[i]=m->raw_axes[i];
@@ -439,6 +512,15 @@ void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_
         }
     }
     resolve_shift(m);
+    if(m->toggle_any) {
+        for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+            uint32_t bit=1u<<i;if(!(m->toggle_configured&bit))continue;
+            const up_digital *d=m->shift_active && (p->shift.overrides&bit)?&p->shift.digital[i]:&p->digital[i];
+            if(!same_source(d,&field))continue;
+            if(m->toggle_physical&bit) { m->toggle_previous|=bit;m->toggle_blocked|=bit; }
+            else { m->toggle_previous&=~bit;m->toggle_blocked&=~bit; }
+        }
+    }
 }
 bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,sw_report *out) {
     if(!m->profile || !(m->profile->flags&UP_ENABLED))return false;
@@ -473,7 +555,17 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
             }
         }
     }
-    resolve_shift(m);up_mapper_report(m,out);return touched;
+    resolve_shift(m);
+    if(m->toggle_any) {
+        m->toggle_updated=0;
+        for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+            uint32_t bit=1u<<i;if(!(m->toggle_configured&bit))continue;
+            const up_digital *d=m->shift_active && (p->shift.overrides&bit)?&p->shift.digital[i]:&p->digital[i];
+            bool pressed;
+            if(digital_value(d,iface,raw,n,&pressed))m->toggle_updated|=bit;
+        }
+    }
+    up_mapper_report(m,out);return touched;
 }
 
 bool up_mapper_recenter_held(const up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n) {

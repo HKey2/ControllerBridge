@@ -14,11 +14,13 @@ internal sealed partial class ShiftDialog : Form
     private readonly MappingEditor editor = new(false, true);
     private ShiftKeyLearner? learner;
     private bool canLearn;
+    private readonly bool supportsRapid, supportsToggle;
     private int request;
     public ShiftSettings Result => draft.Shift;
-    internal ShiftDialog(DeviceProfile profile, List<InputField> fields, bool canLearn, bool rapid, Func<Task<bool>>? prepare)
+    internal ShiftDialog(DeviceProfile profile, List<InputField> fields, bool canLearn, bool rapid, Func<Task<bool>>? prepare, bool toggle = false, Func<Task<bool>>? release = null)
     {
         draft = profile.Clone(); this.fields = fields; this.canLearn = canLearn; this.prepare = prepare;
+        supportsRapid = rapid; supportsToggle = toggle;
         // Only this profile's matching controller can supply its button names.
         // Retain that descriptor snapshot if the live field list is later cleared.
         keyFields = canLearn ? [.. fields] : [];
@@ -39,7 +41,7 @@ internal sealed partial class ShiftDialog : Form
         actions.Controls.Add(add); actions.Controls.Add(remove); row.Controls.Add(actions, 1, 0); root.Controls.Add(row, 0, 1);
         status.Dock = DockStyle.Fill; status.ForeColor = Ui.Muted; root.Controls.Add(status, 0, 2);
         Label heading = Ui.Label(L.T("裏ページのボタン割り当て（* は裏ボタン登録あり）", "Shifted button mappings (* indicates a registered shifted mapping)"), 13, true); heading.Padding = new(0, 10, 0, 0); root.Controls.Add(heading, 0, 3);
-        editor.Bind(draft, fields, canLearn, rapid);
+        editor.Bind(draft, fields, canLearn, rapid, toggle); editor.ReleaseTogglesAsync = release;
         editor.PrepareLearningAsync = async () => { StopLearning(); RefreshKeys(); return prepare is null || await prepare(); };
         root.Controls.Add(editor, 0, 4);
         Label notice = Ui.Label(L.ProfileSaveNotice, 9); notice.Dock = DockStyle.Fill; notice.ForeColor = Ui.Muted;
@@ -97,7 +99,7 @@ internal sealed partial class ShiftDialog : Form
     }
     public void ConnectionLost()
     {
-        StopLearning(); canLearn = false; editor.AbortLearning(); editor.Bind(draft, fields, false, true); RefreshKeys();
+        StopLearning(); canLearn = false; editor.AbortLearning(); editor.Bind(draft, fields, false, supportsRapid, supportsToggle); editor.ReleaseTogglesAsync = null; RefreshKeys();
     }
     internal void InputEventsLost(string reason)
     {

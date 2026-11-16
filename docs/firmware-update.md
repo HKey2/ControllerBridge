@@ -1,14 +1,14 @@
 # Firmware update
 
-ControllerBridge 0.28.1 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater always compares for exact version equality; it does not classify versions as upgrades or downgrades.
+ControllerBridge 0.29.0 embeds its matching `ControllerBridge.uf2` in the Windows executable. Use **Firmware update** at the top of the main window, including when the normal profile connection is unavailable. The updater checks exact version equality and support for toggle hold and the expanded response curves. It does not classify versions as upgrades or downgrades.
 
 Version 0.20.19 allows mouse-only profiles to retain enabled conversion preferences. Before returning to firmware through 0.20.18, save those profiles in a gamepad mode or clear their conversion flags using 0.20.19; the older validator rejects that combination.
 
 ## Automatic startup and connection guidance
 
-The main window checks the firmware identity before reading capabilities or profile data. Only an exact match with the bundled version proceeds to normal settings reads. Detection runs at startup and about every two seconds while waiting for a usable connection.
+The main window checks the firmware identity before reading capabilities or profile data. The bundled version and required features must both be present before normal settings reads. Detection runs at startup and about every two seconds while waiting for a usable connection.
 
-- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.28.1?** confirmation follows. Lower and higher versions are treated alike.
+- A readable different version automatically opens the updater with the device and bundled versions. The existing **Install v0.29.0?** confirmation follows. Lower and higher versions are treated alike.
 - A factory-state RP2350-USB-A exposing Pico SDK CDC/reset USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge without readable firmware information shows **Device unsupported** and automatically opens the BOOT connection guide. It immediately monitors for BOOT connection and shows only **Cancel**. A valid BOOT connection advances to the final overwrite confirmation automatically. This works both when the board is already connected at startup and when it is detected while the tool is running.
 - With no recognized board, the tool shows **Device not connected** and waits without opening an update guide or recording a startup error. Unrelated USB peripherals do not trigger installation. Other firmware with unrecognized USB identities can still use **Firmware update** manually.
 
@@ -25,12 +25,12 @@ The factory-state screenshot was captured on 2026-10-31 with the supplied RP2350
 ## Confirmation flow
 
 1. Choose **Firmware update**. The dialog shows **Checking firmware version...**.
-2. If the device already has the bundled version, it reports that version and finishes without rebooting or writing. Opening the updater preserves unsaved profile edits. Before restarting the Windows app to use a newer executable, export any unsaved profiles from the profile list’s context menu and import them again after restarting.
-3. If a supported device reports a different version, the dialog asks **Install v0.28.1?**. **No** exits; **Yes** starts automatic programming.
+2. If the device already has the bundled version and required features, it reports that version and finishes without rebooting or writing. Opening the updater preserves unsaved profile edits. Before restarting the Windows app to use a newer executable, export any unsaved profiles from the profile list’s context menu and import them again after restarting.
+3. If a supported device reports a different version or lacks required features, the dialog asks **Install v0.29.0?**. **No** exits; **Yes** starts automatic programming.
 4. If no supported version response is available, the dialog immediately shows **Waiting for reconnection with BOOT held...** and only a **Cancel** button. Unplug the RP2350-USB-A's USB-C cable, hold **BOOT**, reconnect to the same PC USB port, then release BOOT. This wait has no timeout. **Cancel**, Escape, or the window close button exits without writing.
 5. Once the target's RP2350 BOOT USB identity and disk information are validated, the dialog automatically shows **Confirm firmware write** with **Yes/No** buttons. It states that BOOT connection was confirmed and names the bundled version. Only **Yes** starts the transfer; **No** exits without writing. If the board was already in validated BOOT mode, this final confirmation appears directly after detection.
 
-When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.28.1?**. A confirmed saved v5/v6/v8 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
+When normal firmware communication is available, the configurator checks the reported saved-bank status and data format before showing **Install v0.29.0?**. A confirmed saved v5/v6/v8 bank adds only: **The data format will be updated on the first startup after installation.** Its Japanese text is **更新後の初回起動時にデータ形式をアップデートします。** A missing saved bank, current/unsupported format, invalid response or changed snapshot omits that line. A failed optional read does not block the normal update confirmation.
 
 A BOOT-only connection does not provide this saved-bank information through the supported updater interface, so **Confirm firmware write** has no data-update notice. The actual firmware migration still runs when applicable; absence of the notice is not a promise that the saved data format will stay unchanged.
 
@@ -40,7 +40,7 @@ A BOOT-only connection does not provide this saved-bank information through the 
 
 The images use simulated devices in the configurator. The mismatch example has a confirmed saved legacy bank; the BOOT final confirmation has no saved-format information.
 
-During programming, keep the USB cable attached. The dialog shows mode switching, file transfer progress, restart/reconnection, and installed-version verification. Completion is shown only when the application on the programmed USB port reports the bundled version. A successful file copy or disappearance of the USB drive alone is not treated as completion.
+During programming, keep the USB cable attached. The dialog shows mode switching, file transfer progress, restart/reconnection, and installed-version verification. Completion is shown only when the application on the programmed USB port reports the bundled version and required features. A successful file copy or disappearance of the USB drive alone is not treated as completion.
 
 The **Yes/No** prompts default to **No** for Enter and Escape. Closing a confirmation dialog also cancels. While programming or checking the restart, the update dialog and main window cannot be closed through their normal close controls.
 
@@ -85,8 +85,8 @@ The device-selection design follows the [Raspberry Pi USB PID allocation](https:
 
 Firmware 0.20.21 adds one extra automatic recovery cycle when this controller's GIP startup times out. Allow initialization to finish before registering or using it. A cyan blink can continue after connection until a button or stick produces the first accepted input; this idle wait has no timeout. A successful recovery clears an earlier red initialization indication to cyan. See [MS-GIPUSB input](xbox-one-input.md) for the recovery limit and LED meanings.
 
-## Saved-format detection before approval
+## Older saved settings
 
-The read-only discovery uses command 20's `UPG1` schema, 16-slot count, profile size, bank-transfer capability and persisted flag. It reads bank info (40) and the bank header (41, offset 0 with the expected generation), then rechecks capabilities and bank-info generation/CRC. Supported pairs are v5 / 488-byte profile / 8,148-byte bank and v6 / 848-byte profile / 13,908-byte bank. Header version, first-profile version, sizes and generations must agree. A profile-conversion capability (bit 24), unsupported shape or any failed/inconsistent response suppresses the notice. No upload, save, reset or BOOT command is sent by this inspection.
+The app checks the device’s saved settings before offering an update. Supported older profiles are converted when the new firmware starts. Existing assignments, profile identities, selection, shortcuts and shared settings are retained. The new analog output levels start at 0% minimum, 100% maximum and linear for existing profiles.
 
-This confirms the legacy firmware's currently loaded, persisted bank. The old protocol does not expose a scan of every raw Flash copy; for example, it cannot identify an otherwise unreadable newer copy left by a manual downgrade. The updater does not infer data format from the firmware version alone. Its existing identity and USB-port checks still guard the subsequent update.
+Back up all slots before updating. Older firmware cannot read the current saved format; if you return to an older version, restore a backup created with that version. A blank profile list after a downgrade does not mean newer saved settings have been erased. Reinstall the matching current firmware before creating or saving replacement profiles.

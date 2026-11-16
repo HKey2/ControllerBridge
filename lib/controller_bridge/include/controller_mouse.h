@@ -78,6 +78,33 @@ typedef struct { uint32_t last_motion_us;uint16_t angle10;int16_t fraction10;uin
 _Static_assert(sizeof(um_rolling_state)==12,"rolling runtime allocation");
 void um_rolling_input(um_rolling_state *state,int32_t wheel,uint32_t time_us,const udk_settings *settings);
 void um_rolling_overlay(um_rolling_state *state,uint32_t now_us,uint32_t idle_us,const udk_settings *settings,sw_report *report);
+// Virtual Cursor(Analog) runs only for the selected profile's enabled trackball source.
+// Raw deltas move a virtual target independently of pointer gain, using the
+// main X/Y inversion. Deliberate source-vector reversals discard the old target;
+// small opposing noise does not restart the release or trigger a reversal.
+typedef struct {
+    // Relative target-current displacement, in Q16 points. Only acknowledged
+    // logical output consumes it. Output level compensation does
+    // not spend the virtual displacement at the amplified physical rate.
+    // Backlog beyond the finite stop budget is compressed; sub-quantum residuals
+    // survive ordinary stops. A confirmed reversal explicitly rebases both axes.
+    int64_t pending[2], phase[2];
+    int32_t applied[2], requested[2];
+    int32_t integral_remainder[2], phase_remainder[2], gain_remainder[2];
+    uint32_t last_ack_us,last_motion_us,last_report_us,observed_us,cache_us;
+    uint32_t release_at_us,planned_interval_us;
+    float release_duration_us, release_rate[2];
+    // Recent accepted source direction, independent of pending output backlog.
+    float heading[2];
+    int8_t direction[2];
+    bool have_ack,have_report,moving,decaying,cache_valid;
+    struct { int32_t requested[2]; uint8_t axis[2],output_axis[2]; } cached;
+} um_analog_state;
+// axis is the logical, pre-compensation output associated with this transfer.
+typedef struct { int32_t requested[2]; uint8_t axis[2]; } um_analog_plan;
+void um_analog_input(um_analog_state *state,const up_mouse_options *mouse,int32_t x,int32_t y,uint32_t time_us,uint32_t period_us,uint32_t idle_us,const up_conversion *settings);
+void um_analog_prepare(um_analog_state *state,uint32_t now_us,uint32_t idle_us,uint32_t horizon_us,const up_conversion *settings,const up_analog_levels *levels,sw_report *report,um_analog_plan *plan);
+void um_analog_ack(um_analog_state *state,const um_analog_plan *plan,uint32_t time_us);
 void um_push(um_queue *queue,int32_t x,int32_t y,uint8_t buttons,uint32_t time,uint32_t sequence,bool source_input);
 void um_next(const um_queue *queue,um_flight *flight);
 // Report protocol can carry a whole high-gain delta without 8-bit splitting.

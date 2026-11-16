@@ -2,7 +2,7 @@ namespace ControllerBridge;
 
 internal enum ConnectionKind { Ready, DifferentFirmware, UnknownFirmware, NotDetected }
 
-internal sealed record ConnectionStatus(ConnectionKind Kind, string DeviceKey = "", string? Version = null)
+internal sealed record ConnectionStatus(ConnectionKind Kind, string DeviceKey = "", string? Version = null, bool MissingFeatures = false)
 {
     internal string NoticeKey => $"{Kind}:{DeviceKey}:{Version}";
     internal string Summary => Kind switch
@@ -13,7 +13,8 @@ internal sealed record ConnectionStatus(ConnectionKind Kind, string DeviceKey = 
     };
     internal string Guidance(string bundled) => Kind switch
     {
-        ConnectionKind.DifferentFirmware => L.F("デバイスは v{0}、ツール同梱は v{1} です。デバイスの設定を読み書きするには同梱版に揃えてください。", "The device has v{0}; this tool includes v{1}. Install the bundled version to read or save device settings.", Version!, bundled),
+        ConnectionKind.DifferentFirmware => MissingFeatures ? L.T("バージョン番号は同じですが、このツールの設定機能を使うには、同梱ファームウェアへの更新が必要です。", "The version number matches, but the bundled firmware is needed to use this tool's settings.") :
+            L.F("デバイスは v{0}、ツール同梱は v{1} です。デバイスの設定を読み書きするには同梱版に揃えてください。", "The device has v{0}; this tool includes v{1}. Install the bundled version to read or save device settings.", Version!, bundled),
         ConnectionKind.UnknownFirmware => L.T("デバイスからファームウェアのバージョンを取得できません。工場出荷状態のRP2350-USB-Aには、以下の手順で本ツール用のファームウェアを書き込んでください。", "The device's firmware version is unavailable. For a factory-state RP2350-USB-A, follow the steps below to install this tool's firmware."),
         _ => L.T("デバイスは未接続です。USB-CでPCに接続すると、自動的に接続を確認します。", "The device is not connected. Connect USB-C to this PC; the application will detect it automatically.")
     };
@@ -68,6 +69,8 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
             FirmwareInfo? firmware = await device.ReadFirmwareAsync();
             if (firmware is null) return new(new(ConnectionKind.UnknownFirmware, device.DevicePath));
             if (firmware.Version != bundled) return new(new(ConnectionKind.DifferentFirmware, device.DevicePath, firmware.Version));
+            if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)))
+                return new(new(ConnectionKind.DifferentFirmware, device.DevicePath, firmware.Version, true));
             var bank = await device.ReadProfilesAsync();
             DeviceState state = await device.ReadDeviceAsync();
             OutputState? output = state.Caps.SupportsMouseOutput ? await device.ReadOutputStateAsync() : null;

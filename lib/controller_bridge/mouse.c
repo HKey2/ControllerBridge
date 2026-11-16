@@ -61,7 +61,7 @@ void um_direction_keys(um_key_state *s,const up_mouse_options *o,int32_t raw_x,i
     *keys=(um_key_events){0};
     if(!udk_settings_valid(settings)) { *s=(um_key_state){0};return; }
     int64_t limit=(int64_t)settings->threshold*10;
-    if(settings->trackball_mode!=UDK_HOLD_MODE && (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
+    if(settings->trackball_mode==0 && (o->flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS)) {
         int64_t x=(int64_t)raw_x*settings->trackball_gain10,y=(int64_t)raw_y*settings->trackball_gain10;
         if(o->flags&UP_MOUSE_INVERT_X)x=-x;
         if(o->flags&UP_MOUSE_INVERT_Y)y=-y;

@@ -57,12 +57,13 @@ internal sealed partial class MappingEditor : UserControl
     private readonly Label instruction;
     private readonly Label detail;
     private readonly Button clear;
-    private readonly Button rapid;
+    private readonly Button rapid, toggle;
     private readonly ToolTip tips = new() { AutoPopDelay = 15000 };
     private ButtonLearner? learner;
     private int selected = -1;
     private bool canLearn;
     private bool supportsRapid;
+    private bool supportsToggle;
     private DeviceProfile profile = new();
     private List<InputField> fields = [];
     private AxisDialog? axisDialog;
@@ -73,6 +74,8 @@ internal sealed partial class MappingEditor : UserControl
     public event EventHandler? Modified;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<Task<bool>>? PrepareLearningAsync { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<Task<bool>>? ReleaseTogglesAsync { get; set; }
     public MappingEditor(bool mouseMode = false, bool shiftPage = false)
     {
         this.mouseMode = mouseMode; this.shiftPage = shiftPage;
@@ -91,10 +94,11 @@ internal sealed partial class MappingEditor : UserControl
         outputHeading = Ui.Label(mouseMode ? L.T("1  マウスの出力ボタンを選択", "1  Select a mouse output button") : L.T("1. コンソール側の対応ボタンを選択", "1. Select the corresponding console button"), 12, true);
         heading.Controls.Add(outputHeading, 0, 0);
         rapid = Ui.Button(L.T("連射設定…", "Rapid fire…"), (_, _) => EditRapidFire());
+        toggle = Ui.Button(L.T("トグル設定…", "Toggle…"), (_, _) => EditToggle());
         shift = Ui.Button(L.T("シフト設定…", "Button shift…"), (_, _) => EditShift()); shift.Visible = !shiftPage;
         FlowLayoutPanel actions = new() { AutoSize = true, Anchor = AnchorStyles.Right, WrapContents = false };
-        actions.Controls.Add(rapid); actions.Controls.Add(shift); heading.Controls.Add(actions, 1, 0); root.Controls.Add(heading, 0, 0);
-        rapid.Visible = !mouseMode;
+        actions.Controls.Add(rapid); actions.Controls.Add(toggle); actions.Controls.Add(shift); heading.Controls.Add(actions, 1, 0); root.Controls.Add(heading, 0, 0);
+        rapid.Visible = toggle.Visible = !mouseMode;
         // Empty cells preserve the Switch controller's spatial groups. These
         // values are existing output IDs; their wire/profile order never changes.
         int[,] layout = {
@@ -186,11 +190,11 @@ internal sealed partial class MappingEditor : UserControl
         // Use the already-scaled first row, including during initial construction.
         buttonGrid.RowStyles[1].Height = enabled ? buttonGrid.RowStyles[0].Height : 0;
     }
-    public void Bind(DeviceProfile value, List<InputField> source, bool allowLearn, bool allowRapid = false)
+    public void Bind(DeviceProfile value, List<InputField> source, bool allowLearn, bool allowRapid = false, bool allowToggle = false)
     {
         using IDisposable layout = Ui.BatchLayout(this);
         detail.Visible = true;
-        AbortLearning(); profile = value; fields = source; canLearn = allowLearn; supportsRapid = allowRapid; selected = -1;
+        AbortLearning(); profile = value; fields = source; canLearn = allowLearn; supportsRapid = allowRapid; supportsToggle = allowToggle; selected = -1;
         instruction.Text = allowLearn ? L.T("2. 変換対象コントローラーのボタンを押す", "2. Press a button on the input controller") : L.T("2. 対象機器をUSB-Aへ接続して割り当てたい操作を行う", "Connect this profile’s controller to USB-A to learn inputs");
         detail.Text = allowLearn ? L.T("入力を離した状態で出力ボタンを選んでください。", "Release all inputs, then select an output button.") : L.T("保存済みの割り当ては確認・解除できます。", "You can review and clear the saved mappings.");
         UpdateButtons();
@@ -231,6 +235,7 @@ internal sealed partial class MappingEditor : UserControl
         if (learner?.Observe(field, value) is not LearnedInput learned || selected < 0) return;
         detail.Visible = true;
         learned.Binding.RapidHz = Binding(selected).RapidHz;
+        learned.Binding.Toggle = Binding(selected).Toggle;
         SetBinding(selected, learned.Binding); learner = null;
         instruction.Text = L.T($"{TargetName(selected)} ← {learned.Field.Label} を割り当てました", $"Assigned {TargetName(selected)} ← {learned.Field.Label}");
         detail.Text = learned.Binding + L.T("　／　デバイスに保存すると反映されます。", " / Save to the device to apply it.");
@@ -285,7 +290,26 @@ internal sealed partial class MappingEditor : UserControl
         }
         if (!changed) return;
         UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
-        instruction.Text = L.T("連射設定を変更しました", "Rapid fire settings changed"); detail.Text = L.T("デバイスに保存すると、設定したボタンを押している間だけ連射します。", "Save to the device to enable rapid fire while holding the configured buttons.");
+        instruction.Text = L.T("連射設定を変更しました", "Rapid fire settings changed"); detail.Text = L.T("デバイスに保存すると反映されます。トグルONのボタンは、クリックで連射の開始・停止を切り替えます。", "Save to the device to apply. Buttons with toggle enabled start and stop rapid fire on each press.");
+    }
+    private void EditToggle()
+    {
+        AbortLearning();
+        DeviceProfile effective = profile.Clone();
+        effective.Buttons = Enumerable.Range(0, 18).Select(i => ShiftSettings.Copy(Binding(i))).ToArray();
+        using ToggleSettingsDialog dialog = new(effective, ReleaseTogglesAsync);
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+        bool changed = false;
+        for (int i = 0; i < 18; i++)
+        {
+            if (Binding(i).Toggle == dialog.Toggles[i]) continue;
+            DigitalBinding binding = ShiftSettings.Copy(Binding(i)); binding.Toggle = dialog.Toggles[i];
+            SetBinding(i, binding); changed = true;
+        }
+        if (!changed) return;
+        UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
+        instruction.Text = L.T("トグル設定を変更しました", "Toggle settings changed");
+        detail.Text = L.T("デバイスに保存すると、クリックで保持・解除を切り替えます。連射とも併用できます。", "Save to the device to toggle hold on each press. Rapid fire can be used together.");
     }
     private DigitalBinding Binding(int i) => shiftPage && (profile.Shift.Overrides & (1u << i)) != 0 ? profile.Shift.Buttons[i] : profile.Buttons[i];
     private void SetBinding(int i, DigitalBinding value)
@@ -297,14 +321,14 @@ internal sealed partial class MappingEditor : UserControl
     {
         if (!profile.Enabled || shiftPage) return;
         AbortLearning();
-        using ShiftDialog dialog = new(profile, fields, canLearn, supportsRapid, PrepareLearningAsync); shiftDialog = dialog;
+        using ShiftDialog dialog = new(profile, fields, canLearn, supportsRapid, PrepareLearningAsync, supportsToggle, ReleaseTogglesAsync); shiftDialog = dialog;
         try {
             if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
             profile.Shift = dialog.Result; UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
         } finally { shiftDialog = null; }
     }
     private string TargetName(int index) => mouseMode ? index switch
-        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => OutputPresentation.XInput ? "Back" : "SELECT / −", 9 => OutputPresentation.XInput ? "Start" : "START / ＋", 12 => DeviceProfile.Targets[12], _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
+        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => DeviceProfile.Targets[12], _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
     private void UpdateButtons()
     {
         if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{DeviceProfile.Targets[1]}・{DeviceProfile.Targets[2]}と割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。",
@@ -314,7 +338,7 @@ internal sealed partial class MappingEditor : UserControl
             if (buttons[i] is null) continue;
             bool set = Binding(i).Mode != 0;
             buttons[i].Enabled = i != 13 || !OutputPresentation.XInput;
-            buttons[i].Text = mouseMode ? TargetName(i) + (i is 1 or 2 ? L.T($"\n{DeviceProfile.Targets[i]}と共通", $"\nShared with {DeviceProfile.Targets[i]}") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => OutputPresentation.XInput ? "—" : L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
+            buttons[i].Text = mouseMode ? TargetName(i) + (i is 1 or 2 ? L.T($"\n{DeviceProfile.Targets[i]}と共通", $"\nShared with {DeviceProfile.Targets[i]}") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
             bool shiftedOverride = shiftPage && (profile.Shift.Overrides & (1u << i)) != 0;
             bool registeredShift = shiftedOverride && set;
             if (registeredShift) buttons[i].Text += " *";
@@ -337,6 +361,11 @@ internal sealed partial class MappingEditor : UserControl
         int rapidCount = Enumerable.Range(0, 18).Count(i => Binding(i).RapidHz != 0);
         rapid.Text = supportsRapid ? (rapidCount == 0 ? L.T("連射設定…", "Rapid fire…") : L.T($"連射設定…（{rapidCount}）", $"Rapid fire… ({rapidCount})")) : L.T("連射設定（デバイスの更新が必要）", "Rapid fire (update required)");
         rapid.Enabled = profile.Enabled && supportsRapid;
+        int toggleCount = Enumerable.Range(0, 18).Count(i => Binding(i).Toggle);
+        toggle.Text = toggleCount == 0 ? L.T("トグル設定…", "Toggle…") : L.T($"トグル設定…（{toggleCount}）", $"Toggle… ({toggleCount})");
+        toggle.Enabled = profile.Enabled && supportsToggle;
+        tips.SetToolTip(toggle, supportsToggle ? L.T("ボタンごとに、クリックで保持・解除を切り替えます。連射とも併用できます。", "Toggle hold per button. Can be combined with rapid fire.") :
+            L.T("トグル設定には同梱ファームウェアへの更新が必要です。", "Toggle settings require the bundled firmware."));
         tips.SetToolTip(rapid, supportsRapid ? L.T("ボタン別にOFF / 毎秒1～60回を設定します。新規設定は20回です。", "Set each button to OFF or 1–60 presses per second. New settings start at 20.") : L.T("ファームウェア0.6.0-dev以降で使用できます。", "Available with firmware 0.6.0-dev or later."));
         string[] shortNames = [L.T("左 X", "Left X"), L.T("左 Y", "Left Y"), L.T("右 X", "Right X"), L.T("右 Y", "Right Y")];
         for (int i = 0; i < 4; i++)

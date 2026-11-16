@@ -56,6 +56,8 @@ static uc_statistics host_stats;
 static ub_queue outgoing;
 static ub_direction_pulse direction_pulse;
 static ub_frame flight;
+static um_analog_plan flight_analog_plan;
+static uint32_t flight_analog_epoch;
 static bool flight_valid,pad_was_ready;
 static uint32_t direction_generated,direction_enqueued,direction_pressed,direction_released,direction_dropped,direction_blocked;
 static void reset_output(uint32_t timestamp);
@@ -207,6 +209,7 @@ static void process_ack(void) {
     if(!flight_valid || flight.sequence!=ack_cookie)return;
     uint8_t direction_edge=ub_direction_complete(&direction_pulse,flight.direction_key,flight.sequence,ack_time,ack_success);
     if(ack_success) {
+        upr_analog_ack(flight_analog_epoch,&flight_analog_plan,ack_time);
         if(direction_edge>=1 && direction_edge<=4)direction_pressed++;
         else if(direction_edge>=0x81 && direction_edge<=0x84)direction_released++;
         if(measuring()) {
@@ -310,9 +313,19 @@ static void schedule_output(void) {
     // Use current virtual axes even when the ordinary state queue is empty.
     // Overlays never enter that queue, so stopping/switching restores its base axes.
     upr_rolling_overlay(time_us_32(),&next.report);
+    um_analog_plan analog_plan={0};
+    uint32_t horizon=(uint32_t)active_output_interval*1000u;
+    if(active_host_mode==UH_XINPUT && !config.output_interval_ms)horizon=12000u;
+    if(horizon<1000u)horizon=1000u;
+    // Virtual Cursor(Analog) supports Switch S and XInput. Pro subcommand
+    // replies carry their own axes and do not use the virtual-position tracker.
+    uint32_t analog_epoch=active_host_mode==UH_SWITCH_PRO?0:
+        upr_analog_prepare(time_us_32(),horizon,&next.report,&analog_plan);
     if(flight_valid) {
         if(!flight.transition && (from_queue || next.direction_key || flight.direction_level!=next.direction_level ||
-            flight.hold_directions!=next.hold_directions || memcmp(&flight.report,&next.report,sizeof(next.report)))) {
+            flight.hold_directions!=next.hold_directions || memcmp(&flight.report,&next.report,sizeof(next.report)) ||
+            (analog_epoch && (flight_analog_epoch!=analog_epoch ||
+                memcmp(flight_analog_plan.axis,analog_plan.axis,sizeof(analog_plan.axis)))))) {
             if(!ud_cancel_repeat())return;
             if(measuring())measurement.counts.repeats_replaced++;
             flight_valid=false;
@@ -327,6 +340,7 @@ static void schedule_output(void) {
     else if(active_host_mode==UH_SWITCH_PRO) { sp_encode(SP_PRO1,&flight.report,encoded,time_us_32());wire=encoded;length=64; }
     bool sent=ud_send(wire,length,flight.sequence,&armed);
     if(sent) {
+        flight_analog_epoch=analog_epoch;flight_analog_plan=analog_plan;
         if(active_host_mode==UH_XINPUT)xw_report_sent(&xinput_clock,armed);
         if(from_queue) { ub_frame consumed; ub_queue_pop(&outgoing,&consumed); }
         ub_direction_sent(&direction_pulse,flight.direction_key,flight.sequence);
@@ -398,6 +412,7 @@ static void feedback_stop(void) {
     else if(active_host_mode==UH_XINPUT)xfo_stop();
 }
 static void reset_output(uint32_t timestamp) {
+    upr_release_toggles();
     ucf_calibration_cancel();
     if(active_host_mode==UH_XINPUT)xfo_stop();
     active_gyro_axes=upr_gyro_axes();

@@ -15,12 +15,18 @@
 #define UPR_CMD_BANK_COMMIT 44
 #define UPR_CMD_BANK_ABORT 45
 #define UPR_CMD_REGISTER_BEGIN 48
+#define UPR_CMD_TOGGLE_STATE 57
+// Capability flags in command 20's status/capability word (the feature word is full).
+#define UPR_CAP_BUTTON_TOGGLE 32u
+#define UPR_CAP_EXTENDED_CURVES 64u
+#define UPR_CAP_VIRTUAL_POINT 128u
 #define UPR_FEATURE_PSEUDO_INERTIA 33554432u
 #define UPR_FEATURE_ANALOG_PAIR 67108864u
 #define UPR_FEATURE_GYRO_STEERING (1u<<27)
 #define UPR_FEATURE_GYRO_DRIFT_PROTECTION (1u<<28)
 #define UPR_FEATURE_INPUT_DIRECTIONS (1u<<29)
 #define UPR_FEATURE_RUMBLE (1u<<30)
+#define UPR_FEATURE_ANALOG_ANGLE (1u<<31)
 #define UPR_FEATURE_PROFILE_CONVERSION (1u<<24)
 #define UPR_FEATURE_BANK_TRANSFER 2048u
 #define UPR_FEATURE_PROFILE_OUTPUT 4096u
@@ -46,8 +52,11 @@ bool upr_tick(uint32_t now_us,bool output_ready,sw_report *report);
 bool upr_ready(void);
 bool upr_mouse_ready(void);
 void upr_mouse_reset(void);
+void upr_release_toggles(void);
 // Apply after ordinary mouse/gamepad routing, including repeats and stop timeout.
 bool upr_rolling_overlay(uint32_t now_us,sw_report *report);
+uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,um_analog_plan *plan);
+void upr_analog_ack(uint32_t epoch,const um_analog_plan *plan,uint32_t time_us);
 uint8_t upr_hold_directions(uint32_t now_us);
 // Mouse-only relative decode; never touches direction/hold/rolling state.
 // The caller resets output state at mode/profile/readiness boundaries.

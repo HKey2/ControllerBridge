@@ -56,18 +56,18 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             group.RowStyles.Add(new(SizeType.AutoSize)); group.Controls.Add(note, 0, group.RowCount++); group.SetColumnSpan(note, 3);
         }
         TableLayoutPanel clicks = Group(L.T("クリック変換", "Click conversion"), 0);
-        Note(clicks, L.T("Trackball: Virtual Cursor ／ Paddle: ボタンクリック", "Trackball: Virtual Cursor / Paddle: Button clicks"));
+        Note(clicks, L.T("Trackball / Paddle: Virtual Cursor(Repeat)", "Trackball / Paddle: Virtual Cursor(Repeat)"));
         Row(clicks, L.T("クリックの移動しきい値", "Click movement threshold"), threshold, "pt");
         Row(clicks, L.T("クリックのホールド時間", "Click hold time"), hold, "ms");
         Row(clicks, L.T("クリックのウェイト時間", "Click wait time"), wait, "ms");
-        TableLayoutPanel trackball = Group("Trackball — Hold", 1);
-        Row(trackball, L.T("Holdの移動しきい値", "Hold movement threshold"), holdThreshold, "pt");
+        TableLayoutPanel trackball = Group("Trackball — Virtual Cursor(Hold)", 1);
+        Row(trackball, L.T("Virtual Cursor(Hold)の移動しきい値", "Virtual Cursor(Hold) threshold"), holdThreshold, "pt");
         Note(trackball, L.T("疑似慣性", "Pseudo-inertia"), heading: true);
         Row(trackball, L.T("疑似慣性の発生値", "Inertia threshold"), inertiaThreshold, "pt/20ms");
         Row(trackball, L.T("疑似慣性の減衰率", "Inertia decay factor"), inertiaDecay, "");
         Row(trackball, L.T("疑似慣性の減衰間隔", "Inertia decay interval"), inertiaInterval, "ms");
-        Note(trackball, L.T("減衰率0.90は、減衰間隔ごとに慣性量を90%にします。発生値以下まで減衰すると終了します。\n有効／無効は各プロファイルのHold設定で切り替えます。",
-            "A factor of 0.90 retains 90% of inertia each interval. Inertia ends at or below the threshold.\nEnable it in each profile's Hold settings."));
+        Note(trackball, L.T("減衰率0.90は、減衰間隔ごとに慣性量を90%にします。発生値以下まで減衰すると終了します。\n有効／無効は各プロファイルのVirtual Cursor(Hold)設定で切り替えます。",
+            "A factor of 0.90 retains 90% of inertia each interval. Inertia ends at or below the threshold.\nEnable it in each profile's Virtual Cursor(Hold) settings."));
         TableLayoutPanel paddle = Group("Paddle — Virtual Rolling", 2);
         Row(paddle, L.T("回転感度", "Rotation sensitivity"), rollingGain, "°/pt");
         TableLayoutPanel host = Group(L.T("出力モード", "Host mode"), 3);

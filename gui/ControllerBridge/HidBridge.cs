@@ -13,6 +13,9 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool Partial => (Flags & 2) != 0;
     public bool Persisted => (Flags & 4) != 0;
     public bool InvalidBinding => (Flags & 8) != 0;
+    public bool SupportsButtonToggle => (Flags & 32) != 0;
+    public bool SupportsVirtualPoint => (Flags & 128) != 0;
+    public bool SupportsExtendedCurves => (Flags & 64) != 0;
     public bool SupportsRapidFire => (Features & 1) != 0;
     public bool SupportsProfileIdentity => (Features & 2) != 0;
     public bool SupportsOnBoardVariants => (Features & 4) != 0;
@@ -42,8 +45,18 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsGyroDriftProtection => (Features & (1u << 28)) != 0;
     public bool SupportsInputDirections => (Features & (1u << 29)) != 0;
     public bool SupportsRumble => (Features & (1u << 30)) != 0;
+    public bool SupportsAnalogAngle => (Features & (1u << 31)) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
+        profile.Conversion.ValidateSources(profile);
+        if (profile.Conversion.IsVirtualPoint && !SupportsVirtualPoint)
+            throw new InvalidDataException(L.T("Virtual Cursor(Analog)の設定を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving Virtual Cursor(Analog) settings."));
+        if (profile.HasToggle && !SupportsButtonToggle)
+            throw new InvalidDataException(L.T("トグル設定を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving toggle settings."));
+        if (profile.Conversion.AnalogCurve is 20 or 30 && !SupportsExtendedCurves)
+            throw new InvalidDataException(L.T("この反応曲線を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving this response curve."));
+        if (profile.Conversion.RequiresAnalogAngle && !SupportsAnalogAngle)
+            throw new InvalidDataException(L.T("Virtual Cursor(Analog)の設定を保存する前に、画面上部の「ファームウェア更新」で同梱ファームウェアへ更新してください。", "Before saving Virtual Cursor(Analog) settings, choose Firmware update at the top of the window to install the bundled firmware."));
         if (!SupportsRumble)
             throw new InvalidDataException(L.T("この版のプロファイルを保存する前に、画面上部の「ファームウェア更新」で同梱ファームウェアへ更新してください。", "Before saving profiles with this version, choose Firmware update at the top of the window to install the bundled firmware."));
         if (InputDirections.UsesNormalizedInput(profile) && !SupportsInputDirections)
@@ -317,6 +330,20 @@ internal sealed class HidBridge : IDisposable
             }
         }
         throw new IOException(L.T("入力コントローラーの接続が安定していません。接続後に再試行してください。", "The input controller connection is unstable. Try again after it connects."));
+    });
+    public Task ReleaseTogglesAsync(Capabilities expected, int slot) => Run(() =>
+    {
+        Capabilities current = Caps();
+        if (!current.SupportsButtonToggle || !current.Connected || current.ActiveSlot != slot ||
+            current.BankGeneration != expected.BankGeneration || current.ConnectionGeneration != expected.ConnectionGeneration ||
+            current.DescriptorHash != expected.DescriptorHash)
+            throw new IOException(L.T("使用中のプロファイルまたは接続が変わっています。再読込してから操作してください。", "The active profile or connection changed. Reload before releasing toggles."));
+        byte[] args = new byte[14]; args[0] = 1; args[1] = checked((byte)slot);
+        Wire.W32(args, 2, current.BankGeneration); Wire.W32(args, 6, current.ConnectionGeneration); Wire.W32(args, 10, current.DescriptorHash);
+        byte[] result = Command(57, args);
+        if (!result.AsSpan(0, 4).SequenceEqual("BTG1"u8) || Wire.U32(result, 4) != 0)
+            throw new IOException(L.T("トグル保持の解除を確認できませんでした。", "Toggle release could not be confirmed."));
+        return true;
     });
     public Task<PollResult> PollAsync(uint cursor, uint generation) =>
         Volatile.Read(ref inputEvents) is { } events ? events.ReadAsync(cursor, generation) : PollDeviceAsync(cursor, generation);

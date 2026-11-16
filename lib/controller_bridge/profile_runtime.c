@@ -34,6 +34,14 @@ static um_key_state direction_state;
 static um_rolling_state rolling_state;
 static uint32_t rolling_idle_us=20000u;
 static um_hold_state hold_state;
+static um_analog_state analog_state;
+static uint32_t analog_epoch;
+static void analog_reset(void) {
+    analog_state=(um_analog_state){0};
+    if(!++analog_epoch)++analog_epoch;
+}
+static bool analog_enabled;
+static uint32_t analog_idle_us=20000u;
 static uint32_t hold_idle_us=20000u;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
 static bool connected,partial,persisted,binding_error;
@@ -117,6 +125,8 @@ static void seed_buttons(void) {
 static void refresh_conversion(void) {
     const up_conversion defaults=UP_DEFAULT_CONVERSION;
     up_conversion_apply(active>=0?&bank.profiles[active].shift.conversion:&defaults,&direction_settings);
+    analog_enabled=active>=0 && direction_settings.trackball_mode==UDK_ANALOG_ANGLE_MODE &&
+        (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS);
 }
 const udk_settings *upr_direction_settings(void) { return &direction_settings; }
 static void select_profile(void) {
@@ -136,7 +146,8 @@ bool upr_mouse_ready(void) {
     unsigned enabled=bank.profiles[active].mouse.flags&3;
     return !enabled || (enabled&mouse_sources())!=0;
 }
-void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0};direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0}; }
+void upr_mouse_reset(void) { mouse_fraction=(um_fraction){0};direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};analog_reset(); }
+void upr_release_toggles(void) { up_mapper_release_toggles(&mapper); }
 bool upr_direction_enabled(void) {
     if(!upr_ready())return false;
     unsigned flags=bank.profiles[active].mouse.flags;
@@ -149,7 +160,7 @@ void upr_direction_accumulators(int32_t tenths[3]) {
 unsigned upr_direction_threshold(void) { return direction_settings.threshold; }
 bool upr_set_direction_settings(const udk_settings *settings) {
     if(!udk_settings_valid(settings))return false;
-    direction_settings=*settings;refresh_conversion();direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};return true;
+    direction_settings=*settings;refresh_conversion();direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};analog_reset();return true;
 }
 static bool rolling_enabled(void) {
     return upr_ready() && mouse_wheel>=0 && direction_settings.paddle_mode==UDK_ROLLING_MODE &&
@@ -163,6 +174,14 @@ uint8_t upr_hold_directions(uint32_t now_us) {
     if(!upr_ready() || mouse_x<0 || mouse_y<0 || direction_settings.trackball_mode!=UDK_HOLD_MODE ||
        (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return 0;
     return um_hold_directions(&hold_state,now_us,hold_idle_us);
+}
+uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,um_analog_plan *plan) {
+    if(!analog_enabled || !upr_ready() || mouse_x<0 || mouse_y<0)return 0;
+    um_analog_prepare(&analog_state,now_us,analog_idle_us,horizon_us,&bank.profiles[active].shift.conversion,&bank.profiles[active].analog_levels,report,plan);
+    return analog_epoch;
+}
+void upr_analog_ack(uint32_t epoch,const um_analog_plan *plan,uint32_t time_us) {
+    if(epoch && epoch==analog_epoch && analog_enabled)um_analog_ack(&analog_state,plan,time_us);
 }
 static void cache_pointing_intervals(void) {
     memset(pointing_intervals,0,sizeof(pointing_intervals));
@@ -179,12 +198,16 @@ static void cache_pointing_intervals(void) {
         pos+=length;
     }
 }
-static uint32_t pointing_timeout(const uc_event *e) {
+static uint32_t pointing_period(const uc_event *e) {
     unsigned interval=bank.profiles[active].input_interval_ms;
     if(!interval && (e->endpoint&0xf0)==0x80) {
         uint16_t cached=pointing_intervals[e->endpoint&15];
         if((cached>>8)==e->interface_number)interval=(uint8_t)cached;
     }
+    return (interval?interval:1u)*1000u;
+}
+static uint32_t pointing_timeout(const uc_event *e) {
+    unsigned interval=pointing_period(e)/1000u;
     // Zero reports stop immediately. A change-only device gets a bounded fallback
     // of at least 20 ms or two configured input polls, whichever is longer.
     return interval>10?interval*2000u:20000u;
@@ -196,7 +219,7 @@ static bool mouse_field(int index,const uc_event *e,int32_t *value) {
 }
 bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys) {
     *x=*y=0;*keys=(um_key_events){0};
-    if(!keys_ready) { direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0}; }
+    if(!keys_ready) { direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};analog_reset(); }
     if(e->type!=UC_INPUT || !upr_ready())return false;
     const up_mouse_options *options=&bank.profiles[active].mouse;
     int32_t dx=0,dy=0,wheel=0;bool touched=false;
@@ -208,6 +231,10 @@ bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,
     if(keys_ready && ball_present && direction_settings.trackball_mode==UDK_HOLD_MODE) {
         hold_idle_us=pointing_timeout(e);
         um_hold_input(&hold_state,options,dx,dy,e->time_us,&direction_settings);
+    }
+    if(keys_ready && ball_present && analog_enabled) {
+        analog_idle_us=pointing_timeout(e);
+        um_analog_input(&analog_state,options,dx,dy,e->time_us,pointing_period(e),analog_idle_us,&bank.profiles[active].shift.conversion);
     }
     if(keys_ready && rolling_enabled() && paddle_present) {
         rolling_idle_us=pointing_timeout(e);um_rolling_input(&rolling_state,wheel,e->time_us,&direction_settings);
@@ -235,7 +262,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
 }
 void upr_init(const udk_settings *common) {
     memset(pointing_intervals,0,sizeof(pointing_intervals));
-    rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};hold_idle_us=20000u;
+    rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};analog_reset();hold_idle_us=20000u;
     direction_settings=*common;
     bank_staging=false;bank_received=0;stage_slot=-1;stage_registration=false;
     mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
@@ -424,7 +451,7 @@ bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) 
     up_mapper_tick(&mapper,now,output_ready,out);return true;
 }
 bool upr_tick(uint32_t now,bool output_ready,sw_report *out) {
-    return upr_ready() && mapper.rapid_configured && up_mapper_tick(&mapper,now,output_ready,out);
+    return upr_ready() && (mapper.rapid_configured || mapper.toggle_any) && up_mapper_tick(&mapper,now,output_ready,out);
 }
 bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *status,bool busy,bool *changed) {
     *changed=false;
@@ -433,13 +460,24 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         memcpy(reply,"UPG1",4);put16(reply+4,1);put16(reply+6,UP_PROFILE_BYTES);reply[8]=UP_PROFILE_COUNT;
         reply[9]=(uint8_t)upr_active_slot();put16(reply+10,(uint16_t)field_count);put16(reply+12,vid);
         put16(reply+14,pid);put16(reply+16,revision);
-        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0));
+        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT);
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
         put32(reply+40,input_initialization);
-        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS|UPR_FEATURE_RUMBLE);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
+        put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS|UPR_FEATURE_RUMBLE|UPR_FEATURE_ANALOG_ANGLE);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();
         put32(reply+52,upr_switch_keys());
+        break;
+    case UPR_CMD_TOGGLE_STATE:
+        if(arg[0]>1) { *status=1;break; }
+        if(arg[0]) {
+            if(busy) { *status=2;break; }
+            if(!upr_ready() || arg[1]!=upr_active_slot() || get32(arg+2)!=bank.generation ||
+               get32(arg+6)!=connection_generation || get32(arg+10)!=~descriptor_crc) { *status=4;break; }
+            up_mapper_release_toggles(&mapper);
+        }
+        memcpy(reply,"BTG1",4);put32(reply+4,mapper.toggle_latched);put32(reply+8,mapper.toggle_configured);
+        put32(reply+12,bank.generation);put32(reply+16,connection_generation);reply[20]=(uint8_t)upr_active_slot();
         break;
     case 21: {
         unsigned index=get16(arg);if(index>=field_count) { *status=1;break; }

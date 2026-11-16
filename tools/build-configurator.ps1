@@ -31,4 +31,5 @@ if (-not $OutputDirectory) {
 & dotnet publish $project -c Release --no-restore -o $OutputDirectory
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item -LiteralPath $firmware -Destination (Join-Path $OutputDirectory 'ControllerBridge.uf2') -Force
+Copy-Item -LiteralPath (Join-Path $taskRoot 'build/firmware-package.json') -Destination (Join-Path $OutputDirectory 'firmware-package.json') -Force
 exit $LASTEXITCODE
