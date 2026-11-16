@@ -14,7 +14,6 @@
 - Supports vibration for the Switch Pro Controller and DS controllers
 - Virtual rolling switch mode.
 - Conversion from trackball input to analog stick tilt `Virtual Cursor (Analog)`
-- Toggle mode: switches between ON and OFF with each press of the button
 - Internal input processing within 1 ms.
 - Configurable input polling interval (1–255 ms).
 - Up to 16 onboard profiles, with automatic controller matching and shortcut switching.
