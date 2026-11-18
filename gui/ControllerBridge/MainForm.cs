@@ -20,6 +20,7 @@ internal sealed partial class MainForm : Form
     private RegistrationWizard? wizard;
     private readonly ToolTip tips = new();
     private readonly SlotList slots = new();
+    private readonly LedColorChip[] slotLedChips = Enumerable.Range(0, DeviceProfile.SlotCount).Select(_ => new LedColorChip()).ToArray();
     private readonly MappingEditor editor = new(), mouseEditor = new(true), combinedEditor = new();
     private readonly DarkTabControl outputTabs = new() { Dock = DockStyle.Fill, Padding = new(23, 12) };
     private readonly BufferedTableLayoutPanel outputContent, timing;
@@ -194,6 +195,7 @@ internal sealed partial class MainForm : Form
         footer.Controls.Add(reload, 1, 0); footer.Controls.Add(useProfile, 2, 0); footer.Controls.Add(saveButton, 3, 0); root.Controls.Add(footer, 0, 2); Controls.Add(root);
 
         slots.DrawItem += DrawSlot;
+        Disposed += (_, _) => { foreach (LedColorChip chip in slotLedChips) chip.Dispose(); };
         slots.SelectedIndexChanged += (_, _) => { if (loading || slots.SelectedIndex < 0) return; AbortLearning(); selected = slots.SelectedIndex; BindSelected(); };
         slots.MouseDoubleClick += async (_, e) =>
         {
@@ -261,14 +263,22 @@ internal sealed partial class MainForm : Form
         if (e.Index < 0) return; bool current = (e.State & DrawItemState.Selected) != 0;
         Color face = current ? Ui.Selected : slots.DragSource == e.Index ? Ui.Background : Ui.Surface;
         using SolidBrush bg = new(face); e.Graphics.FillRectangle(bg, e.Bounds);
-        using Pen separator = new(Color.FromArgb(51, 51, 51)); e.Graphics.DrawLine(separator, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
         if (current) { using SolidBrush marker = new(Ui.Focus); e.Graphics.FillRectangle(marker, e.Bounds.Left, e.Bounds.Top, LogicalToDeviceUnits(3), e.Bounds.Height); }
         DeviceProfile p = profiles[e.Index]; bool connected = p.Enabled && ConnectedSlot == e.Index;
+        if (p.Enabled)
+        {
+            int rgb = p.LedRgb, inset = LogicalToDeviceUnits(6), width = LogicalToDeviceUnits(5);
+            Rectangle chip = new(e.Bounds.Right - inset - width, e.Bounds.Top + inset, width, e.Bounds.Height - 2 * inset);
+            slotLedChips[e.Index].Draw(e.Graphics, chip, LedPreview.Color((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb), face,
+                LogicalToDeviceUnits(2), LogicalToDeviceUnits(4), e.Bounds);
+        }
+        using Pen separator = new(Color.FromArgb(51, 51, 51)); e.Graphics.DrawLine(separator, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
         using Font titleFont = new(Font, connected ? Font.Style | FontStyle.Bold : Font.Style);
         using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f, connected ? FontStyle.Bold : FontStyle.Regular);
         int pad = LogicalToDeviceUnits(10), top = LogicalToDeviceUnits(7), firstHeight = TextRenderer.MeasureText(e.Graphics, "Agあ", titleFont).Height;
-        Rectangle first = new(e.Bounds.X + pad, e.Bounds.Y + top, e.Bounds.Width - 2 * pad, firstHeight);
-        Rectangle second = new(e.Bounds.X + pad, first.Bottom + LogicalToDeviceUnits(3), e.Bounds.Width - 2 * pad, e.Bounds.Bottom - first.Bottom - LogicalToDeviceUnits(7));
+        int textWidth = Math.Max(0, e.Bounds.Width - pad - (p.Enabled ? LogicalToDeviceUnits(26) : pad));
+        Rectangle first = new(e.Bounds.X + pad, e.Bounds.Y + top, textWidth, firstHeight);
+        Rectangle second = new(e.Bounds.X + pad, first.Bottom + LogicalToDeviceUnits(3), textWidth, e.Bounds.Bottom - first.Bottom - LogicalToDeviceUnits(7));
         string title = $"{e.Index + 1:00}  {ProfileSlots.Name(profiles, e.Index)}" + (dirty[e.Index] ? " *" : "");
         TextRenderer.DrawText(e.Graphics, title, titleFont, first, p.Enabled ? Ui.Ink : Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
         string sub = p.Enabled ? $"{p.Vid:X4}:{p.Pid:X4}" + (connected ? L.T("   接続中", "   Connected") : "") : "";

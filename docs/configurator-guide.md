@@ -71,6 +71,8 @@ Input reception continues while windows are opening or redrawing. The PC tempora
 
 ### LED color
 
+The profile list shows a narrow LED color chip at the right edge of each used slot. It uses the same display correction as the LED settings preview, with a soft glow. Choosing **OK** in LED settings updates the chip immediately, including unsaved edits; **Cancel** leaves it unchanged. Unused slots show no chip. The chip shows the profile's configured ready color, not temporary device status colors or flashes.
+
 Select a profile, then choose **LED RGB settings** directly below **Delete profile**. **Default dim blue** retains the original ready color and brightness: R=0, G=0, B=1. Choose **Custom RGB values** to adjust R, G and B on three horizontal slider rows, each with a numeric readout from 0 to 255. The channel values are sent directly, without brightness scaling or RGB565 quantization. R=0, G=0, B=0 turns off the ready LED.
 
 **OK** changes the selected draft; **Cancel** leaves it unchanged. Choose **Save profile to device** to persist it. The color is shown when that profile is active, input is received, and the output host is ready. Browsing another slot does not change the hardware color. Error, save, waiting, and profile-number indications retain their existing colors and priority. After an indication ends, the active profile color returns.
