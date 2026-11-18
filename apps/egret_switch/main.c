@@ -56,7 +56,7 @@ static uc_statistics host_stats;
 static ub_queue outgoing;
 static ub_direction_pulse direction_pulse;
 static ub_frame flight;
-static um_analog_plan flight_analog_plan;
+static upr_analog_plan flight_analog_plan;
 static uint32_t flight_analog_epoch;
 static bool flight_valid,pad_was_ready;
 static uint32_t direction_generated,direction_enqueued,direction_pressed,direction_released,direction_dropped,direction_blocked;
@@ -313,7 +313,7 @@ static void schedule_output(void) {
     // Use current virtual axes even when the ordinary state queue is empty.
     // Overlays never enter that queue, so stopping/switching restores its base axes.
     upr_rolling_overlay(time_us_32(),&next.report);
-    um_analog_plan analog_plan={0};
+    upr_analog_plan analog_plan={0};
     uint32_t horizon=(uint32_t)active_output_interval*1000u;
     if(active_host_mode==UH_XINPUT && !config.output_interval_ms)horizon=12000u;
     if(horizon<1000u)horizon=1000u;
@@ -325,7 +325,7 @@ static void schedule_output(void) {
         if(!flight.transition && (from_queue || next.direction_key || flight.direction_level!=next.direction_level ||
             flight.hold_directions!=next.hold_directions || memcmp(&flight.report,&next.report,sizeof(next.report)) ||
             (analog_epoch && (flight_analog_epoch!=analog_epoch ||
-                memcmp(flight_analog_plan.axis,analog_plan.axis,sizeof(analog_plan.axis)))))) {
+                !upr_analog_plan_equal(&flight_analog_plan,&analog_plan))))) {
             if(!ud_cancel_repeat())return;
             if(measuring())measurement.counts.repeats_replaced++;
             flight_valid=false;

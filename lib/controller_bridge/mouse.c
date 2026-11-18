@@ -68,7 +68,7 @@ void um_direction_keys(um_key_state *s,const up_mouse_options *o,int32_t raw_x,i
         key_axis(&s->ball_x10,x,limit,UM_KEY_LEFT,UM_KEY_RIGHT,UDK_SOURCE_TRACKBALL,keys);
         key_axis(&s->ball_y10,y,limit,UM_KEY_UP,UM_KEY_DOWN,UDK_SOURCE_TRACKBALL,keys);
     } else s->ball_x10=s->ball_y10=0;
-    if(settings->paddle_mode!=UDK_ROLLING_MODE && (o->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
+    if(settings->paddle_mode==0 && (o->flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
         int64_t rotation=-(int64_t)wheel*settings->paddle_gain10;
         if(o->flags&UP_MOUSE_INVERT_PADDLE)rotation=-rotation;
         bool vertical=(o->flags&UP_MOUSE_PADDLE_Y)!=0;

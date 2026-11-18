@@ -37,7 +37,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.29.0 (firmware 0.29.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.30.0 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.30.0:** Paddle now offers **Virtual Cursor(Analog)** with four destinations: **Left stick (X), Left stick (Y), Right stick (X), Right stick (Y)**. Analog range, curve, speed, smoothing and inertia are stored independently from Trackball. New Paddle profiles start with Left stick (X), minimum 25%, maximum 100%, Low-speed preserve, Speed 3.00, Smoothing 100% and Inertia 0 ms; saved profiles retain their settings. Only the selected axis is controlled; its paired axis retains its assignment. Main Paddle inversion applies. Small movements are retained across ordinary stops, including with short inertia settings. Both Trackball and Paddle offer a **Low-speed preserve** curve: it gives the tiniest movements a square-root-shaped start, smoothly joins a proportional low-to-medium response, then rises more steeply at high speed. Curve is applied before Speed, so sensitivity changes retain their proportional effect below the output ceiling. Trackball and Paddle may share the same stick, with the active source retaining control while it moves. After it stops for 40 ms, the other source can take control with its next movement report. Install the matching firmware; existing slots and settings are retained. See [Paddle setup](docs/configurator-guide.md#paddle-virtual-cursoranalog).
 
 **0.29.0:** Adds **Virtual Cursor(Analog)** to convert trackball movement into analog-stick output. Adjust minimum, maximum and curve, plus Speed, Smoothing and Inertia. Defaults are 25% minimum, 100% maximum, linear, Speed 3.00, Smoothing 60% and Inertia 100 ms. Clear reversals prioritize the new direction, while ordinary corners such as up → right → down keep movement continuous. Use S / Auto(S) on Switch or X / Auto(X) on PC; Pro output is unsupported. Update the bundled firmware together with the app. See [setup instructions](docs/configurator-guide.md#trackball-analog-angle).
 
@@ -176,17 +178,17 @@ The configurator build also builds the normal firmware and embeds that exact UF2
 
 ## Memory budget
 
-Allocation figures for this virtual-coordinate trial, calculated from its binary and linker sections:
+Allocation figures for the current firmware, calculated from its binary and linker sections:
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 172,740; persistent storage 49,152 | 1,875,260 |
-| SRAM, 532,480 bytes | Static data 164,916; two stacks 8,192 | 359,372 |
-| One bank copy, 16,384 bytes | Payload 14,036 + header 16 | 2,332 |
+| Flash, 2,097,152 bytes | Code/initial values 181,756; persistent storage 49,152 | 1,866,244 |
+| SRAM, 532,480 bytes | Static data 165,552; two stacks 8,192 | 358,736 |
+| One bank copy, 16,384 bytes | Payload 14,164 + header 16 | 2,204 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 43,512, and BSS 121,132 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 856 bytes, bank payload 14,036 bytes, and UF2 345,600 bytes.
+Static SRAM consists of vector table 272, initialized data 43,512, and BSS 121,768 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 363,520 bytes.
 
 ## Repository contents and license
 

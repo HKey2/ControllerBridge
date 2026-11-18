@@ -3,6 +3,7 @@
 #include "controller_profile.h"
 #include "controller_bridge.h"
 #include "controller_mouse.h"
+#include "controller_paddle_point.h"
 // 31 is reserved by the application for status LED diagnostics.
 #define UPR_CMD_PROFILE_ID 32
 #define UPR_CMD_SELECT_PROFILE 33
@@ -20,6 +21,11 @@
 #define UPR_CAP_BUTTON_TOGGLE 32u
 #define UPR_CAP_EXTENDED_CURVES 64u
 #define UPR_CAP_VIRTUAL_POINT 128u
+#define UPR_CAP_PADDLE_ANALOG 256u
+#define UPR_CAP_SHARED_ANALOG_STICK 512u
+#define UPR_CAP_INTEGER_VIRTUAL_POINT 1024u
+#define UPR_CAP_NORMALIZED_PADDLE 2048u
+#define UPR_CAP_LOW_SPEED_CURVE 4096u
 #define UPR_FEATURE_PSEUDO_INERTIA 33554432u
 #define UPR_FEATURE_ANALOG_PAIR 67108864u
 #define UPR_FEATURE_GYRO_STEERING (1u<<27)
@@ -55,8 +61,26 @@ void upr_mouse_reset(void);
 void upr_release_toggles(void);
 // Apply after ordinary mouse/gamepad routing, including repeats and stop timeout.
 bool upr_rolling_overlay(uint32_t now_us,sw_report *report);
-uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,um_analog_plan *plan);
-void upr_analog_ack(uint32_t epoch,const um_analog_plan *plan,uint32_t time_us);
+// Separate acknowledged plans prevent one source from spending another's movement.
+typedef struct { um_analog_plan ball;ump_plan paddle;uint8_t sources; } upr_analog_plan;
+// A repeated identical USB report can still need a new source/response plan.
+// Compare its defined fields, not structure padding or output bytes alone.
+static inline bool upr_analog_plan_equal(const upr_analog_plan *a,const upr_analog_plan *b) {
+    if(a->sources!=b->sources)return false;
+    if(a->sources&1u)for(unsigned i=0;i<2;++i)
+        if(a->ball.raw_rate[i]!=b->ball.raw_rate[i] ||
+           a->ball.requested_response[i]!=b->ball.requested_response[i] ||
+           a->ball.applied_response[i]!=b->ball.applied_response[i] ||
+           a->ball.axis[i]!=b->ball.axis[i])return false;
+    if(a->sources&2u)
+        if(a->paddle.raw_rate!=b->paddle.raw_rate ||
+           a->paddle.requested_response!=b->paddle.requested_response ||
+           a->paddle.applied_response!=b->paddle.applied_response ||
+           a->paddle.axis!=b->paddle.axis)return false;
+    return true;
+}
+uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,upr_analog_plan *plan);
+void upr_analog_ack(uint32_t epoch,const upr_analog_plan *plan,uint32_t time_us);
 uint8_t upr_hold_directions(uint32_t now_us);
 // Mouse-only relative decode; never touches direction/hold/rolling state.
 // The caller resets output state at mode/profile/readiness boundaries.

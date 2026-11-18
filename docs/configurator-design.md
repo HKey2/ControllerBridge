@@ -22,13 +22,13 @@ The input path supports one directly connected Full Speed device, up to four HID
 
 ## Paddle axis semantics
 
-Mouse flags at profile offset 480 use bit 5 for the paddle destination: zero means X and one means Y. Bits 6–7 enable trackball and paddle conversion respectively. `MouseProfileSettings.PaddleAxis` is the X/Y enum, serialized as 0/1 in JSON; an omitted property defaults to X. The current version uses v10/856-byte profiles, v10/14,036-byte banks, and JSON v7 exports. The mouse-options prefix retains the same offsets.
+Mouse flags at profile offset 480 use bit 5 for the paddle destination: zero means X and one means Y. Bits 6–7 enable trackball and paddle conversion respectively. `MouseProfileSettings.PaddleAxis` is the X/Y enum, serialized as 0/1 in JSON; an omitted property defaults to X. The current version uses v11/864-byte profiles, v11/14,164-byte banks, and JSON v8 exports. The mouse-options prefix retains the same offsets.
 
 The mixer applies paddle gain and its own reversal to the wheel delta, then adds it to the selected axis before per-axis fractional rounding. Trackball reversal is applied only to trackball movement. The runtime resets fractional state when it reloads a profile. No additional per-profile storage or runtime buffers are allocated. Command 37 reports the same eight-byte settings block; capability bit 15 announces support. GUI single-profile and bank writes, and CLI profile edits, reject a Y setting on older firmware before sending write commands. Older firmware/GUI cannot load a Y profile; save all paddle settings as X before downgrading.
 
 ## Profile wire format
 
-The canonical profile is version 10, 856 bytes, little endian. The C definitions and C# codec validate fixed sizes and field ranges. The original 488-byte prefix retains its fields; version-5 profiles migrate by appending disabled shift and conversion settings; version-6 profiles retain their first three shift keys and replace the fourth key area with conversion settings. Versions 1–4 remain unsupported. Normal USB profile transfers use only the current 856-byte format; legacy conversion applies to stored banks and JSON imports.
+The canonical profile is version 11, 864 bytes, little endian. The C definitions and C# codec validate fixed sizes and field ranges. The original 488-byte prefix retains its fields; version-5 profiles migrate by appending disabled shift and conversion settings; version-6 profiles retain their first three shift keys and replace the fourth key area with conversion settings. Versions 1–4 remain unsupported. Normal USB profile transfers use only the current 864-byte format; legacy conversion applies to stored banks and JSON imports.
 
 | Offset | Bytes | Field |
 |---:|---:|---|
@@ -53,7 +53,7 @@ The canonical profile is version 10, 856 bytes, little endian. The C definitions
 | 496 | 48 | Three physical modifier bindings, 16 bytes each; unused entries disabled |
 | 544 | 4 | Trackball targets U/D/L/R, each explicit output ID + 1 (1–18) |
 | 548 | 2 | Paddle negative/positive targets, each 1–18 |
-| 550 | 1 | Trackball mode in bits 0–1, Paddle mode in bits 2–3; each 0 or 1, upper bits zero |
+| 550 | 1 | Trackball mode in bits 0–1, Paddle mode in bits 2–3; each 0, 1 or 2 (Analog), upper bits zero |
 | 551 | 1 | Virtual Rolling reverse bit 0, Left stick bit 1; other bits zero |
 | 552 | 1 | Rotation step: 5/10/15/20/30/40/45/60/90 degrees |
 | 553 | 1 | Pseudo-inertia enable bit 0; other bits zero |
@@ -61,9 +61,9 @@ The canonical profile is version 10, 856 bytes, little endian. The C definitions
 | 560 | 288 | 18 shifted digital bindings, 16 bytes each |
 | 848 | 8 | Analog output levels: minimum, maximum (0 means 100%), curve, and 5 reserved zero bytes |
 
-Flag bit 3 (`UP_LED_CUSTOM`) enables the three LED bytes. With the bit clear all three bytes must be zero, and ready output is the existing R=0/G=0/B=1. With the bit set, bytes are output exactly; all-zero custom RGB means off. Matching still uses only flag bits 1 and 2 (values 2 and 4), so color does not change controller grouping, profile selection, or shortcuts. The three RGB bytes retain their existing offsets. The profile flag field still has 12 unused bits. The appended shift block adds 360 bytes per profile; bank-copy spare space is now 2,332 bytes.
+Flag bit 3 (`UP_LED_CUSTOM`) enables the three LED bytes. With the bit clear all three bytes must be zero, and ready output is the existing R=0/G=0/B=1. With the bit set, bytes are output exactly; all-zero custom RGB means off. Matching still uses only flag bits 1 and 2 (values 2 and 4), so color does not change controller grouping, profile selection, or shortcuts. The three RGB bytes retain their existing offsets. The profile flag field still has 12 unused bits. The appended shift block adds 360 bytes per profile; bank-copy spare space is now 2,204 bytes.
 
-Migration preserves version-5 LED values, including the zero default in 0.16.x/0.17.x records. Missing LED properties in old JSON decode as zero. The normal GUI checks for exact matching firmware before editing the bank; older configurators cannot edit the current version-10 bank.
+Migration preserves version-5 LED values, including the zero default in 0.16.x/0.17.x records. Missing LED properties in old JSON decode as zero. The normal GUI checks for exact matching firmware before editing the bank; older configurators cannot edit the current version-11 bank.
 
 Valid output bytes are 0, 1, 2, 4, 5, and 6. The controller-button preference is retained even while another tab is selected. Every accepted profile includes this field. Whole-bank operations preserve original profile bytes rather than rewriting unrelated slots.
 
@@ -75,7 +75,7 @@ An analog binding contains interface (1), report ID (1), bit offset (2), bit wid
 
 ## Profile bank and Flash
 
-The version-10 bank is 14,036 bytes: 16-byte bank header, 16 x 856-byte profiles, 256 bytes of IDs, 4 bytes of preferred selections, and 64 bytes of shortcuts. IDs use the byte order of .NET `Guid.ToByteArray()` / `new Guid(bytes)`. The 16-byte outer CRC header makes a stored copy 14,052 bytes, leaving 2,332 bytes in each 16 KiB bank area.
+The version-11 bank is 14,164 bytes: 16-byte bank header, 16 x 864-byte profiles, 256 bytes of IDs, 4 bytes of preferred selections, and 64 bytes of shortcuts. IDs use the byte order of .NET `Guid.ToByteArray()` / `new Guid(bytes)`. The 16-byte outer CRC header makes a stored copy 14,180 bytes, leaving 2,204 bytes in each 16 KiB bank area.
 
 | Storage slot | Offset with 2 MiB Flash | Size | Purpose |
 |---:|---:|---:|---|
@@ -205,7 +205,7 @@ Conversion state is reset at existing profile, output-mode, readiness and discon
 
 ## Pointing-to-direction conversion (0.22.0)
 
-Mouse flags use all eight bits. `Mouse.TrackballToDpad` and `Mouse.PaddleToDpad` default to false in JSON that lacks them. The current version uses v10/856-byte profiles, v10/14,036-byte banks and JSON v7. Selecting USB mouse retains both conversion flags, displays their values in disabled grey controls and does not execute conversion. Pointer and source edits preserve both preferences. Returning to a gamepad mode uses the retained settings. GUI encoding and firmware profile/bank validation accept this combination since 0.20.19. Older firmware rejects it when the corresponding input source is enabled; compatibility requires matching firmware, not a new storage layout. The internal `upr_direction_enabled` query and command-49 preference indicator continue to describe configured source/conversion flags; actual execution is selected by the active output route.
+Mouse flags use all eight bits. `Mouse.TrackballToDpad` and `Mouse.PaddleToDpad` default to false in JSON that lacks them. The current version uses v11/864-byte profiles, v11/14,164-byte banks and JSON v8. Selecting USB mouse retains both conversion flags, displays their values in disabled grey controls and does not execute conversion. Pointer and source edits preserve both preferences. Returning to a gamepad mode uses the retained settings. GUI encoding and firmware profile/bank validation accept this combination since 0.20.19. Older firmware rejects it when the corresponding input source is enabled; compatibility requires matching firmware, not a new storage layout. The internal `upr_direction_enabled` query and command-49 preference indicator continue to describe configured source/conversion flags; actual execution is selected by the active output route.
 
 `um_direction_keys` maintains three signed 32-bit sums in tenths with 64-bit multiplication/addition. Common click threshold, hidden gains and click durations combine with the active profile's explicit targets and modes. The 40-byte `udk_settings` structure retains migration maps/modes/step and adds inertia threshold/interval (u16), decay percent (u8) and effective per-profile enable (u8). `upr_effective_direction_settings` composes the effective settings on activation/settings changes, outside the per-report route. Paddle negative/positive targets populate the effective U/L and D/R entries so pointer axis changes do not alter the chosen outputs. `udk_settings` remains separate from the 16-byte per-profile conversion block, which includes six reserved bytes.
 
@@ -291,7 +291,7 @@ The LED consumes `UC_CONFIGURED` to clear an earlier initialization fault and wa
 
 ## XInput output and Switch 2 input
 
-The device-wide host preference selects the XInput report encoder and USB configuration without rewriting profile IDs or bindings. The host mode does not change the profile layout; the current version uses v10/856-byte profiles and v10/14,036-byte banks. Save and independent readback finish before command 46 schedules detach/reconnect. X gamepad output uses the four reference interfaces without a configuration HID. The Windows configurator reaches the existing command handler through unadvertised EP0 string requests via the standard USB hub driver. Other output layouts retain their HID configuration transport. See [USB layout and configuration access](xinput-output.md).
+The device-wide host preference selects the XInput report encoder and USB configuration without rewriting profile IDs or bindings. The host mode does not change the profile layout; the current version uses v11/864-byte profiles and v11/14,164-byte banks. Save and independent readback finish before command 46 schedules detach/reconnect. X gamepad output uses the four reference interfaces without a configuration HID. The Windows configurator reaches the existing command handler through unadvertised EP0 string requests via the standard USB hub driver. Other output layouts retain their HID configuration transport. See [USB layout and configuration access](xinput-output.md).
 
 ### Runtime host result (0.24.0)
 

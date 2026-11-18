@@ -2,11 +2,14 @@ namespace ControllerBridge;
 
 public sealed class ConversionSettings
 {
-    // New registrations use the tuned trackball response. Keep constructor and
+    // New registrations use the tuned Trackball and Paddle responses. Keep constructor and
     // wire defaults unchanged so loading older profiles never retunes them.
     internal static ConversionSettings NewProfileDefaults()
     {
-        ConversionSettings result = new() { AnalogOutputMinimum = 25 };
+        ConversionSettings result = new() { AnalogOutputMinimum = 25,
+            PaddleAnalogAxis = 0, PaddleAnalogSpeed100 = 300, PaddleAnalogSmoothingMs = 50,
+            PaddleAnalogReturnMs = 0, PaddleAnalogOutputMinimum = 25, PaddleAnalogOutputMaximum = 100,
+            PaddleAnalogOutputCurve = AnalogCurvePicker.LowSpeedCurve };
         result.SetVirtualOptions(3m, 30, 100); return result;
     }
     // Display endpoints are 1%=1ms and 100%=50ms. The saved period retains
@@ -47,28 +50,35 @@ public sealed class ConversionSettings
     public byte AnalogOutputMinimum { get; set; }
     public byte AnalogOutputMaximum { get; set; } = 100;
     public byte AnalogOutputCurve { get; set; }
-    internal bool RequiresAnalogAngle => TrackballMode == 2 || AnalogFullSpeed != 1000 || AnalogRight ||
+    public byte PaddleAnalogAxis { get; set; }
+    public ushort PaddleAnalogSpeed100 { get; set; } = 300;
+    public byte PaddleAnalogSmoothingMs { get; set; } = 30;
+    public ushort PaddleAnalogReturnMs { get; set; } = 100;
+    public byte PaddleAnalogOutputMinimum { get; set; } = 25;
+    public byte PaddleAnalogOutputMaximum { get; set; } = 100;
+    public byte PaddleAnalogOutputCurve { get; set; }
+    internal bool HasPaddleAnalogSettings => PaddleMode == 2 || PaddleAnalogAxis != 0 || PaddleAnalogSpeed100 != 300 ||
+        PaddleAnalogSmoothingMs != 30 || PaddleAnalogReturnMs != 100 || PaddleAnalogOutputMinimum != 25 ||
+        PaddleAnalogOutputMaximum != 100 || PaddleAnalogOutputCurve != 0;
+    internal bool RequiresAnalogAngle => PaddleMode == 2 || TrackballMode == 2 || AnalogFullSpeed != 1000 || AnalogRight ||
         AnalogInvertX || AnalogInvertY || AnalogCurve != 0 || AnalogMinimumSpeed != 0 || AnalogReturnMs != 0;
     internal static readonly int[] Steps = [5, 10, 15, 20, 30, 40, 45, 60, 90];
     internal void Validate()
     {
+        if (PaddleAnalogAxis > 3 || PaddleAnalogSpeed100 is < 1 or > 5000 || PaddleAnalogSmoothingMs == 0 ||
+            PaddleAnalogReturnMs > 2550 || PaddleAnalogReturnMs % 10 != 0 || PaddleAnalogOutputMaximum is < 1 or > 100 ||
+            PaddleAnalogOutputMinimum >= PaddleAnalogOutputMaximum || !AnalogCurvePicker.ValidCode(PaddleAnalogOutputCurve))
+            throw new InvalidDataException(L.T("PaddleのVirtual Cursor(Analog)の出力先・アナログ範囲・スピード・慣性を確認してください。",
+                "Check the Paddle Virtual Cursor(Analog) output axis, analog range, speed and inertia."));
         if (AnalogOutputMaximum is < 1 or > 100 || AnalogOutputMinimum >= AnalogOutputMaximum || !AnalogCurvePicker.ValidCode(AnalogOutputCurve))
             throw new InvalidDataException(L.T("アナログ最小値は最大値より小さくしてください。最小値は0〜99%、最大値は1〜100%です。", "Analog minimum must be below maximum. Minimum is 0–99%, maximum is 1–100%."));
         if (TrackballTargets is null || TrackballTargets.Length != 4 || PaddleTargets is null || PaddleTargets.Length != 2 ||
-            TrackballTargets.Concat(PaddleTargets).Any(t => t is < 1 or > 18) || TrackballMode > 2 || PaddleMode > 1 || !Steps.Contains(RollingStepDeg))
+            TrackballTargets.Concat(PaddleTargets).Any(t => t is < 1 or > 18) || TrackballMode > 2 || PaddleMode > 2 || !Steps.Contains(RollingStepDeg))
             throw new InvalidDataException(L.T("方向変換の割り当て・モード・回転刻みを確認してください。", "Check conversion targets, modes and rotation step."));
         if (AnalogFullSpeed < 10 || !AnalogCurvePicker.ValidCode(AnalogCurve) || AnalogMinimumSpeed > 2550 || AnalogMinimumSpeed % 10 != 0 ||
             AnalogMinimumSpeed >= AnalogFullSpeed || AnalogReturnMs > 2550 || AnalogReturnMs % 10 != 0)
             throw new InvalidDataException(L.T("Virtual Cursor(Analog)の微小入力しきい値は最大傾斜速度より小さくしてください。速度・戻り時間の範囲も確認してください。",
                 "Virtual Cursor(Analog)'s minimum speed must be below its full-tilt speed. Check the speed and return-time ranges."));
-    }
-    internal void ValidateSources(DeviceProfile profile)
-    {
-        Validate();
-        if (profile.OutputMode != 1 && profile.Mouse.TrackballEnabled && profile.Mouse.TrackballToDpad &&
-            profile.Mouse.PaddleEnabled && profile.Mouse.PaddleToDpad && TrackballMode == 2 && PaddleMode == 1 && AnalogRight == !RollingLeft)
-            throw new InvalidDataException(L.T("Virtual Cursor(Analog)とVirtual Rollingが同じスティックを使用しています。出力先を左右に分けるか、片方の方向変換をOFFにしてください。",
-                "Virtual Cursor(Analog) and Virtual Rolling use the same stick. Choose different sticks or turn off one source's direction conversion."));
     }
     internal void Write(byte[] bytes)
     {
@@ -80,10 +90,18 @@ public sealed class ConversionSettings
         bytes[557] = AnalogCurve; bytes[558] = (byte)(AnalogMinimumSpeed / 10); bytes[559] = (byte)(AnalogReturnMs / 10);
         bytes[848] = AnalogOutputMinimum; bytes[849] = AnalogOutputMaximum == 100 ? (byte)0 : AnalogOutputMaximum;
         bytes[850] = AnalogOutputCurve; bytes.AsSpan(851, 5).Clear();
+        WritePaddle(bytes);
+    }
+    internal void WritePaddle(byte[] bytes)
+    {
+        Wire.W16(bytes, 856, PaddleAnalogSpeed100); bytes[858] = PaddleAnalogSmoothingMs;
+        bytes[859] = (byte)(PaddleAnalogReturnMs / 10); bytes[860] = PaddleAnalogAxis;
+        bytes[861] = PaddleAnalogOutputMinimum; bytes[862] = PaddleAnalogOutputMaximum == 100 ? (byte)0 : PaddleAnalogOutputMaximum;
+        bytes[863] = PaddleAnalogOutputCurve;
     }
     internal static ConversionSettings Read(byte[] bytes)
     {
-        if ((bytes[550] & ~7) != 0 || bytes[551] > 3 || bytes[553] > 1 || bytes[556] > 7 || bytes.AsSpan(851, 5).ContainsAnyExcept((byte)0))
+        if ((bytes[550] & ~15) != 0 || (Wire.U16(bytes, 0) < 11 && (bytes[550] >> 2) > 1) || bytes[551] > 3 || bytes[553] > 1 || bytes[556] > 7 || bytes.AsSpan(851, 5).ContainsAnyExcept((byte)0))
             throw new InvalidDataException(L.T("未対応の方向変換設定です。", "Unsupported conversion settings."));
         ConversionSettings result = new() { TrackballTargets = bytes.AsSpan(544, 4).ToArray(), PaddleTargets = bytes.AsSpan(548, 2).ToArray(),
             TrackballMode = (byte)(bytes[550] & 3), PaddleMode = (byte)((bytes[550] >> 2) & 3),
@@ -91,7 +109,10 @@ public sealed class ConversionSettings
             AnalogFullSpeed = Wire.U16(bytes, 554) == 0 ? (ushort)1000 : Wire.U16(bytes, 554),
             AnalogRight = (bytes[556] & 1) != 0, AnalogInvertX = (bytes[556] & 2) != 0, AnalogInvertY = (bytes[556] & 4) != 0,
             AnalogCurve = bytes[557], AnalogMinimumSpeed = (ushort)(bytes[558] * 10), AnalogReturnMs = (ushort)(bytes[559] * 10),
-            AnalogOutputMinimum = bytes[848], AnalogOutputMaximum = bytes[849] == 0 ? (byte)100 : bytes[849], AnalogOutputCurve = bytes[850] };
+            AnalogOutputMinimum = bytes[848], AnalogOutputMaximum = bytes[849] == 0 ? (byte)100 : bytes[849], AnalogOutputCurve = bytes[850],
+            PaddleAnalogSpeed100 = Wire.U16(bytes, 856), PaddleAnalogSmoothingMs = bytes[858], PaddleAnalogReturnMs = (ushort)(bytes[859] * 10),
+            PaddleAnalogAxis = bytes[860], PaddleAnalogOutputMinimum = bytes[861],
+            PaddleAnalogOutputMaximum = bytes[862] == 0 ? (byte)100 : bytes[862], PaddleAnalogOutputCurve = bytes[863] };
         result.Validate(); return result;
     }
     internal static ConversionSettings FromLegacy(MouseProfileSettings mouse, MouseUdlrSettings legacy)
@@ -109,5 +130,8 @@ public sealed class ConversionSettings
         TrackballMode = TrackballMode, InertiaEnabled = InertiaEnabled, PaddleMode = PaddleMode, RollingInvert = RollingInvert, RollingLeft = RollingLeft, RollingStepDeg = RollingStepDeg,
         AnalogFullSpeed = AnalogFullSpeed, AnalogRight = AnalogRight, AnalogInvertX = AnalogInvertX, AnalogInvertY = AnalogInvertY,
         AnalogCurve = AnalogCurve, AnalogMinimumSpeed = AnalogMinimumSpeed, AnalogReturnMs = AnalogReturnMs,
-        AnalogOutputMinimum = AnalogOutputMinimum, AnalogOutputMaximum = AnalogOutputMaximum, AnalogOutputCurve = AnalogOutputCurve };
+        AnalogOutputMinimum = AnalogOutputMinimum, AnalogOutputMaximum = AnalogOutputMaximum, AnalogOutputCurve = AnalogOutputCurve,
+        PaddleAnalogAxis = PaddleAnalogAxis, PaddleAnalogSpeed100 = PaddleAnalogSpeed100, PaddleAnalogSmoothingMs = PaddleAnalogSmoothingMs,
+        PaddleAnalogReturnMs = PaddleAnalogReturnMs, PaddleAnalogOutputMinimum = PaddleAnalogOutputMinimum,
+        PaddleAnalogOutputMaximum = PaddleAnalogOutputMaximum, PaddleAnalogOutputCurve = PaddleAnalogOutputCurve };
 }

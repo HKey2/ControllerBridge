@@ -15,7 +15,7 @@ typedef struct {
     uint8_t targets[4]; // Trackball U/D/L/R: 0=original direction, 1..18=output ID + 1.
     uint8_t paddle_targets[4]; // Paddle U/D/L/R, selected after its profile axis/inversion.
     uint16_t rolling_gain10; // Tenths of a degree per raw paddle count, independent of pointer gain.
-    uint8_t paddle_mode,rolling_flags; // 0 clicks / 1 Virtual Rolling; bit 0 invert, bit 1 left stick.
+    uint8_t paddle_mode,rolling_flags; // 0 clicks / 1 Virtual Rolling / 2 Analog; bit 0 invert, bit 1 left stick.
     uint8_t trackball_mode,trackball_hold_threshold; // 0 legacy clicks / 1 Hold; raw points 1..127.
     uint8_t rolling_step_deg; // Legacy migration default; effective value comes from the profile.
     uint8_t host_mode; // 0=S (Switch-compatible HID), 1=X (wired Xbox 360 XInput), 2=Auto (X then S once), 3=Switch Pro.
@@ -85,7 +85,7 @@ static inline bool udk_settings_valid(const udk_settings *s) {
         s->paddle_gain10>=10 && s->paddle_gain10<=100 &&
         s->hold_ms>=1 && s->hold_ms<=UDK_MAX_HOLD_MS &&
         s->wait_ms>=1 && s->wait_ms<=UDK_MAX_WAIT_MS && udk_targets_valid(s->targets) && udk_targets_valid(s->paddle_targets) &&
-        s->rolling_gain10>=1 && s->rolling_gain10<=100 && s->paddle_mode<=UDK_ROLLING_MODE && s->rolling_flags<=3 && s->trackball_mode<=UDK_ANALOG_ANGLE_MODE &&
+        s->rolling_gain10>=1 && s->rolling_gain10<=100 && s->paddle_mode<=UDK_ANALOG_ANGLE_MODE && s->rolling_flags<=3 && s->trackball_mode<=UDK_ANALOG_ANGLE_MODE &&
         s->trackball_hold_threshold>=1 && s->trackball_hold_threshold<=127 && s->rolling_step_deg>=5 && s->rolling_step_deg<=90 && s->rolling_step_deg%5u==0 && 360u%s->rolling_step_deg==0;
 }
 // Editing bounds are narrower than the legacy storage bounds. Reading an older

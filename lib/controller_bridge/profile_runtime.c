@@ -35,9 +35,16 @@ static um_rolling_state rolling_state;
 static uint32_t rolling_idle_us=20000u;
 static um_hold_state hold_state;
 static um_analog_state analog_state;
+static ump_state paddle_analog_state;
+static bool paddle_analog_enabled;
+static uint32_t paddle_analog_idle_us=20000u;
 static uint32_t analog_epoch;
+static bool analog_shared_stick;
+static uint8_t analog_owner; // 0: no motion yet, 1: Trackball, 2: Paddle.
+static uint32_t analog_owner_time;
 static void analog_reset(void) {
-    analog_state=(um_analog_state){0};
+    analog_state=(um_analog_state){0};paddle_analog_state=(ump_state){0};
+    analog_owner=0;analog_owner_time=0;
     if(!++analog_epoch)++analog_epoch;
 }
 static bool analog_enabled;
@@ -127,6 +134,15 @@ static void refresh_conversion(void) {
     up_conversion_apply(active>=0?&bank.profiles[active].shift.conversion:&defaults,&direction_settings);
     analog_enabled=active>=0 && direction_settings.trackball_mode==UDK_ANALOG_ANGLE_MODE &&
         (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS);
+    paddle_analog_enabled=active>=0 && direction_settings.paddle_mode==UDK_ANALOG_ANGLE_MODE &&
+        (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS);
+    analog_shared_stick=false;
+    if(analog_enabled && (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==
+       (UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS)) {
+        bool ball_right=(bank.profiles[active].shift.conversion.analog_flags&UP_ANALOG_RIGHT)!=0;
+        analog_shared_stick=(paddle_analog_enabled && ball_right==(bank.profiles[active].paddle_analog.axis>=2u)) ||
+            (direction_settings.paddle_mode==UDK_ROLLING_MODE && ball_right==((direction_settings.rolling_flags&UDK_ROLLING_LEFT)==0));
+    }
 }
 const udk_settings *upr_direction_settings(void) { return &direction_settings; }
 static void select_profile(void) {
@@ -167,7 +183,7 @@ static bool rolling_enabled(void) {
         (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS);
 }
 bool upr_rolling_overlay(uint32_t now_us,sw_report *report) {
-    if(!rolling_enabled())return false;
+    if(!rolling_enabled() || (analog_shared_stick && analog_owner!=2))return false;
     um_rolling_overlay(&rolling_state,now_us,rolling_idle_us,&direction_settings,report);return true;
 }
 uint8_t upr_hold_directions(uint32_t now_us) {
@@ -175,13 +191,28 @@ uint8_t upr_hold_directions(uint32_t now_us) {
        (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))!=(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))return 0;
     return um_hold_directions(&hold_state,now_us,hold_idle_us);
 }
-uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,um_analog_plan *plan) {
-    if(!analog_enabled || !upr_ready() || mouse_x<0 || mouse_y<0)return 0;
-    um_analog_prepare(&analog_state,now_us,analog_idle_us,horizon_us,&bank.profiles[active].shift.conversion,&bank.profiles[active].analog_levels,report,plan);
-    return analog_epoch;
+uint32_t upr_analog_prepare(uint32_t now_us,uint32_t horizon_us,sw_report *report,upr_analog_plan *plan) {
+    if((!analog_enabled && !paddle_analog_enabled) || !upr_ready())return 0;
+    plan->sources=0;
+    if(analog_enabled && mouse_x>=0 && mouse_y>=0 && (!analog_shared_stick || analog_owner!=2)) {
+        um_analog_prepare(&analog_state,now_us,analog_idle_us,horizon_us,&bank.profiles[active].shift.conversion,&bank.profiles[active].analog_levels,report,&plan->ball);
+        plan->sources|=1u;
+    }
+    if(paddle_analog_enabled && mouse_wheel>=0 && (!analog_shared_stick || analog_owner==2)) {
+        ump_prepare(&paddle_analog_state,now_us,paddle_analog_idle_us,horizon_us,&bank.profiles[active].paddle_analog,&plan->paddle);
+        // Only the selected axis is owned by Paddle; preserve its paired axis.
+        switch(bank.profiles[active].paddle_analog.axis) {
+        case 0:report->lx=plan->paddle.axis;break;case 1:report->ly=plan->paddle.axis;break;
+        case 2:report->rx=plan->paddle.axis;break;case 3:report->ry=plan->paddle.axis;break;
+        }
+        plan->sources|=2u;
+    }
+    return plan->sources?analog_epoch:0;
 }
-void upr_analog_ack(uint32_t epoch,const um_analog_plan *plan,uint32_t time_us) {
-    if(epoch && epoch==analog_epoch && analog_enabled)um_analog_ack(&analog_state,plan,time_us);
+void upr_analog_ack(uint32_t epoch,const upr_analog_plan *plan,uint32_t time_us) {
+    if(!epoch || epoch!=analog_epoch)return;
+    if((plan->sources&1u) && analog_enabled)um_analog_ack(&analog_state,&plan->ball,time_us);
+    if((plan->sources&2u) && paddle_analog_enabled)ump_ack(&paddle_analog_state,&plan->paddle,time_us);
 }
 static void cache_pointing_intervals(void) {
     memset(pointing_intervals,0,sizeof(pointing_intervals));
@@ -206,6 +237,22 @@ static uint32_t pointing_period(const uc_event *e) {
     }
     return (interval?interval:1u)*1000u;
 }
+static uint32_t pointing_native_period(const uc_event *e) {
+    // Device normalization uses its descriptor's native reporting unit;
+    // a user's faster USB polling preference must not change sensitivity.
+    if((e->endpoint&0xf0)==0x80) {
+        uint16_t cached=pointing_intervals[e->endpoint&15];
+        if((cached>>8)==e->interface_number && (uint8_t)cached)return (uint8_t)cached*1000u;
+    }
+    return 1000u;
+}
+static uint32_t paddle_reference_counts(const uc_hid_field *field) {
+    // EGRET II mini Paddle: physical rotation units precede personal response
+    // settings. One normalized unit per second is approximately one turn/s.
+    if(vid==0x0ae4u && pid==0x0701u && revision==1u && field->bits==8 &&
+       field->logical_min==-127 && field->logical_max==127)return 776u;
+    return 0; // Uncharacterized wheels use their native HID range internally.
+}
 static uint32_t pointing_timeout(const uc_event *e) {
     unsigned interval=pointing_period(e)/1000u;
     // Zero reports stop immediately. A change-only device gets a bounded fallback
@@ -216,6 +263,25 @@ static bool mouse_field(int index,const uc_event *e,int32_t *value) {
     if(index<0)return false;
     const observed_field *f=&fields[index];
     return e->interface_number==f->iface && uc_hid_field_value(&f->field,(f->flags&UP_REPORT_ID)!=0,e->data,e->length,value);
+}
+static void select_analog_source(bool ball_motion,bool paddle_motion,uint32_t now) {
+    // Input events arrive in queue order. Unsigned elapsed time also handles
+    // long idle periods; a signed stale-time gate would reject motion after 35 min.
+    if(!ball_motion && !paddle_motion)return;
+    // Actual movement keeps ownership even when the other source moves too.
+    // Cover separate reports and brief gaps in slow movement: panel vibration
+    // must not steal the stick. Release inertia/zero reports do not extend this.
+    if((analog_owner==1 && ball_motion) || (analog_owner==2 && paddle_motion)) {
+        analog_owner_time=now;return;
+    }
+    if(analog_owner && (uint32_t)(now-analog_owner_time)<40000u)return;
+    uint8_t next=ball_motion?1:2; // Trackball wins only the initial simultaneous tie.
+    if(next!=analog_owner) {
+        // A handoff starts from the new physical motion, with no old backlog.
+        // Invalidating the epoch also rejects an ACK still in flight for it.
+        analog_reset();rolling_state.moving=false;analog_owner=next;
+    }
+    analog_owner_time=now;
 }
 bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,um_key_events *keys) {
     *x=*y=0;*keys=(um_key_events){0};
@@ -228,15 +294,23 @@ bool upr_pointing_input(const uc_event *e,bool keys_ready,int32_t *x,int32_t *y,
     else dx=dy=0;
     bool paddle_present=(options->flags&UP_MOUSE_PADDLE) && mouse_field(mouse_wheel,e,&wheel);
     if(paddle_present)touched=true;else wheel=0;
+    if(keys_ready && analog_shared_stick)
+        select_analog_source(ball_present && (dx || dy),paddle_present && wheel,e->time_us);
     if(keys_ready && ball_present && direction_settings.trackball_mode==UDK_HOLD_MODE) {
         hold_idle_us=pointing_timeout(e);
         um_hold_input(&hold_state,options,dx,dy,e->time_us,&direction_settings);
     }
-    if(keys_ready && ball_present && analog_enabled) {
+    if(keys_ready && ball_present && analog_enabled && (!analog_shared_stick || analog_owner!=2)) {
         analog_idle_us=pointing_timeout(e);
         um_analog_input(&analog_state,options,dx,dy,e->time_us,pointing_period(e),analog_idle_us,&bank.profiles[active].shift.conversion);
     }
-    if(keys_ready && rolling_enabled() && paddle_present) {
+    if(keys_ready && paddle_present && paddle_analog_enabled && (!analog_shared_stick || analog_owner==2)) {
+        paddle_analog_idle_us=pointing_timeout(e);
+        const uc_hid_field *field=&fields[mouse_wheel].field;
+        ump_input(&paddle_analog_state,wheel,(options->flags&UP_MOUSE_INVERT_PADDLE)==0,
+            field->logical_min,field->logical_max,pointing_native_period(e),paddle_reference_counts(field),e->time_us,&bank.profiles[active].paddle_analog);
+    }
+    if(keys_ready && rolling_enabled() && paddle_present && (!analog_shared_stick || analog_owner==2)) {
         rolling_idle_us=pointing_timeout(e);um_rolling_input(&rolling_state,wheel,e->time_us,&direction_settings);
     }
     if(!touched)return false;
@@ -460,7 +534,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         memcpy(reply,"UPG1",4);put16(reply+4,1);put16(reply+6,UP_PROFILE_BYTES);reply[8]=UP_PROFILE_COUNT;
         reply[9]=(uint8_t)upr_active_slot();put16(reply+10,(uint16_t)field_count);put16(reply+12,vid);
         put16(reply+14,pid);put16(reply+16,revision);
-        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT);
+        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT|UPR_CAP_PADDLE_ANALOG|UPR_CAP_SHARED_ANALOG_STICK|UPR_CAP_INTEGER_VIRTUAL_POINT|UPR_CAP_NORMALIZED_PADDLE|UPR_CAP_LOW_SPEED_CURVE);
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
         put32(reply+40,input_initialization);

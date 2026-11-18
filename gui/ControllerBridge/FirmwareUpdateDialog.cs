@@ -111,7 +111,7 @@ internal sealed class FirmwareUpdateDialog : Form
     {
         try
         {
-            Result = await FirmwareWorkflow.RunAsync(package, device, Confirm, Report, bootWaitCancellation.Token);
+            Result = await FirmwareWorkflow.RunAsync(package, device, Confirm, Report, bootWaitCancellation.Token, allowSameVersionInstall: true);
             if (IsDisposed) return;
             if (Result == FirmwareResult.Cancelled)
             {

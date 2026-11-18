@@ -6,6 +6,7 @@
 void up_profile_clear(up_profile *p) {
     memset(p,0,sizeof(*p));p->version=UP_PROFILE_VERSION;
     p->shift.conversion=(up_conversion)UP_DEFAULT_CONVERSION;
+    p->paddle_analog=(up_paddle_analog)UP_DEFAULT_PADDLE_ANALOG;
     p->mouse=(up_mouse_options){.flags=UP_MOUSE_TRACKBALL|UP_MOUSE_PADDLE,.trackball_gain10=160,.paddle_gain10=10};
 }
 void up_bank_clear(up_bank *b) {
@@ -99,7 +100,7 @@ static bool profile_valid(const up_profile *p,unsigned version) {
         const up_conversion *c=&s->conversion;
         for(unsigned i=0;i<4;++i)if(!c->targets[i] || c->targets[i]>18)return false;
         for(unsigned i=0;i<2;++i)if(!c->paddle_targets[i] || c->paddle_targets[i]>18)return false;
-        if((c->modes&~7u) || (c->modes&3u)>UP_ANALOG_ANGLE_MODE || c->rolling_flags>3 || c->rolling_step_deg<5 || c->rolling_step_deg>90 ||
+        if((c->modes&~15u) || (c->modes&3u)>UP_ANALOG_ANGLE_MODE || ((c->modes>>2)&3u)>(version>=11?2u:1u) || c->rolling_flags>3 || c->rolling_step_deg<5 || c->rolling_step_deg>90 ||
            c->rolling_step_deg%5u || 360u%c->rolling_step_deg)return false;
         if(c->inertia_flags>1u)return false;
         if(c->analog_flags>7 || !up_analog_curve_valid(c->analog_curve) || up_analog_full_speed(c)<10 ||
@@ -107,14 +108,18 @@ static bool profile_valid(const up_profile *p,unsigned version) {
         // Historical v8 banks cannot contain the new optional v9 extension.
         if(version<9 && ((c->modes&2u) || c->analog_full_speed || c->analog_flags ||
            c->analog_curve || c->analog_min_speed10 || c->analog_return10))return false;
-        if((m->output_mode&3u)!=UP_OUTPUT_MOUSE && (m->flags&195u)==195u &&
-           c->modes==6u && ((c->analog_flags&UP_ANALOG_RIGHT)!=0)==((c->rolling_flags&UDK_ROLLING_LEFT)==0))return false;
     }
     const up_analog_levels *levels=&p->analog_levels;
     if(levels->minimum_percent>=up_analog_maximum(levels) || up_analog_maximum(levels)>100u ||
        !up_analog_curve_valid(levels->curve))return false;
     for(unsigned i=0;i<sizeof(levels->reserved);++i)if(levels->reserved[i])return false;
     if(version<10 && (levels->minimum_percent || levels->maximum_percent || levels->curve))return false;
+    if(version>=11) {
+        const up_paddle_analog *a=&p->paddle_analog;
+        unsigned maximum=a->maximum_percent?a->maximum_percent:100u;
+        if(!a->speed100 || a->speed100>5000u || !a->smoothing_ms || a->axis>3u ||
+           a->minimum_percent>=maximum || maximum>100u || !up_analog_curve_valid(a->curve))return false;
+    }
     return true;
 }
 uint32_t up_profile_recenter_keys(const up_profile *p) {
@@ -286,8 +291,8 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
     return false;
 }
 static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *defaults) {
-    unsigned stride=version==5?UP_LEGACY_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
-    unsigned bytes=version==5?UP_LEGACY_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
+    unsigned stride=version==5?UP_LEGACY_PROFILE_BYTES:version==10?UP_V10_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
+    unsigned bytes=version==5?UP_LEGACY_BANK_BYTES:version==10?UP_V10_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
     if(b->magic!=UP_BANK_MAGIC || b->version!=version || b->bytes!=bytes ||
        (version<=6 && (!defaults || !udk_settings_valid(defaults))))return false;
     uint8_t *raw=(uint8_t *)b;
@@ -307,11 +312,13 @@ static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *default
             if(p->shift.count>UP_SHIFT_KEYS)p->shift.count=UP_SHIFT_KEYS;
             up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);
         }
+        p->paddle_analog=(up_paddle_analog)UP_LEGACY_PADDLE_ANALOG;
         p->version=UP_PROFILE_VERSION;
     }
     memcpy(b->profile_ids,tail,sizeof(tail));b->version=UP_PROFILE_VERSION;b->bytes=sizeof(*b);
     return up_bank_valid(b);
 }
+bool up_bank_upgrade_v10(up_bank *b) { return upgrade_bank(b,10,NULL); }
 bool up_bank_upgrade_v9(up_bank *b) { return upgrade_bank(b,9,NULL); }
 bool up_bank_upgrade_v8(up_bank *b) { return upgrade_bank(b,8,NULL); }
 bool up_bank_upgrade_v6(up_bank *b,const udk_settings *defaults) { return upgrade_bank(b,6,defaults); }

@@ -9,6 +9,7 @@ internal sealed partial class MainForm : Form
     private DeviceProfile[] persistedProfiles = Enumerable.Range(0, DeviceProfile.SlotCount).Select(_ => new DeviceProfile()).ToArray();
     private readonly bool[] dirty = new bool[DeviceProfile.SlotCount];
     private readonly List<InputField> fields = [];
+    private readonly LiveInputDisplay liveInput = new();
     private uint cursor, generation, bankGeneration, observedBankGeneration;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 25 };
     private bool polling, working, connecting, loading, closing, syncingOutput;
@@ -174,8 +175,8 @@ internal sealed partial class MainForm : Form
         buttonBehavior.Controls.Add(buttonBehaviorLabel); buttonBehavior.Controls.Add(mouseButtons); buttonBehavior.Controls.Add(gamepadButtons);
         tuning.Controls.Add(ballRow, 0, 0); tuning.Controls.Add(paddleRow, 0, 1); tuning.Controls.Add(buttonBehavior, 0, 2);
         SetTip(trackballKeys, L.T("「方向変換の割り当て」で選んだVirtual Cursorの動作を有効にします。Repeat / Holdは方向入力、Analogは選択スティックの傾きへ変換します。X/Y反転は全モードへ適用し、ポインタ感度はアナログ変換に影響しません。超過分は捨てます。", "Enable the Virtual Cursor mode chosen in Conversion mapping. Repeat / Hold produce directional input; Analog controls the selected stick tilt. X/Y inversion applies to every mode; pointer gain does not change analog conversion."));
-        SetTip(paddleKeys, L.T("「方向変換の割り当て」で選んだパドルモードを有効にします。Virtual Cursor(Repeat)は選択軸の方向入力、Virtual Rollingは選択スティックへ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Conversion mapping: Virtual Cursor(Repeat) along the selected axis, or Virtual Rolling on the selected stick. Pointer movement continues."));
-        SetTip(invertPaddle, L.T("ポインタ移動とVirtual Cursor(Repeat)を反転します。Virtual Rollingの反転は「方向変換の割り当て」で指定します。", "Reverse pointer movement and Virtual Cursor(Repeat). Virtual Rolling has its own reversal in Conversion mapping."));
+        SetTip(paddleKeys, L.T("「方向変換の割り当て」で選んだパドルモードを有効にします。Virtual Cursor(Repeat)は選択軸の方向入力、Virtual Rollingは選択スティック、Virtual Cursor(Analog)は選択したスティックのX/Y軸へ出力します。通常のポインタ移動も継続します。", "Enable the paddle mode selected in Conversion mapping: Virtual Cursor(Repeat) along the selected axis, Virtual Rolling on the selected stick, or Virtual Cursor(Analog) on the selected stick axis. Pointer movement continues."));
+        SetTip(invertPaddle, L.T("ポインタ移動とVirtual Cursor(Repeat)／Virtual Cursor(Analog)を反転します。Virtual Rollingの反転は「方向変換の割り当て」で指定します。", "Reverse pointer movement, Virtual Cursor(Repeat) and Virtual Cursor(Analog). Virtual Rolling has its own reversal in Conversion mapping."));
         // Keep both editors in the control tree while hidden so they receive
         // the same font and monitor-DPI changes as the visible editor.
         Panel mappingPages = new() { Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -398,7 +399,7 @@ internal sealed partial class MainForm : Form
             if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
-            fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
+            liveInput.Reset(); fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
             OutputPresentation.HostMode = read.HostMode; OutputPresentation.SelectedHostMode = read.SelectedHostMode;
             if (!retain && caps.ActiveSlot < profiles.Length) selected = caps.ActiveSlot;
             UpdateConnection();
@@ -432,7 +433,7 @@ internal sealed partial class MainForm : Form
     {
         controllerArrivals.Reset();
         bool wasConnected = caps is not null;
-        caps = null; outputState = null; fields.Clear();
+        caps = null; outputState = null; liveInput.Reset(); fields.Clear();
         if (displayedActiveSlot >= 0 && displayedActiveSlot < profiles.Length) slots.Invalidate(slots.GetItemRectangle(displayedActiveSlot));
         displayedActiveSlot = -2;
         SetText(live, L.T("入力: —", "Input: —"));
@@ -457,7 +458,7 @@ internal sealed partial class MainForm : Form
             return;
         }
         DeviceState device = await bridge.ReadDeviceAsync(); caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
-        fields.Clear(); fields.AddRange(device.Fields); outputState = caps.SupportsMouseOutput ? await bridge.ReadOutputStateAsync() : null;
+        liveInput.Reset(); fields.Clear(); fields.AddRange(device.Fields); outputState = caps.SupportsMouseOutput ? await bridge.ReadOutputStateAsync() : null;
         HostOutputState host = await bridge.ReadHostOutputAsync();
         OutputPresentation.HostMode = host.Active; OutputPresentation.SelectedHostMode = host.Selected;
         SyncOutputControls(); UpdateConnection();
@@ -515,7 +516,7 @@ internal sealed partial class MainForm : Form
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)
     {
-        string? latest = null;
+        long now = Environment.TickCount64;
         foreach (InputChange change in changes)
         {
             if (deliver && change.Lost) { ActiveEditor.GyroEventsLost(); wizard?.GyroEventsLost(); }
@@ -526,15 +527,16 @@ internal sealed partial class MainForm : Form
             wizard?.ObserveInput(f, change with { Lost = false });
             if (f is null) continue;
             f.Value = change.Value; f.Valid = true;
-            latest = L.T($"入力: {f.Label} = {change.Value}", $"Input: {f.Label} = {change.Value}");
+            liveInput.Observe(f, change.Value, now);
             if (deliver)
             {
                 ActiveEditor.OnInput(f, change.Value); wizard?.OnInput(f, change.Value);
                 ActiveEditor.ObserveAxisWizard(f, change.Value, change.Time); wizard?.ObserveAxisWizard(f, change.Value, change.Time);
             }
         }
-        // Deliver every event to learning, but paint only the final visible value.
-        if (latest is not null) SetText(live, latest);
+        // Only the activity label retains short relative motion. Every event above
+        // still reaches learning immediately, including its following zero.
+        SetText(live, liveInput.Text(Environment.TickCount64));
     }
     private async Task Poll()
     {

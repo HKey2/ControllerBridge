@@ -1,6 +1,6 @@
 namespace ControllerBridge;
 
-internal enum FirmwarePrompt { Replace, ConfirmOverwrite }
+internal enum FirmwarePrompt { Replace, ConfirmOverwrite, Reinstall }
 internal enum FirmwareStage { Checking, EnteringBootsel, WaitingForBootsel, Writing, Reconnecting, Verifying, Complete }
 internal enum FirmwareResult { AlreadyCurrent, Cancelled, Updated }
 
@@ -18,16 +18,17 @@ internal static class FirmwareWorkflow
 {
     internal static async Task<FirmwareResult> RunAsync(FirmwarePackage package, IFirmwareDevice device,
         Func<FirmwarePrompt, Task<bool>> confirm, Action<FirmwareStage, int> report,
-        CancellationToken bootWaitCancellation = default)
+        CancellationToken bootWaitCancellation = default, bool allowSameVersionInstall = false)
     {
         report(FirmwareStage.Checking, 0);
         FirmwareInfo? current = await device.ProbeAsync();
         // Deliberately do not sort versions: a lower, higher or prerelease value is
         // simply different from the exact bundled version.
-        if (current?.Version == package.Version && !device.RequiresFeatureUpgrade) return FirmwareResult.AlreadyCurrent;
+        bool sameVersion = current?.Version == package.Version && !device.RequiresFeatureUpgrade;
+        if (sameVersion && !allowSameVersionInstall) return FirmwareResult.AlreadyCurrent;
         if (current is not null)
         {
-            if (!await confirm(FirmwarePrompt.Replace)) return FirmwareResult.Cancelled;
+            if (!await confirm(sameVersion ? FirmwarePrompt.Reinstall : FirmwarePrompt.Replace)) return FirmwareResult.Cancelled;
             report(FirmwareStage.EnteringBootsel, 0);
             await device.PrepareAsync(current);
         }
@@ -60,6 +61,7 @@ internal static class FirmwareWorkflow
     internal static string PromptText(FirmwarePrompt prompt, string version, bool requiresDataUpgrade = false) => (prompt switch
     {
         FirmwarePrompt.Replace => L.F("v{0} に更新しますか？", "Install v{0}?", version),
+        FirmwarePrompt.Reinstall => L.F("バージョン番号は同じですが、同梱の v{0} を再書き込みしますか？\n\n保存済みの設定は保持します。", "The version number matches. Reinstall the bundled v{0}?\n\nSaved settings will be retained.", version),
         _ => L.F("BOOT接続を確認しました。\n\n本ツールのファームウェア v{0} を書き込み、現在のファームウェアを上書きします。書き込みを開始してよろしいですか？", "BOOT connection confirmed.\n\nInstall this tool's firmware v{0} and overwrite the board's current firmware?", version)
     }) + (prompt == FirmwarePrompt.Replace && requiresDataUpgrade ? "\n\n" + L.T(
         "更新後の初回起動時にデータ形式をアップデートします。",

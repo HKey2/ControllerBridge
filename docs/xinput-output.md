@@ -1,6 +1,6 @@
 # S/X host output and Switch 2 Pro input
 
-ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.29.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
+ControllerBridge 0.23.0 introduced a device-wide host selector at the bottom of **Shared settings**. The current version is 0.30.0. The additional fixed Pro mode is described in [Pro output and rumble](configurator-guide.md#pro-output-and-rumble). Install the matching configurator and firmware. Japanese UI calls this selector **出力モード** and describes X as **X : Xbox360互換**; English labels are unchanged.
 
 | Choice | Behavior |
 |---|---|
@@ -110,7 +110,7 @@ For a new controller, choose **Add controller**, assign its physical buttons, an
 
 ## Saved data and verification
 
-Host mode adds an independent 16-byte HSM1 record at common-sector offset 228, leaving all preceding settings records intact. Missing/invalid HSM1 defaults to S. Shared settings use UDSA/schema 10 and guard the old host value together with the other editable values before saving. The current version uses v10 profiles of 856 bytes and v10 banks of 14,036 bytes; runtime common settings remain 40 bytes because host mode uses existing padding. Common Flash usage is 244/4,096 bytes.
+Host mode adds an independent 16-byte HSM1 record at common-sector offset 228, leaving all preceding settings records intact. Missing/invalid HSM1 defaults to S. Shared settings use UDSA/schema 10 and guard the old host value together with the other editable values before saving. The current version uses v11 profiles of 864 bytes and v11 banks of 14,164 bytes; runtime common settings remain 40 bytes because host mode uses existing padding. Common Flash usage is 244/4,096 bytes.
 
 The original 0.23.0 physical validation covered Windows recognition, configuration access, real buttons/Guide and axes, combined output enumeration and S/X return. The dated 0.23.2 entry records the current reference-matching checks separately. Existing profile registrations and common numeric settings are preserved. See the dated [verification record and current memory budget](verification.md).
 

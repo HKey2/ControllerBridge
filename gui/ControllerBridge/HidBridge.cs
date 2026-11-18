@@ -14,6 +14,11 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool Persisted => (Flags & 4) != 0;
     public bool InvalidBinding => (Flags & 8) != 0;
     public bool SupportsButtonToggle => (Flags & 32) != 0;
+    public bool SupportsPaddleAnalog => (Flags & 256) != 0;
+    public bool SupportsSharedAnalogStick => (Flags & 512) != 0;
+    public bool SupportsIntegerVirtualPoint => (Flags & 1024) != 0;
+    public bool SupportsNormalizedPaddle => (Flags & 2048) != 0;
+    public bool SupportsLowSpeedCurve => (Flags & 4096) != 0;
     public bool SupportsVirtualPoint => (Flags & 128) != 0;
     public bool SupportsExtendedCurves => (Flags & 64) != 0;
     public bool SupportsRapidFire => (Features & 1) != 0;
@@ -48,7 +53,9 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsAnalogAngle => (Features & (1u << 31)) != 0;
     internal void ValidatePointingSettings(DeviceProfile profile)
     {
-        profile.Conversion.ValidateSources(profile);
+        profile.Conversion.Validate();
+        if (!SupportsPaddleAnalog || !SupportsSharedAnalogStick || !SupportsIntegerVirtualPoint || !SupportsNormalizedPaddle || !SupportsLowSpeedCurve)
+            throw new InvalidDataException(L.T("この版のプロファイルを保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving profiles with this version."));
         if (profile.Conversion.IsVirtualPoint && !SupportsVirtualPoint)
             throw new InvalidDataException(L.T("Virtual Cursor(Analog)の設定を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving Virtual Cursor(Analog) settings."));
         if (profile.HasToggle && !SupportsButtonToggle)

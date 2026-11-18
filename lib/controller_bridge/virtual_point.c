@@ -1,147 +1,175 @@
 #include "controller_mouse.h"
-#include <math.h>
+#include "analog_response.h"
 #include <string.h>
-#include "analog_curves.h"
 
-#define VP_Q 65536
-#define VP_SPEED (240 * VP_Q)
-// Arithmetic overflow guard. The finite-stop budget is enforced at release.
+// The existing Trackball reference is 240 native counts per second. Curve and
+// personal Speed act after pursuit in that reference, without clipping it.
+#define VP_REFERENCE 240u
 #define VP_LIMIT (INT64_C(1)<<55)
-// Require a strong raw report within 30 degrees of the opposite source
-// direction, independently of Speed. Changing axes or taking a corner must
-// retain the target. Small opposing reports do not restart the release tail.
+#define VP_ERROR_LIMIT (INT64_C(1)<<61)
+// Covers simultaneous signed-32-bit X/Y reports every millisecond, while
+// bounding rate * microseconds below INT64_MAX even for extreme backlogs.
+#define VP_RAW_RATE_LIMIT INT64_C(4294967296000)
 #define VP_REVERSE_COUNTS 3u
+
+static int64_t bound(int64_t v,int64_t limit) { return v>limit?limit:v<-limit?-limit:v; }
+static uint64_t magnitude(int64_t v) { return (uint64_t)(v<0?-v:v); }
 static bool virtual_options_encoded(const up_conversion *c) {
     return (c->analog_curve==20 || c->analog_curve==30) && c->analog_full_speed>=60001 && c->analog_full_speed<=65000;
+}
+static unsigned tracking_us(const up_conversion *c) {
+    unsigned ms=virtual_options_encoded(c)?c->analog_min_speed10:10u;return (ms?ms:10u)*1000u;
 }
 static unsigned duration_us(const up_conversion *c) {
     return virtual_options_encoded(c) && c->analog_curve==20 ? (unsigned)c->analog_return10*10000u : 250000u;
 }
-static int64_t bound(int64_t v,int64_t limit) { return v>limit?limit:v<-limit?-limit:v; }
-static int64_t dose(int32_t rate,uint32_t us,int32_t *remainder) {
-    int64_t n=(int64_t)rate*us+*remainder;
-    *remainder=(int32_t)(n%1000000);return n/1000000;
+static uint16_t gain100(const up_conversion *c) {
+    return (uint16_t)(virtual_options_encoded(c)?c->analog_full_speed-60000u:100u);
 }
-static int32_t axis_rate(uint8_t axis) {
-    int32_t n=(int)axis-128;
-    return (int32_t)((int64_t)n*VP_SPEED/(n<0?128:127));
+static uint32_t elapsed_ack(const um_analog_state *s,uint32_t now) {
+    uint32_t dt=s->have_ack?now-s->last_ack_us:0;return dt<0x80000000u?dt:0;
 }
-static void predict(const um_analog_state *s,uint32_t now,int64_t pending[2],int64_t phase[2]) {
-    uint32_t dt=s->have_ack?now-s->last_ack_us:0;
-    if(dt>=0x80000000u)dt=0;
-    for(unsigned i=0;i<2;++i) {
-        int32_t r=s->integral_remainder[i],q=s->phase_remainder[i];
-        pending[i]=s->pending[i]-dose(s->applied[i],dt,&r);
-        phase[i]=s->phase[i]+dose(s->requested[i]-s->applied[i],dt,&q);
+static void spend(int64_t *whole,int64_t *remainder,int64_t rate,uint32_t dt) {
+    int64_t n=rate*(dt%1000000u)+*remainder;
+    *whole-=rate*(dt/1000000u)+n/1000000;*remainder=n%1000000;
+}
+static int64_t error_at(const um_analog_state *s,unsigned i,uint32_t dt) {
+    int64_t whole=s->pending[i],rem=s->integral_remainder[i];
+    spend(&whole,&rem,s->applied_raw_rate[i],dt);
+    return bound(whole,VP_ERROR_LIMIT/1000000)*1000000-rem;
+}
+static void rebase_error(um_analog_state *s,unsigned i,int64_t error,uint32_t dt) {
+    s->pending[i]=error/1000000;s->integral_remainder[i]=-(error%1000000);
+    spend(&s->pending[i],&s->integral_remainder[i],-s->applied_raw_rate[i],dt);
+}
+static uint64_t isqrt(uint64_t value) {
+    uint64_t root=0,bit=UINT64_C(1)<<62;
+    while(bit>value)bit>>=2;
+    while(bit) {
+        if(value>=root+bit) { value-=root+bit;root=(root>>1)+bit; }
+        else root>>=1;
+        bit>>=2;
     }
+    return root;
 }
-static void clamp_vector(float rate[2]) {
-    float norm=sqrtf(rate[0]*rate[0]+rate[1]*rate[1]);
-    if(norm>VP_SPEED) { float scale=VP_SPEED/norm;rate[0]*=scale;rate[1]*=scale; }
+static uint64_t vector_length(const int64_t v[2]) {
+    uint64_t x=magnitude(v[0]),y=magnitude(v[1]);
+    if(!x)return y;
+    if(!y)return x;
+    unsigned shift=0;
+    while(x>0x3fffffffu || y>0x3fffffffu) { x>>=1;y>>=1;++shift; }
+    uint64_t squared=x*x+y*y,length=isqrt(squared);
+    if(length*length<squared)++length;
+    return length<<shift;
 }
-static uint32_t level_curve(uint32_t strength,uint8_t code) {
-    code=up_analog_curve_code(code);
-    if(!code || strength>=32768u)return strength;
-    unsigned row;
-    switch(code) {
-    case 4:row=0;break;case 6:row=1;break;case 8:row=2;break;
-    case 12:row=3;break;case 14:row=4;break;case 16:row=5;break;
-    case 20:row=6;break;case 30:row=7;break;default:return strength;
-    }
-    unsigned index=strength>>7,part=strength&127u;
-    const uint16_t *values=analog_curves[row];
-    uint32_t curved=values[index]+((values[index+1]-values[index])*part+64u)/128u;
-    return curved>strength*4u?strength*4u:curved;
+// Exact multiply/divide by a 32-bit fraction <= 1, without a wide product.
+static int64_t fraction(int64_t n,uint32_t a,uint32_t b) {
+    return n/(int64_t)b*a+(n%(int64_t)b)*a/(int64_t)b;
 }
-static void apply_levels(const up_analog_levels *levels,uint8_t logical[2],uint8_t output[2]) {
-    memcpy(output,logical,2);
-    // Neutral level settings preserve the logical output directly and avoid
-    // unnecessary curve and magnitude calculations.
-    if(!levels || (!levels->minimum_percent && up_analog_maximum(levels)==100u &&
-       !up_analog_curve_code(levels->curve)))return;
-    float v[2];
-    for(unsigned i=0;i<2;++i) { int n=(int)logical[i]-128;v[i]=n/(n<0?128.0f:127.0f); }
-    float magnitude=sqrtf(v[0]*v[0]+v[1]*v[1]);
-    if(magnitude==0)return; // A level floor must never move a neutral stick.
-    uint32_t strength=magnitude>=1?32768u:(uint32_t)(magnitude*32768.0f);
-    float level=(levels->minimum_percent+(up_analog_maximum(levels)-levels->minimum_percent)*
-        (level_curve(strength,levels->curve)/32768.0f))/100.0f;
+static void clamp_raw(int64_t rate[2]) {
+    uint64_t length=vector_length(rate);
+    if(length<=(uint64_t)VP_RAW_RATE_LIMIT)return;
     for(unsigned i=0;i<2;++i) {
-        float axis=v[i]*level/magnitude;
-        int n=(int)roundf(axis*(axis<0?128.0f:127.0f));
-        if(n>127)n=127;
-        if(n<-128)n=-128;
-        output[i]=(uint8_t)(128+n);
-        // A suppressed physical component must not consume an unsent logical
-        // displacement. Its fractional backlog remains available to new input.
-        if(!n)logical[i]=128;
+        uint32_t ratio=uar_fraction(magnitude(rate[i]),length);
+        rate[i]=(VP_RAW_RATE_LIMIT/UAR_UNIT*ratio+
+            VP_RAW_RATE_LIMIT%UAR_UNIT*ratio/UAR_UNIT)*(rate[i]<0?-1:1);
     }
 }
 static uint32_t until_ack(const um_analog_state *s,uint32_t now,uint32_t interval) {
     if(!s->have_ack)return interval;
-    uint32_t dt=now-s->last_ack_us;
-    if(dt>=0x80000000u)return interval;
-    return interval-dt%interval;
-}
-static unsigned tracking_ms(const up_conversion *c) {
-    unsigned ms=virtual_options_encoded(c)?c->analog_min_speed10:10u;return ms?ms:10u;
+    uint32_t dt=now-s->last_ack_us;return dt<0x80000000u?interval-dt%interval:interval;
 }
 static void stop(um_analog_state *s,uint32_t now,const up_conversion *c) {
     if(!s->moving)return;
-    int64_t pending[2],phase[2];predict(s,now,pending,phase);
     unsigned interval=s->observed_us?s->observed_us:s->planned_interval_us;
     if(interval<1000u)interval=1000u;
-    unsigned delay=until_ack(s,now,interval);
-    float left[2];
+    unsigned delay=until_ack(s,now,interval);uint32_t dt=elapsed_ack(s,now);
+    int64_t left[2],rate[2];
     for(unsigned i=0;i<2;++i) {
-        int32_t r=0;int64_t available=pending[i]-dose(s->applied[i],delay,&r);
-        left[i]=available*s->direction[i]>0?(float)available:0;
+        int64_t e=error_at(s,i,dt+delay);
+        left[i]=e*s->direction[i]>0?e:0;
     }
-    float distance=sqrtf(left[0]*left[0]+left[1]*left[1]);
-    float speed=distance*1000.0f/tracking_ms(c);if(speed>VP_SPEED)speed=VP_SPEED;
+    uint64_t distance=vector_length(left),speed=distance/tracking_us(c);
+    if(speed>(uint64_t)VP_RAW_RATE_LIMIT)speed=VP_RAW_RATE_LIMIT;
     unsigned maximum=duration_us(c);maximum=maximum>delay?maximum-delay:0;
-    float duration=speed>0?2.0f*distance/speed*1000000.0f:0;
-    if(duration>maximum) {
-        // Preserve the already held output. Only future backlog exceeding the
-        // linear release budget is compressed, never a weak-input threshold.
-        float scale=maximum/duration;
-        for(unsigned i=0;i<2;++i)s->pending[i]+=(int64_t)(left[i]*scale)-(int64_t)left[i];
-        duration=(float)maximum;
-    }
-    for(unsigned i=0;i<2;++i)s->release_rate[i]=distance>0?left[i]/distance*speed:0;
+    uint64_t natural=speed?distance*2u/speed:0;
+    unsigned duration=(unsigned)(natural>maximum?maximum:natural);
+    for(unsigned i=0;i<2;++i)rate[i]=duration?left[i]*2/duration:0;
+    clamp_raw(rate);
+    if(natural>maximum && distance>(uint64_t)VP_RAW_RATE_LIMIT*tracking_us(c))
+        for(unsigned i=0;i<2;++i) {
+            int64_t kept=rate[i]/2*duration+(rate[i]%2)*duration/2;
+            rebase_error(s,i,kept,dt+delay);
+        }
+    memcpy(s->release_raw_rate,rate,sizeof(rate));
     s->release_at_us=now+delay;s->release_duration_us=duration;
     s->moving=false;s->decaying=duration>0;s->cache_valid=false;
 }
 static void discard_axis_backlog(um_analog_state *s,unsigned i,uint32_t now) {
-    // pending is referenced to the last successful ACK. Retain the displacement
-    // already emitted since that ACK so predict(now) sees exactly zero here.
-    // The old held output between now and the reversal ACK is still accounted.
-    uint32_t dt=s->have_ack?now-s->last_ack_us:0;
-    if(dt>=0x80000000u)dt=0;
-    int32_t remainder=s->integral_remainder[i];
-    s->pending[i]=dose(s->applied[i],dt,&remainder);
-    s->gain_remainder[i]=0;s->phase[i]=0;s->phase_remainder[i]=0;
-    s->requested[i]=s->applied[i];
+    rebase_error(s,i,0,elapsed_ack(s,now));
+    s->response_phase[i]=0;s->requested_response[i]=s->applied_response[i];
 }
-static bool reversal_input(um_analog_state *s,int64_t raw[2],uint32_t now) {
-    float x=(float)raw[0],y=(float)raw[1];
-    bool tracking=(s->moving || s->decaying) && (s->heading[0]!=0 || s->heading[1]!=0);
-    float dot=x*s->heading[0]+y*s->heading[1];
-    float cross=x*s->heading[1]-y*s->heading[0];
-    bool opposite=tracking && dot<0 && fabsf(cross)<=-dot*0.577350269f;
+static void direction_vector(const int64_t v[2],int64_t out[2]) {
+    uint64_t largest=magnitude(v[0]);if(magnitude(v[1])>largest)largest=magnitude(v[1]);
+    int64_t divisor=(int64_t)((largest+16382u)/16383u);if(!divisor)divisor=1;
+    out[0]=v[0]/divisor;out[1]=v[1]/divisor;
+}
+static bool reversal_input(um_analog_state *s,const int64_t raw[2],uint32_t now) {
+    bool tracking=(s->moving || s->decaying) && (s->heading[0] || s->heading[1]);
+    int64_t x[2],h[2];direction_vector(raw,x);direction_vector(s->heading,h);
+    int64_t dot=x[0]*h[0]+x[1]*h[1],cross=x[0]*h[1]-x[1]*h[0];
+    bool opposite=tracking && dot<0 && 3*cross*cross<=dot*dot;
     if(opposite) {
-        if(fabsf(x)<VP_REVERSE_COUNTS && fabsf(y)<VP_REVERSE_COUNTS)return false;
+        if(magnitude(raw[0])<VP_REVERSE_COUNTS && magnitude(raw[1])<VP_REVERSE_COUNTS)return false;
         for(unsigned i=0;i<2;++i)discard_axis_backlog(s,i,now);
     }
-    if(!tracking || opposite) { s->heading[0]=x;s->heading[1]=y; }
+    if(!tracking || opposite)for(unsigned i=0;i<2;++i)s->heading[i]=raw[i]*20000;
     else {
-        // Weight by elapsed source time. An isolated orthogonal count does not
-        // replace a sustained heading; an ordinary corner follows new motion.
         uint32_t dt=now-s->last_motion_us;
-        float weight=(float)dt/(20000.0f+dt);
-        s->heading[0]+=(x-s->heading[0])*weight;s->heading[1]+=(y-s->heading[1])*weight;
+        for(unsigned i=0;i<2;++i)s->heading[i]+=fraction(raw[i]*20000-s->heading[i],dt,20000u+dt);
     }
     return true;
+}
+// Use enough integer precision for low-speed diagonals before taking length.
+// For wide rates reduce both components together, retaining the scale in the
+// normalization ratio. Direction and magnitude never depend on UI Speed.
+static void response(const int64_t rate[2],uint16_t gain,uint8_t curve,int32_t out[2]) {
+    int64_t v[2]={rate[0],rate[1]};unsigned up=0,down=0;
+    uint64_t largest=magnitude(v[0]);if(magnitude(v[1])>largest)largest=magnitude(v[1]);
+    if(!largest) { out[0]=out[1]=0;return; }
+    while(largest>0x3fffffffu) { v[0]/=2;v[1]/=2;largest>>=1;++down; }
+    while(largest<0x10000000u && up<20u) { v[0]*=2;v[1]*=2;largest*=2;++up; }
+    uint64_t length=vector_length(v);
+    uint32_t radial=uar_response(length<<down,(uint64_t)VP_REFERENCE<<up,gain,curve);
+    for(unsigned i=0;i<2;++i)out[i]=(int32_t)(v[i]*radial/(int64_t)length);
+}
+static void quantize(const int64_t desired[2],const up_analog_levels *levels,um_analog_plan *plan) {
+    uint64_t length=vector_length(desired);
+    if(!length)return;
+    unsigned minimum=levels?levels->minimum_percent:0;
+    unsigned span=(levels?up_analog_maximum(levels):100u)-minimum;
+    // One two-axis quantum may straddle the requested maximum. Preserve its
+    // effective area in the ACK phase rather than accumulating unreachable debt.
+    uint64_t ceiling=UAR_UNIT+((uint64_t)UAR_UNIT*142u+127u*span-1)/(127u*span);
+    uint64_t radial=length>ceiling?ceiling:length;
+    uint64_t physical=((uint64_t)minimum*UAR_UNIT+span*radial)/100u;
+    int64_t represented[2];
+    for(unsigned i=0;i<2;++i) {
+        unsigned width=desired[i]<0?128u:127u;
+        uint32_t ratio=uar_fraction(magnitude(desired[i]),length);
+        uint64_t component=physical*ratio/UAR_UNIT;
+        unsigned n=(unsigned)(component*width/UAR_UNIT);if(n>width)n=width;
+        int sign=desired[i]<0?-1:1;
+        plan->axis[i]=(uint8_t)(128+sign*(int)n);
+        represented[i]=(int64_t)n*UAR_UNIT/width*sign;
+    }
+    uint64_t actual=vector_length(represented);
+    if(actual*100u<=(uint64_t)minimum*UAR_UNIT) {
+        plan->axis[0]=plan->axis[1]=128;return;
+    }
+    uint64_t effective=(actual*100u-(uint64_t)minimum*UAR_UNIT)/span;
+    for(unsigned i=0;i<2;++i)
+        plan->applied_response[i]=(int32_t)(represented[i]*(int64_t)effective/(int64_t)actual);
 }
 void um_analog_input(um_analog_state *s,const up_mouse_options *mouse,int32_t raw_x,int32_t raw_y,
                      uint32_t now,uint32_t period,uint32_t idle,const up_conversion *c) {
@@ -153,17 +181,12 @@ void um_analog_input(um_analog_state *s,const up_mouse_options *mouse,int32_t ra
     if(mouse->flags&UP_MOUSE_INVERT_X)raw[0]=-raw[0];
     if(mouse->flags&UP_MOUSE_INVERT_Y)raw[1]=-raw[1];
     if(!reversal_input(s,raw,now)) { stop(s,now,c);return; }
-    unsigned gain=virtual_options_encoded(c)?c->analog_full_speed-60000u:100u;
+    uint32_t dt=elapsed_ack(s,now);
     for(unsigned i=0;i<2;++i) {
-        int64_t n=raw[i]*gain*VP_Q+s->gain_remainder[i];
-        s->pending[i]=bound(s->pending[i]+n/100,VP_LIMIT);
-        s->gain_remainder[i]=(int32_t)(n%100);
-    }
-    int64_t pending[2],phase[2];predict(s,now,pending,phase);
-    for(unsigned i=0;i<2;++i) {
-        int sign=pending[i]>0?1:pending[i]<0?-1:0;
-        if(sign!=s->direction[i])s->phase[i]=s->phase_remainder[i]=0;
-        s->direction[i]=(int8_t)sign;
+        s->pending[i]=bound(s->pending[i]+raw[i],VP_LIMIT);
+        int64_t e=error_at(s,i,dt);int sign=e>0?1:e<0?-1:0;
+        if(sign && s->direction[i] && sign!=s->direction[i])s->response_phase[i]=0;
+        if(sign)s->direction[i]=(int8_t)sign;
     }
     s->last_motion_us=now;s->moving=true;s->decaying=false;s->cache_valid=false;
 }
@@ -174,62 +197,50 @@ void um_analog_prepare(um_analog_state *s,uint32_t now,uint32_t idle,uint32_t ho
     if(s->observed_us)horizon=s->observed_us;
     s->planned_interval_us=horizon;
     if(!s->cache_valid || (uint32_t)(now-s->cache_us)>=1000u) {
-        int64_t pending[2],phase[2];predict(s,now,pending,phase);
-        float base[2]={0},rate[2]={0};
-        unsigned delay=until_ack(s,now,horizon);
-        float factor=0;
+        um_analog_plan next={.axis={128,128}};
+        unsigned delay=until_ack(s,now,horizon);uint32_t dt=elapsed_ack(s,now),remaining=0;
         if(s->decaying) {
-            float elapsed=(float)(int32_t)(now+delay-s->release_at_us);
-            if(elapsed<0)elapsed=0;
-            if(elapsed<s->release_duration_us)factor=1.0f-elapsed/s->release_duration_us;
+            int32_t age=(int32_t)(now+delay-s->release_at_us);if(age<0)age=0;
+            if((uint32_t)age<s->release_duration_us)remaining=s->release_duration_us-(uint32_t)age;
             else s->decaying=false;
         }
         for(unsigned i=0;i<2;++i) {
-            int sign=s->direction[i];
-            // Predict only until the next ACK, not another full interval on
-            // every preview. Repeated previews must not amplify reversals. This
-            // does not commit displacement: only successful ACK does that.
-            int32_t r=0;
-            int64_t available=pending[i]-dose(s->applied[i],delay,&r);
-            if(sign && available*sign>0 && (s->moving || s->decaying)) {
-                base[i]=s->moving?(float)available*1000.0f/tracking_ms(c):s->release_rate[i]*factor;
-                float limit=(float)available*1000000.0f/horizon;
-                if(base[i]*sign>limit*sign)base[i]=limit;
-                int64_t phase_limit=(int64_t)VP_SPEED*horizon/127/1000000;
-                rate[i]=base[i]+(float)bound(phase[i],phase_limit)*1000000.0f/horizon;
-                if(rate[i]*sign<0)rate[i]=0;
-                if(rate[i]*sign>limit*sign)rate[i]=limit;
+            int64_t available=error_at(s,i,dt+delay);
+            if(available*s->direction[i]>0 && (s->moving || s->decaying)) {
+                int64_t rate=s->moving?available/tracking_us(c):
+                    fraction(s->release_raw_rate[i],remaining,s->release_duration_us);
+                int64_t limit=available/horizon;
+                next.raw_rate[i]=magnitude(rate)>magnitude(limit)?limit:rate;
             }
         }
-        clamp_vector(base);clamp_vector(rate);
-        for(unsigned i=0;i<2;++i) {
-            int n=(int)(rate[i]*(rate[i]<0?128.0f:127.0f)/VP_SPEED);
-            if(n>127)n=127;
-            if(n<-128)n=-128;
-            s->cached.requested[i]=(int32_t)base[i];s->cached.axis[i]=(uint8_t)(128+n);
+        clamp_raw(next.raw_rate);
+        response(next.raw_rate,gain100(c),levels?levels->curve:0,next.requested_response);
+        if(s->moving || s->decaying) {
+            int64_t desired[2]={0};
+            for(unsigned i=0;i<2;++i)if(next.raw_rate[i]) {
+                int64_t phase=s->response_phase[i]+((int64_t)s->requested_response[i]-s->applied_response[i])*dt;
+                desired[i]=next.requested_response[i]+phase/horizon;
+                if(desired[i]*s->direction[i]<0)desired[i]=0;
+            }
+            quantize(desired,levels,&next);
         }
-        apply_levels(levels,s->cached.axis,s->cached.output_axis);
-        s->cache_us=now;s->cache_valid=true;
+        s->cached=next;s->cache_us=now;s->cache_valid=true;
     }
-    memcpy(plan->requested,s->cached.requested,sizeof(plan->requested));
-    memcpy(plan->axis,s->cached.axis,sizeof(plan->axis));
-    if(c->analog_flags&UP_ANALOG_RIGHT) { report->rx=s->cached.output_axis[0];report->ry=s->cached.output_axis[1]; }
-    else { report->lx=s->cached.output_axis[0];report->ly=s->cached.output_axis[1]; }
+    *plan=s->cached;
+    if(c->analog_flags&UP_ANALOG_RIGHT) { report->rx=plan->axis[0];report->ry=plan->axis[1]; }
+    else { report->lx=plan->axis[0];report->ly=plan->axis[1]; }
 }
 void um_analog_ack(um_analog_state *s,const um_analog_plan *plan,uint32_t now) {
     if(s->have_ack) {
-        uint32_t dt=now-s->last_ack_us;
-        if(dt>=0x80000000u)return;
-        // Failed/cancelled transfers do not call here. The next successful ACK
-        // integrates the entire interval for which the host held the old value.
+        uint32_t dt=now-s->last_ack_us;if(dt>=0x80000000u)return;
         for(unsigned i=0;i<2;++i) {
-            s->pending[i]-=dose(s->applied[i],dt,&s->integral_remainder[i]);
-            s->phase[i]+=dose(s->requested[i]-s->applied[i],dt,&s->phase_remainder[i]);
-            int64_t limit=(int64_t)VP_SPEED*(dt>100000u?100000u:dt)/127/1000000;
-            s->phase[i]=bound(s->phase[i],limit);
+            spend(&s->pending[i],&s->integral_remainder[i],s->applied_raw_rate[i],dt);
+            s->response_phase[i]+=((int64_t)s->requested_response[i]-s->applied_response[i])*dt;
         }
         if(dt>=1000u && dt<=100000u)s->observed_us=dt;
     }
-    for(unsigned i=0;i<2;++i) { s->applied[i]=axis_rate(plan->axis[i]);s->requested[i]=plan->requested[i]; }
+    memcpy(s->applied_raw_rate,plan->raw_rate,sizeof(s->applied_raw_rate));
+    memcpy(s->requested_response,plan->requested_response,sizeof(s->requested_response));
+    memcpy(s->applied_response,plan->applied_response,sizeof(s->applied_response));
     s->last_ack_us=now;s->have_ack=true;s->cache_valid=false;
 }

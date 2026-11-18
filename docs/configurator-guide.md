@@ -14,6 +14,8 @@ The window and text follow each monitor's Windows display scaling, including mov
 
 The executable includes its runtime; no separate .NET installation is required. Only one instance can run. Close other bridge configuration tools while using the GUI. When the board is disconnected, the application retries about every two seconds. **Connect / Reconnect** starts an attempt immediately. An empty USB-A port shows a stable waiting message during enumeration retries.
 
+The **Input** activity label keeps a short paddle or trackball movement visible for about a quarter of a second, so a following zero does not hide it between screen refreshes. This affects only the label; button releases, input learning, and controller output remain immediate. Input communication continues while the configurator is in the background.
+
 When no recognized board is detected, the window shows **Device not connected** and waits quietly. A factory-state board exposing Pico SDK USB or a board in RP2350 BOOT mode shows **Device unsupported**, even though it has no ControllerBridge HID interface. This automatically opens the installation guide at startup or on background detection. Cancelling the wait or declining the final confirmation keeps that status visible without repeating the popup during the same connection. Once a disconnection is observed, connecting the board again opens guidance again. Background retries keep the editor enabled and preserve unsaved edits. A readable firmware mismatch is shown as an update requirement. For other USB identities, use **Firmware update** manually.
 
 The initial and minimum main-window client size is 1290 × 1100 at 100% scaling (1306 × 1139 including the window frame in the checked environment). This fits the profile details in Japanese and English, including **Mouse + Gamepad → Controller** with all analog-axis buttons visible. The Clear mapping action sizes to its label so the English text stays on one line.
@@ -250,10 +252,10 @@ Use the selected profile's **Conversion mapping** button in the right-hand actio
 | Setting | Profile value |
 |---|---|
 | Trackball | Virtual Cursor(Repeat) (clicks), Virtual Cursor(Hold) with optional pseudo-inertia, or Virtual Cursor(Analog); four digital targets in ↑/↓/←/→ order for the cursor modes |
-| Paddle | Virtual Cursor(Repeat) or Virtual Rolling; negative and positive targets |
+| Paddle | Virtual Cursor(Repeat), Virtual Rolling or Virtual Cursor(Analog); negative and positive Repeat targets |
 | Virtual Rolling | Rotation step, output stick and independent rotation reversal |
 
-Targets can be any of the 18 digital gamepad outputs, including four directions and stick clicks. Analog axes and Unassigned are not offered. Negative/positive refer to Paddle movement after the profile's pointer reversal. Changing the pointer axis from X to Y retains those targets. The Paddle target controls are greyed out in Virtual Rolling; rolling options are greyed out in Virtual Cursor(Repeat). Their values are retained.
+Targets can be any of the 18 digital gamepad outputs, including four directions and stick clicks. Analog axes and Unassigned are not offered. Negative/positive refer to Paddle movement after the profile's pointer reversal. Changing the pointer axis from X to Y retains those targets. The Paddle target controls are enabled only in Virtual Cursor(Repeat); rolling options are enabled only in Virtual Rolling, and analog options only in Virtual Cursor(Analog). Inactive values are retained.
 
 Choose **Apply to draft**, then **Save profile to device** to persist and apply the changes. **Cancel** discards the dialog edits. Selecting another profile uses that profile's own settings. Profile export, duplication, reorder and whole-bank backup retain them.
 
@@ -315,19 +317,35 @@ Virtual Cursor(Analog) converts trackball movement into a left or right analog s
 |---|---:|---|
 | Analog minimum | 25% | Output floor while tracking; 0–99%. Neutral remains zero. |
 | Analog maximum | 100% | Output ceiling; 1–100%, greater than minimum. |
-| Curve | Linear | Uses the existing curve picker; remaps the range between minimum and maximum. |
-| Speed | 3.00 | Movement of the virtual target per raw point; 0.01–50.00. |
+| Curve | Linear | Shapes normalized pursuit speed before Speed and the minimum/maximum range. The rightmost graph is Low-speed preserve. |
+| Speed | 3.00 | Analog response to source movement; 0.01–50.00. |
 | Smoothing | 60% | Higher values give a gentler response; 1–100%. |
 | Inertia | 100 ms | Upper bound after stop detection; 0–2550 ms, steps of 10 ms. Small moves finish sooner. |
-| Output stick | Left | Left or Right; avoid the stick used by Virtual Rolling. |
+| Output stick | Left | Left or Right; may share a stick with Paddle using the active-source handoff described below. |
+
+The **Low-speed preserve** curve is the rightmost graph in the picker (Japanese: **低速保持**). The initial 0.78125% of normalized pursuit speed uses a locally scaled square-root rise. It then changes curvature and smoothly joins the proportional response at 3.90625%, retaining the same straight line through 50%. Above that, its slope increases smoothly toward the high-speed range. The curve still reaches 100% at normalized speed 100%. Linear, quadratic and the other existing curves remain available. Install the bundled firmware before using this curve. If the version number is unchanged, choose Firmware update and confirm reinstallation of the bundled version; saved settings are retained.
+
+Trackball and Paddle use the same response shapes. **Speed** is applied after the curve: below the output ceiling, halving Speed halves the effective response and doubling it doubles the response. The analog minimum is added afterward and is excluded from that ratio. Very small output amounts accumulate across reports and ordinary stops. A value of 1.00 is a reference ratio, not a recommended sensitivity for every game.
 
 A clear opposite-direction cut discards the previous target and follows the new direction at the next USB output opportunity. Ordinary corners, including up → right → down, are not reversals. Weak opposing input during tracking or the tail is ignored rather than restarting the tail.
 
-Micro-input fractions are retained. Only backlog exceeding the finite release budget is compressed. A stop time of zero requests neutral at the next USB output opportunity. No-report stop detection and the host USB poll interval add latency around the configured release time. Main X/Y inversion applies; mouse pointer gain remains independent.
+Small movements accumulate even when one input is too small to produce a stick step. Unsent small movement remains available after an ordinary stop, including with short or zero inertia. A stop time of zero requests neutral at the next USB output opportunity. No-report stop detection and the host USB poll interval add latency around the configured release time. Main X/Y inversion applies; mouse pointer gain remains independent.
 
 Loading saved profiles retains their original values. Smoothing displays the stored pursuit time as a percentage: 1% is 1 ms, 60% is 30 ms, and 100% is 50 ms. The stored resolution is 1 ms, so neighboring percentages may share a time. Earlier periods above 50 ms are preserved until smoothing itself is edited. Apply and save changed settings. Changing profiles, disconnecting or resetting output clears pending movement.
 
 Actual on-screen movement also depends on the game’s deadzone, filtering and acceleration. Raise Analog minimum if small movements remain inside the game’s deadzone. Maximum normally stays at 100%. Stopping returns the stick to neutral even with a nonzero minimum.
+
+### Paddle Virtual Cursor(Analog)
+
+Choose **Conversion mapping → Paddle → Virtual Cursor(Analog)** and select **Left stick (X), Left stick (Y), Right stick (X)** or **Right stick (Y)**. Enable Paddle direction conversion in the main window, choose **Apply to draft**, and save the profile to the device.
+
+Paddle has its own analog minimum, maximum, curve, speed, smoothing and inertia. New profiles start with Left stick (X), minimum 25%, maximum 100%, Low-speed preserve, Speed 3.00, Smoothing 100% and Inertia 0 ms. Existing profiles and imported backups retain their saved settings; the new defaults do not replace them. These settings are independent of Trackball and remain saved when switching Paddle modes. Main Paddle inversion reverses the analog direction. Pointer gain and pointer X/Y selection do not change this analog conversion.
+
+**Speed** sets your preferred ratio between paddle rotation and analog movement, after the device's input units have been normalized. A value of 1.00 is a reference ratio, not a recommended game sensitivity. **Curve** shapes the normalized motion before Speed is applied. The **Low-speed preserve** option uses the same shape described under Trackball: a square-root-shaped start for the tiniest inputs, a smooth transition to proportional low-to-medium response, and a steepening upper range. With the same input and curve, halving Speed halves the effective analog output and doubling it doubles that output until the output limit is reached. Analog minimum is applied afterward and is excluded from this ratio. Very small values are represented over successive output reports; the game's own deadzone and response still affect the movement seen on screen.
+
+Only the chosen axis is replaced, including its neutral value when stopped. The other axis of that stick, the other stick and buttons keep their existing assignments. Trackball Analog and Paddle Analog or Virtual Rolling may share a stick in the same profile. The active source keeps control while it continues to move, even if panel vibration produces movement on the other source. Once it has sent no real movement for 40 ms, the next nonzero report from the other source takes control. Zero reports and release inertia do not extend that interval, and the old source's remaining motion is discarded on handoff. If both move together, the current source continues (Trackball wins the first tie after connection). Separate sticks still operate independently. This lets a game collection use either control without switching profiles. With the standard 1–10 ms input polling interval, handoff is normally possible within about 40–50 ms of the old source stopping. A deliberately longer polling interval also delays detection. Update the bundled firmware even if an earlier build has the same version number.
+
+Use S / Auto(S) on Switch or X / Auto(X) on PC. Pro and USB mouse-only output do not use this conversion. Update to the matching bundled firmware; existing profiles keep their current mode until you select Analog.
 
 ### Virtual Rolling
 
@@ -341,15 +359,15 @@ A zero Paddle report stops motion immediately. No-report fallback is max(20 ms, 
 
 ## Paddle output axis
 
-In USB mouse or Mouse + Gamepad, choose **X axis** or **Y axis** in the Paddle **Output axis** list and save the profile. Pointer gain (1.0–10.0×) and pointer reversal apply to this axis. Trackball inversion affects only Trackball. Direction-conversion negative/positive target assignments are independent of this axis in v8. During migration, the old X profile's left/right or old Y profile's up/down are selected once as those targets. Virtual Rolling selects its stick independently.
+In USB mouse or Mouse + Gamepad, choose **X axis** or **Y axis** in the Paddle **Output axis** list and save the profile. Pointer gain (1.0–10.0×) and pointer reversal apply to this axis. Trackball inversion affects only Trackball. Direction-conversion negative/positive target assignments are independent of this axis in v8. During migration, the old X profile's left/right or old Y profile's up/down are selected once as those targets. Virtual Rolling selects its stick independently. Paddle Virtual Cursor(Analog) selects one of the four stick axes independently as well.
 
 ## Import and upgrade compatibility
 
-Current device profiles and banks use version 10; exports use JSON version 7. Published v5, v6, v8 and v9 device banks, and JSON v2/v3/v5/v6 exports, are accepted. Profiles from versions before rumble support keep rumble off; existing rumble preferences are preserved. Main bindings, axes, IDs, selection, shortcuts, RGB and rapid-fire settings are retained. v5 has shift disabled; v6 keeps the first three modifiers and drops only a fourth. Shifted output mappings remain intact.
+Current device profiles and banks use version 11; exports use JSON version 8. Published v5, v6, v8, v9 and v10 device banks, and JSON v2/v3/v5/v6/v7 exports, are accepted. Profiles from versions before rumble support keep rumble off; existing rumble preferences are preserved. Main bindings, axes, IDs, selection, shortcuts, RGB and rapid-fire settings are retained. v5 has shift disabled; v6 keeps the first three modifiers and drops only a fourth. Shifted output mappings remain intact.
 
 Device migration copies the saved shared maps, modes, stick/reversal and rotation step into every profile, then writes and verifies the inactive bank before adopting it. The old source remains available if that first write is interrupted. A v5 migration first uses Bank A so its two smaller legacy copies remain untouched. New tuning defaults only initialize missing records; existing valid timings and sensitivity survive.
 
-Old JSON lacks the former common conversion settings. Imports use migration defaults retained in a connected device, or standard defaults if disconnected, and show a notice. Those values cannot recover a different device's missing shared settings; check targets/modes/step before saving. This operation does not copy common tuning into the profile. JSON v1 and binary v1–v4 remain unsupported. Older firmware cannot read the current saved settings. Keep a backup made by the older app before updating if you may return to it. Existing profiles retain their settings; newly added analog output levels start at 0% minimum, 100% maximum and linear. The 25% / 100% / linear and 3.00 / 60% / 100 ms defaults apply to newly registered profiles.
+Old JSON lacks the former common conversion settings. Imports use migration defaults retained in a connected device, or standard defaults if disconnected, and show a notice. Those values cannot recover a different device's missing shared settings; check targets/modes/step before saving. This operation does not copy common tuning into the profile. JSON v1 and binary v1–v4 remain unsupported. Older firmware cannot read the current saved settings. Keep a backup made by the older app before updating if you may return to it. Existing profiles retain their settings; newly added analog output levels start at 0% minimum, 100% maximum and linear. For newly registered profiles, Trackball starts at 25% / 100% / Linear and 3.00 / 60% / 100 ms; Paddle starts at 25% / 100% / Low-speed preserve and 3.00 / 100% / 0 ms on Left stick (X). Imports from formats without Paddle analog settings retain their original 3.00 / 60% / 100 ms, 25% / 100% / Linear starting values.
 
 ## Switch profiles without a PC
 
@@ -384,4 +402,4 @@ Pro output uses the normal profile button and stick mappings. Mouse-only and com
 
 Switching profiles, disconnecting, entering USB suspend or saving settings stops the effect. After a suspension or settings write, a fresh host command is required to resume. The bridge retains command order and applies backpressure when the output queue fills. If the controller stops accepting commands, it makes bounded stop attempts and disables feedback until a new session.
 
-Profiles and banks use format v10 and JSON backups use v7. Published v5/v6/v8 banks migrate with rumble off, and v9 banks preserve their existing rumble choices and assignments. Keep a pre-update backup if returning to older firmware. Ordinary profiles keep the existing input path; the gyro and rumble paths run only when those functions are in use.
+Profiles and banks use format v11 and JSON backups use v8. Published v5/v6/v8 banks migrate with rumble off, and v9 banks preserve their existing rumble choices and assignments. Keep a pre-update backup if returning to older firmware. Ordinary profiles keep the existing input path; the gyro and rumble paths run only when those functions are in use.

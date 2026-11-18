@@ -13,7 +13,7 @@ internal static class FirmwareDataMigration
         if (caps.Length != 56 || !caps.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(caps, 4) != 1 ||
             caps[8] != 16 || (Wire.U16(caps, 18) & 4) == 0 || (Wire.U32(caps, 44) & 2048) == 0) return false;
         profileBytes = Wire.U16(caps, 6); generation = Wire.U32(caps, 28);
-        return profileBytes is 488 or 848 or 856;
+        return profileBytes is 488 or 848 or 856 or 864;
     }
 
     internal static async Task<bool> ReadAsync(Func<byte, byte[]?, Task<byte[]>> command)
@@ -23,8 +23,8 @@ internal static class FirmwareDataMigration
             byte[] before = await command(20, null);
             if (!SavedBank(before, out ushort profileBytes, out uint generation)) return false;
             if (profileBytes == DeviceProfile.ByteCount) return false;
-            uint bankBytes = profileBytes == 488 ? 8148u : 13908u;
-            uint version = profileBytes == 488 ? 5u : (Wire.U32(before, 44) & 1073741824u) != 0 ? 9u : (Wire.U32(before, 44) & 16777216) != 0 ? 8u : 6u;
+            uint bankBytes = profileBytes == 488 ? 8148u : profileBytes == 856 ? 14036u : 13908u;
+            uint version = profileBytes == 488 ? 5u : profileBytes == 856 ? 10u : (Wire.U32(before, 44) & 1073741824u) != 0 ? 9u : (Wire.U32(before, 44) & 16777216) != 0 ? 8u : 6u;
             byte[] info = await command(40, null);
             if (info.Length != 56 || !info.AsSpan(0, 4).SequenceEqual("UPB1"u8) ||
                 Wire.U32(info, 4) != bankBytes || Wire.U32(info, 8) != generation) return false;

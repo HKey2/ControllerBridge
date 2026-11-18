@@ -9,11 +9,13 @@
 #define UP_PROFILE_COUNT 16
 #define UP_DIGITAL_COUNT 18
 #define UP_AXIS_COUNT 4
-#define UP_PROFILE_BYTES 856
+#define UP_PROFILE_BYTES 864
+#define UP_V10_PROFILE_BYTES 856
+#define UP_V10_BANK_BYTES 14036
 #define UP_PREVIOUS_PROFILE_BYTES 848
 #define UP_PREVIOUS_BANK_BYTES 13908
 #define UP_SHIFT_KEYS 3
-#define UP_PROFILE_VERSION 10u
+#define UP_PROFILE_VERSION 11u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
@@ -90,8 +92,9 @@ typedef struct {
 #define UP_ANALOG_RIGHT 1u
 #define UP_ANALOG_INVERT_X 2u
 #define UP_ANALOG_INVERT_Y 4u
+#define UP_ANALOG_LOW_SPEED_CURVE 40u
 static inline bool up_analog_curve_valid(uint8_t code) {
-    return code<=2u || (code>=4u && code<=16u && !(code&1u)) || code==20u || code==30u;
+    return code<=2u || (code>=4u && code<=16u && !(code&1u)) || code==20u || code==30u || code==UP_ANALOG_LOW_SPEED_CURVE;
 }
 static inline uint8_t up_analog_curve_code(uint8_t code) {
     return code==1u?16u:code==2u?8u:code==10u?0u:code;
@@ -115,6 +118,15 @@ typedef struct {
 static inline unsigned up_analog_maximum(const up_analog_levels *levels) {
     return levels->maximum_percent?levels->maximum_percent:100u;
 }
+// Independent single-axis Paddle Virtual Cursor settings, appended in v11.
+typedef struct {
+    uint16_t speed100; // Speed * 100, 1..5000.
+    uint8_t smoothing_ms,inertia10,axis; // axis: LX, LY, RX, RY.
+    uint8_t minimum_percent,maximum_percent,curve; // zero maximum means 100%.
+} up_paddle_analog;
+#define UP_DEFAULT_PADDLE_ANALOG {300,50,0,0,25,0,40}
+// Preserve the missing-field values used when importing pre-v11 banks.
+#define UP_LEGACY_PADDLE_ANALOG {300,30,10,0,25,0,0}
 typedef struct {
     uint16_t version,flags,vid,pid,bcd_device;
     uint8_t input_interval_ms,axis_modes;
@@ -125,6 +137,7 @@ typedef struct {
     up_mouse_options mouse;
     up_shift shift;
     up_analog_levels analog_levels;
+    up_paddle_analog paddle_analog;
 } up_profile;
 typedef struct {
     uint32_t magic,version,generation,bytes;
@@ -173,7 +186,9 @@ _Static_assert(offsetof(up_profile,shift.conversion)==544,"conversion offset");
 _Static_assert(offsetof(up_profile,shift.digital)==560,"shifted bindings offset");
 _Static_assert(sizeof(up_analog_levels)==8,"analog levels wire ABI");
 _Static_assert(offsetof(up_profile,analog_levels)==848,"existing profile prefix is unchanged");
-_Static_assert(sizeof(up_bank)==14036,"16 profiles fit four flash sectors with store header");
+_Static_assert(sizeof(up_paddle_analog)==8,"paddle analog wire ABI");
+_Static_assert(offsetof(up_profile,paddle_analog)==856,"v10 profile prefix is unchanged");
+_Static_assert(sizeof(up_bank)==14164,"16 profiles fit four flash sectors with store header");
 
 void up_profile_clear(up_profile *profile);
 void up_bank_clear(up_bank *bank);
@@ -211,6 +226,7 @@ void up_release_guard_apply(up_release_guard *guard,uint8_t interface_number,con
 bool up_registry_load(up_bank *bank,const udk_settings *defaults);
 bool up_bank_upgrade_v8(up_bank *bank);
 bool up_bank_upgrade_v9(up_bank *bank);
+bool up_bank_upgrade_v10(up_bank *bank);
 bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
 void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
 void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);
