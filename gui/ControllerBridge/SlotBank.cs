@@ -84,6 +84,28 @@ internal sealed class SlotBank
     {
         byte[] copy = Encode(); Wire.W32(copy, 8, generation); return new(copy);
     }
+    public SlotBank WithProfiles(IReadOnlyList<DeviceProfile> drafts, IReadOnlyList<bool> changed)
+    {
+        if (drafts.Count != Profiles.Length || changed.Count != Profiles.Length) throw new ArgumentException("slots");
+        byte[] copy = Encode(); uint preferred = PreferredSlots;
+        for (int i = 0; i < Profiles.Length; i++)
+        {
+            if (!changed[i]) continue;
+            DeviceProfile profile = drafts[i];
+            profile.Encode().CopyTo(copy, ProfilesAt + i * DeviceProfile.ByteCount);
+            (profile.Enabled ? profile.ProfileId : Guid.Empty).TryWriteBytes(copy.AsSpan(IdsAt + i * 16));
+            int group = Array.FindIndex(Profiles, old => old.SameController(profile));
+            Wire.W32(copy, KeysAt + i * 4, group < 0 ? 0 : SwitchKeys(group));
+            // Editing does not select a profile. A deletion or replacement can
+            // only remove the previous selection, never transfer it implicitly.
+            if (!profile.SameController(Profiles[i]) || profile.ProfileId != Profiles[i].ProfileId)
+                preferred &= ~(1u << i);
+        }
+        Wire.W32(copy, PreferredAt, preferred);
+        // Validate all profiles and shortcut/shift relationships before writing
+        // anything, then commit this complete bank through the existing upload.
+        return new(copy);
+    }
     public SlotBank Move(int source, int destination)
     {
         if (source is < 0 or >= DeviceProfile.SlotCount || destination is < 0 or >= DeviceProfile.SlotCount) throw new ArgumentOutOfRangeException();

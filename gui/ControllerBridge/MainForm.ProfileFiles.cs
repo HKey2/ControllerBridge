@@ -79,9 +79,9 @@ internal sealed partial class MainForm
             imported.ProfileId = Guid.NewGuid();
         if (profiles.Any(p => p.Enabled && string.Equals(p.Name, imported.Name, StringComparison.OrdinalIgnoreCase)))
             imported.Name = ProfileSlots.DuplicateName(profiles, imported.Name);
-        // Validate everything before modifying any draft. Saving remains an explicit slot operation.
+        // Validate everything before modifying any draft. Saving applies all pending settings together.
         _ = imported.Encode();
         profiles[slot] = imported; selected = slot; MarkDirty(); RefreshSlots(); BindSelected();
-        SetText(saved, L.F("スロット {0} にインポートしました。「プロファイルをデバイスに保存」で反映されます。", "Imported into slot {0}. Choose “Save profile to device” to apply it.", slot + 1));
+        SetText(saved, L.F("スロット {0} にインポートしました。「設定をデバイスに保存」で反映されます。", "Imported into slot {0}. Choose “Save settings to device” to apply it.", slot + 1));
     }
 }

@@ -8,6 +8,7 @@ internal sealed partial class MainForm : Form
     private DeviceProfile[] profiles = Enumerable.Range(0, DeviceProfile.SlotCount).Select(_ => new DeviceProfile()).ToArray();
     private DeviceProfile[] persistedProfiles = Enumerable.Range(0, DeviceProfile.SlotCount).Select(_ => new DeviceProfile()).ToArray();
     private readonly bool[] dirty = new bool[DeviceProfile.SlotCount];
+    private DeviceProfile[] editorBaseline = Enumerable.Range(0, DeviceProfile.SlotCount).Select(_ => new DeviceProfile()).ToArray();
     private readonly List<InputField> fields = [];
     private readonly LiveInputDisplay liveInput = new();
     private uint cursor, generation, bankGeneration, observedBankGeneration;
@@ -191,7 +192,7 @@ internal sealed partial class MainForm : Form
         saved.Dock = DockStyle.Fill; saved.ForeColor = Ui.Muted; footer.Controls.Add(saved, 0, 0);
         reload = Ui.Button(L.T("デバイスから再読込", "Reload device"), async (_, _) => await Reload());
         useProfile = Ui.Button(L.T("この設定を使用", "Use this profile"), async (_, _) => await UseProfile());
-        saveButton = Ui.Button(L.ProfileSaveButton, async (_, _) => await SaveSelected(), true);
+        saveButton = Ui.Button(L.ProfileSaveButton, async (_, _) => await SaveSettings(), true);
         footer.Controls.Add(reload, 1, 0); footer.Controls.Add(useProfile, 2, 0); footer.Controls.Add(saveButton, 3, 0); root.Controls.Add(footer, 0, 2); Controls.Add(root);
 
         slots.DrawItem += DrawSlot;
@@ -204,7 +205,7 @@ internal sealed partial class MainForm : Form
             if (slot < 0 || slot != selected || !slots.GetItemRectangle(slot).Contains(e.Location)) return;
             await UseProfile();
         };
-        slots.CanMove = i => i >= 0 && i < profiles.Length && profiles[i].Enabled && !working && !dirty.Any(x => x) && (bridge is not null && caps?.SupportsBankTransfer == true);
+        slots.CanMove = i => i >= 0 && i < profiles.Length && profiles[i].Enabled && !working && !GetSaveState().HasEdits && (bridge is not null && caps?.SupportsBankTransfer == true);
         slots.MoveRequested += async (_, e) => await MoveSlot(e.Source, e.Destination);
         InitializeProfileMenu();
         name.TextChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].Name = name.Text; MarkDirty(); };
@@ -326,14 +327,20 @@ internal sealed partial class MainForm : Form
     }
     private void MarkDirty()
     {
-        dirty[selected] = true; slots.Invalidate(slots.GetItemRectangle(selected));
-        SetText(saved, L.T("* は未保存の編集です。「プロファイルをデバイスに保存」で反映されます。", "* marks unsaved edits. Choose “Save profile to device” to apply them.")); UpdateEnabled();
+        dirty[selected] = DeviceSaveState.ProfileChanged(profiles[selected], editorBaseline[selected]);
+        slots.Invalidate(slots.GetItemRectangle(selected));
+        SetText(saved, GetSaveState().HasEdits
+            ? L.T("未保存の設定があります。「設定をデバイスに保存」で全スロットの変更をまとめて反映します。", "There are unsaved settings. “Save settings to device” applies changes across all slots together.")
+            : L.T("未保存の編集はありません。", "There are no unsaved edits."));
+        UpdateEnabled();
     }
     private void UpdateEnabled()
     {
-        bool online = bridge is not null, enabled = profiles[selected].Enabled, clean = !dirty.Any(x => x);
+        DeviceSaveState state = GetSaveState();
+        bool online = bridge is not null, enabled = profiles[selected].Enabled, clean = !state.HasEdits;
         body.Enabled = !working; connect.Enabled = !working; firmwareUpdate.Enabled = !working;
-        reload.Enabled = online && !working; saveButton.Enabled = online && !working && (dirty[selected] || caps is { Persisted: false });
+        reload.Enabled = online && !working; saveButton.Enabled = state.CanSave;
+        SetTip(saveButton, state.SaveReason ?? L.T("全16スロットの未保存の変更をまとめてデバイスへ保存します。", "Save pending changes across all 16 slots to the device together."));
         UpdateOutputAvailability();
         name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
         interval.Enabled = enabled && !working;
@@ -342,10 +349,10 @@ internal sealed partial class MainForm : Form
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;
         ledSettings.Enabled = conversionSettings.Enabled = enabled && !working;
         SetTip(duplicate, ProfileSlots.EmptyBelow(profiles, selected) >= 0 ? L.T("下側の最も近い未使用スロットへ複製します。", "Copy to the nearest unused slot below this profile.") : L.T("このスロットより下に未使用スロットがありません。", "There are no unused slots below this profile."));
-        backup.Enabled = restore.Enabled = online && !working && clean && (caps?.SupportsBankTransfer == true);
+        backup.Enabled = restore.Enabled = state.CanTransfer;
         string backupTip = caps?.SupportsBankTransfer == true ? L.T("全16スロットと切替設定を保存・復帰します。", "Back up or restore all 16 slots and profile switching settings.") :
             L.T("ファームウェア0.14.0以降が必要です。", "Requires firmware 0.14.0 or later.");
-        SetTip(backup, backupTip); SetTip(restore, backupTip);
+        SetTip(backup, state.TransferReason ?? backupTip); SetTip(restore, state.TransferReason ?? backupTip);
         switchMethod.Enabled = online && !working && clean && enabled && caps?.SupportsSwitchKeys == true;
         mouseUdlrSettings.Enabled = online && !working && (caps?.SupportsProfileConversion == true);
         SetTip(mouseUdlrSettings, caps?.SupportsProfileConversion == true
@@ -364,7 +371,7 @@ internal sealed partial class MainForm : Form
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
         useProfile.Enabled = CanUseSelectedProfile;
     }
-    private bool ConfirmDiscard() => !dirty.Any(x => x) || MessageBox.Show(this, L.T("未保存の編集を破棄して、デバイスから読み直しますか？", "Discard unsaved edits and reload the device?"),
+    private bool ConfirmDiscard() => !GetSaveState().NeedsSave || MessageBox.Show(this, L.T("未保存の編集を破棄して、デバイスから読み直しますか？", "Discard unsaved edits and reload the device?"),
         L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     private async Task WaitForPoll() { while (polling && !closing) await Task.Delay(5); }
     private async Task WaitForConnection() { while (connecting && !closing) await Task.Delay(5); }
@@ -376,6 +383,7 @@ internal sealed partial class MainForm : Form
         persistedProfiles = data.Select(p => p.Clone()).ToArray();
         profiles = data.Select(p => p.Clone()).ToArray();
         if (normalizeInputs) foreach (DeviceProfile profile in profiles) InputDirections.NormalizeProfile(profile);
+        editorBaseline = profiles.Select(p => p.Clone()).ToArray();
         Array.Clear(dirty); bankGeneration = observedBankGeneration = version;
     }
     private async Task Connect(bool showErrors = true, bool allowFirmwareNotice = true)
@@ -405,7 +413,7 @@ internal sealed partial class MainForm : Form
             }
             firmwareNotices.Observe(read.Status, allowFirmwareNotice);
             bridge = read.TakeBridge(); var bank = read.Bank;
-            bool retain = dirty.Any(x => x), unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
+            bool retain = GetSaveState().HasEdits, unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
             if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
@@ -561,7 +569,7 @@ internal sealed partial class MainForm : Form
             if (!emptyRetry && (result.GenerationChanged || result.Caps.FieldCount != fields.Count || result.Caps.DescriptorHash != caps?.DescriptorHash))
             {
                 AbortLearning(); wizard?.ConnectionLost(); await RefreshDevice();
-                if (!dirty.Any(x => x) && caps!.ActiveSlot < profiles.Length) { selected = caps.ActiveSlot; RefreshSlots(); }
+                if (!GetSaveState().HasEdits && caps!.ActiveSlot < profiles.Length) { selected = caps.ActiveSlot; RefreshSlots(); }
                 BindSelected();
             }
             else
@@ -572,7 +580,7 @@ internal sealed partial class MainForm : Form
                 {
                     var bank = await bridge.ReadProfilesAsync(); observedBankGeneration = bank.Caps.BankGeneration; caps = bank.Caps;
                     bool unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
-                    if (!dirty.Any(x => x)) { ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); RefreshSlots(); rebind = true; }
+                    if (!GetSaveState().HasEdits) { ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); RefreshSlots(); rebind = true; }
                     else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
                 }
                 bool activeChanged = oldActive != caps.ActiveSlot;
@@ -580,7 +588,7 @@ internal sealed partial class MainForm : Form
                 {
                     AbortLearning(); wizard?.ConnectionLost();
                     outputState = await bridge.ReadOutputStateAsync();
-                    if (!dirty.Any(x => x) && caps.ActiveSlot < profiles.Length) { selected = caps.ActiveSlot; RefreshSlots(); rebind = true; }
+                    if (!GetSaveState().HasEdits && caps.ActiveSlot < profiles.Length) { selected = caps.ActiveSlot; RefreshSlots(); rebind = true; }
                 }
                 if (rebind) BindSelected();
                 if (!emptyRetry) ApplyChanges(result.Changes, !activeChanged);
@@ -633,24 +641,31 @@ internal sealed partial class MainForm : Form
         catch (Exception ex) { Ui.Error(this, ex); return false; }
         finally { working = false; UpdateEnabled(); }
     }
-    private async Task SaveSelected()
+    private DeviceSaveState GetSaveState() => DeviceSaveState.Create(dirty, caps?.Persisted,
+        bridge is not null, working || connecting || closing, caps?.SupportsBankTransfer == true);
+
+    private async Task SaveSettings()
     {
-        if (working || bridge is null) return; int slot = selected;
+        if (!GetSaveState().CanSave || bridge is null) return;
+        working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {
-            DeviceProfile p = profiles[slot].Clone(); CheckDuplicate(slot, p);
-            if (p.Enabled && p.ProfileId == Guid.Empty) p.ProfileId = Guid.NewGuid();
-            working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
-            SetText(saved, L.T("スロットを保存し、読み戻して照合しています…", "Saving and verifying the slot…"));
-            if (p.Enabled)
+            // Use the complete saved bank as the base: unedited bytes, shortcuts
+            // and preferred profiles must not depend on the row being viewed.
+            SlotBank bank = await ReadCurrentBank();
+            DeviceProfile[] drafts = profiles.Select(p => p.Clone()).ToArray();
+            for (int i = 0; i < drafts.Length; i++)
             {
-                int groupSlot = Array.FindIndex(persistedProfiles, old => old.SameController(p));
-                if (groupSlot >= 0) p.Shift.ValidateSwitchKeys(p, await bridge!.ReadSwitchKeysAsync(groupSlot));
+                if (!dirty[i]) continue;
+                if (drafts[i].Enabled && drafts[i].ProfileId == Guid.Empty) drafts[i].ProfileId = Guid.NewGuid();
+                ProfileSlots.Validate(drafts, i, drafts[i], caps?.SupportsOnBoardVariants == true);
             }
-            bankGeneration = await bridge!.SaveAsync(slot, p, bankGeneration);
-            profiles[slot] = p; persistedProfiles[slot] = p.Clone(); dirty[slot] = false; observedBankGeneration = bankGeneration;
+            SlotBank pending = bank.WithProfiles(drafts, dirty);
+            SetText(saved, L.T("設定全体を保存し、読み戻して照合しています…", "Saving and verifying all settings…"));
+            SlotBank actual = await bridge.WriteBankAsync(pending, bank.Generation);
+            ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true);
             await RefreshDevice(); RefreshSlots(); BindSelected();
-            SetText(saved, L.F("スロット {0} をデバイスに保存しました。", "Saved slot {0} to the device.", slot + 1));
+            SetText(saved, L.T("全スロットの変更をデバイスに保存しました。", "Saved changes across all slots to the device."));
         }
         catch (Exception ex) { SetText(saved, L.T("保存結果を確認できませんでした。編集内容は保持しています。", "The save could not be verified. Your edits are kept.")); Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
@@ -658,7 +673,7 @@ internal sealed partial class MainForm : Form
     private void CheckDuplicate(int slot, DeviceProfile profile) => ProfileSlots.Validate(persistedProfiles, slot, profile, caps?.SupportsOnBoardVariants == true);
     private async Task ConfigureSwitchMethod()
     {
-        if (bridge is null || working || dirty.Any(x => x)) return;
+        if (bridge is null || working || GetSaveState().HasEdits) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {
@@ -752,7 +767,7 @@ internal sealed partial class MainForm : Form
                 if (!SameTarget()) throw new IOException(L.T("登録対象の接続または保存先が変更されました。登録をやり直してください。", "The controller connection or destination changed. Start registration again."));
                 p.ProfileId = Guid.NewGuid();
                 bankGeneration = observedBankGeneration = await targetBridge!.SaveAsync(slot, p, expectedBank, input);
-                profiles[slot] = p; persistedProfiles[slot] = p.Clone(); dirty[slot] = false; }
+                profiles[slot] = p; persistedProfiles[slot] = p.Clone(); editorBaseline[slot] = p.Clone(); dirty[slot] = false; }
             finally { working = false; }
         });
         wizard = dialog;
@@ -775,7 +790,7 @@ internal sealed partial class MainForm : Form
     }
     private void DeleteProfile()
     {
-        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n\n削除は「プロファイルをデバイスに保存」で反映されます。\n未保存の変更をデバイスに反映するまで、リストをドラッグして並べ替えることはできません。", "Delete “{1}” from slot {0}?\n\nDeletion is applied when you choose “Save profile to device”.\nDragging profiles to reorder the list is disabled until all unsaved changes are saved to the device.", selected + 1, profiles[selected].Name),
+        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n\n削除は「設定をデバイスに保存」で反映されます。\n未保存の変更をデバイスに反映するまで、リストをドラッグして並べ替えることはできません。", "Delete “{1}” from slot {0}?\n\nDeletion is applied when you choose “Save settings to device”.\nDragging profiles to reorder the list is disabled until all unsaved changes are saved to the device.", selected + 1, profiles[selected].Name),
             L.T("プロファイル削除", "Delete profile"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         profiles[selected] = new(); MarkDirty(); RefreshSlots(); BindSelected();
     }
@@ -787,7 +802,7 @@ internal sealed partial class MainForm : Form
             DeviceProfile copy = profiles[selected].Clone(); copy.ProfileId = Guid.NewGuid();
             copy.Name = ProfileSlots.DuplicateName(profiles, copy.Name);
             profiles[destination] = copy; selected = destination; MarkDirty(); RefreshSlots(); BindSelected();
-            SetText(saved, L.F("スロット {0} に複製しました。「プロファイルをデバイスに保存」で反映されます。", "Copied to slot {0}. Choose “Save profile to device” to apply it.", destination + 1));
+            SetText(saved, L.F("スロット {0} に複製しました。「設定をデバイスに保存」で反映されます。", "Copied to slot {0}. Choose “Save settings to device” to apply it.", destination + 1));
         }
         catch (Exception ex) { Ui.Error(this, ex); }
     }
@@ -800,7 +815,7 @@ internal sealed partial class MainForm : Form
     }
     private async Task BackupAll()
     {
-        if (working || dirty.Any(x => x) || bridge is null) return;
+        if (!GetSaveState().CanTransfer || bridge is null) return;
         using SaveFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), FileName = $"ControllerBridge-slots-{DateTime.Now:yyyyMMdd-HHmmss}.json", OverwritePrompt = true };
         tips.Hide(backup);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -811,7 +826,7 @@ internal sealed partial class MainForm : Form
     }
     private async Task RestoreAll()
     {
-        if (working || dirty.Any(x => x) || bridge is null) return;
+        if (!GetSaveState().CanTransfer || bridge is null) return;
         using OpenFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), Title = L.T("全スロットを復帰", "Restore all slots") };
         tips.Hide(restore);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -853,7 +868,7 @@ internal sealed partial class MainForm : Form
     private async void OnClosing(object? sender, FormClosingEventArgs e)
     {
         if (closing) return; if (working) { e.Cancel = true; return; }
-        if (dirty.Any(x => x) && MessageBox.Show(this, L.T("デバイスに保存していない編集があります。終了しますか？", "There are unsaved edits. Close ControllerBridge?"),
+        if (GetSaveState().NeedsSave && MessageBox.Show(this, L.T("デバイスに保存していない設定があります。終了しますか？", "There are unsaved settings. Close ControllerBridge?"),
             L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
         e.Cancel = true; closing = true; timer.Stop(); while (polling) await Task.Delay(5);
         await ReleaseCalibrationQuiet();

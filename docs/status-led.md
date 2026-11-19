@@ -21,7 +21,7 @@ The numbered sequence starts with 250 ms off, then repeats 150 ms on and 200 ms 
 
 **LED RGB settings** below **Delete profile** accepts R, G, and B independently from 0 through 255. **Default dim blue** keeps the original brightness. **Custom RGB values** go directly to the WS2812B channel bytes, without the palette brightness limiter or RGB565 quantization. Custom black is a valid off setting. The preview is a screen swatch, not an optical brightness measurement.
 
-Editing affects a draft until **Save profile to device**. The active saved profile supplies the ready color. Duplicate, reorder, export/import, and backup/restore carry the color with that profile. Returning to the default clears the custom flag and color bytes. Waiting, initialization, unregistered-input, error, save, and profile-number indications remain at the original low brightness. The profile color returns after temporary indications finish.
+Editing affects a draft until **Save settings to device**. The active saved profile supplies the ready color. Duplicate, reorder, export/import, and backup/restore carry the color with that profile. Returning to the default clears the custom flag and color bytes. Waiting, initialization, unregistered-input, error, save, and profile-number indications remain at the original low brightness. The profile color returns after temporary indications finish.
 
 ## RGB code entry and preview
 

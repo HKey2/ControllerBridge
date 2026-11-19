@@ -194,7 +194,7 @@ internal sealed partial class MainForm
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         DeviceProfile before = profiles[selected].Clone(); profiles[selected].Conversion = dialog.Result;
         if (!profiles[selected].SameContent(before)) MarkDirty();
-        SetText(saved, L.T("方向変換の編集を保持しています。プロファイルをデバイスに保存すると反映されます。", "Conversion edits are retained. Save the profile to device to apply them."));
+        SetText(saved, L.T("方向変換の編集を保持しています。設定をデバイスに保存すると反映されます。", "Conversion edits are retained. Save the profile to device to apply them."));
     }
     private static string LegacyImportNotice(bool fromDevice) =>
         L.T("旧形式を変換しました。4個目のシフトキーがある場合は削除し、先頭3個を保持します。\n", "Converted the older format. A fourth shift key is removed; the first three are retained.\n") +

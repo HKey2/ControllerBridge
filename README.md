@@ -37,7 +37,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.30.0 - GUI r2 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.30.0 - GUI r3 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**GUI r3:** **Save settings to device** saves pending edits across all 16 slots together, regardless of the selected row. Restoring a value to its saved setting clears its unsaved mark. Save availability, backup/restore and the close warning share the same pending-settings state.
 
 **GUI r2:** The profile list shows each profile's LED color in a narrow chip at the right edge, using the LED preview correction and a soft glow. Confirming an LED color change updates the draft's chip immediately; save the profile to apply it to the device. Unused slots have no chip. Firmware 0.30.0 is unchanged.
 
@@ -89,7 +91,7 @@ First-generation Switch Pro controllers can reconnect automatically after unplug
 
 **Earlier GUI correction:** Fixed overlapping text when switching modes in Mouse UDLR settings. Clarified the Paddle Virtual Rolling label to **Output analog stick** and its description to **Converts the paddle's virtual angle into analog-axis tilt.**
 
-**0.22.0: conversion settings now belong to each profile.** Open **Conversion mapping** to choose four Trackball targets, two Paddle targets (negative/positive), both conversion modes, and Virtual Rolling stick, reversal and rotation step. Choose **Apply to draft**, then **Save profile to device**. Paddle targets remain the same when changing the pointer's X/Y output axis. Rotation steps are 5/10/15/20/30/40/45/60/90°, default 30°.
+**0.22.0: conversion settings now belong to each profile.** Open **Conversion mapping** to choose four Trackball targets, two Paddle targets (negative/positive), both conversion modes, and Virtual Rolling stick, reversal and rotation step. Choose **Apply to draft**, then **Save settings to device**. Paddle targets remain the same when changing the pointer's X/Y output axis. Rotation steps are 5/10/15/20/30/40/45/60/90°, default 30°.
 
 **Shared settings** provides device-wide click threshold (default 64 pt), pressed time (30 ms), released interval (20 ms), Hold threshold (1 pt), **inertia threshold 8 pt/20 ms, decay factor 0.90 and decay interval 100 ms**, and rotation sensitivity (1.0°/pt). Enable pseudo-inertia separately in each profile under **Conversion mapping → Trackball → Hold → Enable pseudo-inertia**. It defaults to disabled, including migrated profiles. Saving shared settings preserves unsaved profile drafts.
 
@@ -130,7 +132,7 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Shared settings** saves common thresholds, timings, sensitivity, inertia tuning and S/X host mode. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
-Selecting an output tab edits the profile. Choose **Save profile to device** to persist it. A single click in the list opens a profile for editing. Double-click another saved profile for the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. Profiles with unsaved edits or for another controller cannot be activated this way.
+Selecting an output tab edits the profile. Choose **Save settings to device** to persist it. A single click in the list opens a profile for editing. Double-click another saved profile for the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. Profiles with unsaved edits or for another controller cannot be activated this way.
 
 | Output tab | Behavior |
 |---|---|

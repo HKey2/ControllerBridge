@@ -17,7 +17,7 @@ internal sealed partial class MainForm
         if (caps is not { Connected: true }) { controllerArrivals.Reset(); return; }
         if (bridge is null || !CanRegisterInput || caps.BankGeneration != bankGeneration) return;
         int slot = controllerArrivals.Observe(caps, HasInputProfile(caps), FirstAvailableSlot,
-            !working && !connecting && !polling && !closing && !ModalEditorOpen && !dirty.Any(value => value));
+            !working && !connecting && !polling && !closing && !ModalEditorOpen && !GetSaveState().HasEdits);
         if (slot < 0 || slot == selected) return;
         // Selection only: the normal list event binds the empty editor and
         // scrolls it into view. No command or profile mutation is performed.

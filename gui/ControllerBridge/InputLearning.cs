@@ -172,7 +172,7 @@ internal sealed partial class MappingEditor : UserControl
         mouseHelp = axisHelp;
         axisHelp.Dock = DockStyle.Fill; axisHelp.ForeColor = Ui.Muted;
         if (mouseMode) {
-            axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save profile to device” to apply your changes.");
+            axisHelp.Text = L.T("左右ボタンはゲームパッドのB・Aと割り当てを共有します。\n「設定をデバイスに保存」で反映されます。", "Mouse buttons share the gamepad B / A mappings.\nChoose “Save settings to device” to apply your changes.");
             root.Controls.Add(axisHelp, 0, 4);
         } else {
             foreach (Button axis in axes) tips.SetToolTip(axis, axisHelp.Text);
@@ -331,8 +331,8 @@ internal sealed partial class MappingEditor : UserControl
         { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => DeviceProfile.Targets[12], _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
     private void UpdateButtons()
     {
-        if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{DeviceProfile.Targets[1]}・{DeviceProfile.Targets[2]}と割り当てを共有します。\n「プロファイルをデバイスに保存」で反映されます。",
-            $"Mouse buttons share the gamepad {DeviceProfile.Targets[1]} / {DeviceProfile.Targets[2]} mappings.\nChoose “Save profile to device” to apply your changes.");
+        if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{DeviceProfile.Targets[1]}・{DeviceProfile.Targets[2]}と割り当てを共有します。\n「設定をデバイスに保存」で反映されます。",
+            $"Mouse buttons share the gamepad {DeviceProfile.Targets[1]} / {DeviceProfile.Targets[2]} mappings.\nChoose “Save settings to device” to apply your changes.");
         for (int i = 0; i < 18; i++)
         {
             if (buttons[i] is null) continue;
