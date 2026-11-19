@@ -37,7 +37,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.30.0 - GUI r3 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.30.0 - GUI r4 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**GUI r4:** LED RGB sliders increase with Up/Right and decrease with Down/Left, one step per arrow-key press. Saved RGB values are retained.
 
 **GUI r3:** **Save settings to device** saves pending edits across all 16 slots together, regardless of the selected row. Restoring a value to its saved setting clears its unsaved mark. Save availability, backup/restore and the close warning share the same pending-settings state.
 

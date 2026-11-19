@@ -38,6 +38,7 @@ internal sealed partial class LedRgbDialog : Form
             channels.RowStyles.Add(new(SizeType.AutoSize));
             Label name = Ui.Label(names[i]); name.Anchor = AnchorStyles.Left; channels.Controls.Add(name, 0, i);
             values[i].AccessibleName = names[i]; channels.Controls.Add(values[i], 1, i); values[i].ValueChanged += (_, _) => UpdatePreview();
+            values[i].KeyDown += OnChannelKeyDown;
             valueLabels[i].AutoSize = false; valueLabels[i].Size = new(40, 26); valueLabels[i].Anchor = AnchorStyles.Right;
             valueLabels[i].TextAlign = ContentAlignment.MiddleRight;
             channels.Controls.Add(valueLabels[i], 2, i);
@@ -68,6 +69,17 @@ internal sealed partial class LedRgbDialog : Form
         standard.Checked = !profile.CustomLed; custom.Checked = profile.CustomLed;
         standard.CheckedChanged += (_, _) => UpdatePreview(); custom.CheckedChanged += (_, _) => UpdatePreview();
         UpdatePreview();
+    }
+
+    private static void OnChannelKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TrackBar slider || e.Modifiers != Keys.None ||
+            e.KeyCode is not (Keys.Up or Keys.Down)) return;
+        // Native horizontal sliders decrease on Up. Match the numeric value
+        // instead, and suppress native handling so each press changes it once.
+        e.Handled = e.SuppressKeyPress = true;
+        int change = e.KeyCode == Keys.Up ? slider.SmallChange : -slider.SmallChange;
+        slider.Value = Math.Clamp(slider.Value + change, slider.Minimum, slider.Maximum);
     }
 
     internal void ApplyTo(DeviceProfile profile)
