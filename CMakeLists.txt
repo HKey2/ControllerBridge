@@ -11,6 +11,10 @@ pico_sdk_init()
 add_subdirectory(third_party/Pico-PIO-USB)
 include(cmake/pio_input_timestamp.cmake)
 
+add_library(ps4_usb_protocol STATIC lib/ps4_usb_protocol/ps4_usb_protocol.c)
+target_include_directories(ps4_usb_protocol PUBLIC lib/ps4_usb_protocol/include)
+target_compile_options(ps4_usb_protocol PRIVATE -Wall -Wextra -Werror)
+
 add_library(controller_usb STATIC
     lib/controller_usb/feedback.c
     lib/controller_usb/feedback_calibration.c
@@ -23,7 +27,7 @@ add_library(controller_usb STATIC
     lib/controller_usb/xbox_one.c
     lib/controller_usb/hid_layout.c)
 target_include_directories(controller_usb PUBLIC lib/controller_usb/include PRIVATE lib/controller_usb)
-target_link_libraries(controller_usb PUBLIC pico_stdlib PRIVATE pico_pio_usb)
+target_link_libraries(controller_usb PUBLIC pico_stdlib ps4_usb_protocol PRIVATE pico_pio_usb)
 target_compile_options(controller_usb PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_device STATIC

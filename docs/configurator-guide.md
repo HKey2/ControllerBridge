@@ -407,3 +407,7 @@ Pro output uses the normal profile button and stick mappings. Mouse-only and com
 Switching profiles, disconnecting, entering USB suspend or saving settings stops the effect. After a suspension or settings write, a fresh host command is required to resume. The bridge retains command order and applies backpressure when the output queue fills. If the controller stops accepting commands, it makes bounded stop attempts and disables feedback until a new session.
 
 Profiles and banks use format v11 and JSON backups use v8. Published v5/v6/v8 banks migrate with rumble off, and v9 banks preserve their existing rumble choices and assignments. Keep a pre-update backup if returning to older firmware. Ordinary profiles keep the existing input path; the gyro and rumble paths run only when those functions are in use.
+
+## PS4 console output
+
+PS4-console output and credential-file setup are not available in the current version. PS4-compatible input controllers can be used on Switch and other supported outputs without private-key files. See [device compatibility](compatibility.md) for the supported input format.

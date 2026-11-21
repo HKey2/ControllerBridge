@@ -23,7 +23,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist, bool supportsRumble = false)
     {
         original = Result = current; this.persist = persist;
-        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(640, 800));
+        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 880));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 4 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
@@ -82,6 +82,13 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
         Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Pro・DS3への振動転送に対応。DS3はXでも振動を利用できます。\n各プロファイルで振動を有効にしてください。マウスを含むプロファイルはSで動作します。\nモードの変更を保存するとUSBが再接続されます。",
             "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble to original Pro, Switch 2 Pro and DS3; DS3 also supports rumble with X.\nEnable rumble per profile. Profiles with mouse output use S.\nSaving a mode change reconnects USB."));
+        // Keep this entry hidden until PS4 console connection is implemented.
+        // Button ps4Files = Ui.Button(L.T("PS4認証ファイル（準備）…", "PS4 credential files (preparation)…"), (_, _) =>
+        // {
+        //     using Ps4CredentialsDialog dialog = new(); dialog.ShowDialog(this);
+        // });
+        // ps4Files.Anchor = AnchorStyles.Left;
+        // host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(ps4Files, 0, host.RowCount++); host.SetColumnSpan(ps4Files, 3);
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;

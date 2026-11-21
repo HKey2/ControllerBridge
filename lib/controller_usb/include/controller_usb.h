@@ -59,6 +59,8 @@ void uc_host_resume(void);
 
 // A bounded HID layout parser, independent of the PIO backend and of any VID/PID.
 // Scalar Variable Input fields are decoded; arrays remain available as raw data.
+// Parse every item, but retain only the first 64 scalar fields per interface.
+// The original descriptor and report bytes are never shortened at this limit.
 #define UC_HID_MAX_FIELDS 64
 // Internal synthetic sensor field marker; never emitted by the HID parser.
 #define UC_FIELD_BIG_ENDIAN 0x8000u
@@ -75,6 +77,8 @@ typedef struct {
     uint16_t count;
     bool has_report_ids;
     bool unsupported_inputs; // array/relative inputs cannot be learned as absolute controls
+    bool ps4_compatible; // common USB report 1 controls plus a declared format marker
+    bool ps4_session; // optional 03/F0/F1/F2/F3 Feature-report channel
 } uc_hid_layout;
 bool uc_hid_parse(const uint8_t *descriptor, size_t length, uc_hid_layout *layout);
 // Cache the returned field after descriptor parsing for repeated low-latency reads.

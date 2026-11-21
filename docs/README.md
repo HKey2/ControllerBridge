@@ -1,8 +1,8 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator v0.26.0 and normal firmware 0.26.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator v0.31.0 and normal firmware 0.31.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
-The current configurator is **v0.26.0**; its bundled firmware is **0.26.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
+The current configurator is **v0.31.0**; its bundled firmware is **0.31.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
 
 | Document | Contents |
 |---|---|
@@ -22,3 +22,5 @@ The current configurator is **v0.26.0**; its bundled firmware is **0.26.0**. The
 The 0.24.0 shared-settings screenshot shows selectable S/Auto/X; its defaults and other synthetic profiles are illustrative. The new XInput screenshot shows the physical Switch 2 Pro registered on the tested board. The older 0.22.0 conversion screenshots use synthetic profiles. Conversion mapping distinguishes Trackball **Virtual Cursor** from Paddle **Virtual Rolling** and includes a per-profile inertia checkbox; the eight-field shared dialog groups controls by mode and shows default inertia tuning 8 / 0.90 / 100 ms. The automatic mismatch example shows the short notice for confirmed published older saved data. The BOOT confirmation omits it because saved data cannot be inspected on that route. The main-window image now shows the right-hand conversion action and separate raised Trackball/Paddle groups in 0.22.0 - GUI r2. Other older shift, DPI and BOOT-wait images retain their capture versions.
 
 The application retains Japanese and English interfaces. Current profile editing uses **Save settings to device**.
+
+- [PS4-compatible USB protocol](ps4-usb-protocol.md): input format, optional startup exchange, and limits of cached console authentication.

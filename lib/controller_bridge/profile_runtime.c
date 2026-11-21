@@ -51,7 +51,7 @@ static bool analog_enabled;
 static uint32_t analog_idle_us=20000u;
 static uint32_t hold_idle_us=20000u;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
-static bool connected,partial,persisted,binding_error;
+static bool connected,partial,persisted,binding_error,ps4_input;
 static uint8_t host_status,input_protocol,motion_path;
 static uc_event last_input;
 static uint32_t input_initialization;
@@ -406,7 +406,7 @@ bool upr_event(const uc_event *e) {
             // Registration belongs to this attachment, even if the same model returns.
             if(stage_registration)stage_slot=-1;
             switch_guard.keys=switch_guard.held=0;
-            connected=false;partial=false;binding_error=false;active=-1;field_count=received=0;
+            connected=false;partial=false;binding_error=false;ps4_input=false;active=-1;field_count=received=0;
             mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
             group_count=profile_number=0;
             vid=pid=revision=0;descriptor_crc=~0u;connection_generation++;
@@ -455,18 +455,24 @@ bool upr_event(const uc_event *e) {
             crc_add(prefix,sizeof(prefix));crc_add(descriptor,received);
             if(!uc_hid_parse(descriptor,received,&layout) || field_count+layout.count>FIELD_COUNT) { partial=true;return false; }
             if(layout.unsupported_inputs)partial=true;
+            bool ps4=input_protocol==UC_PROTOCOL_HID && layout.ps4_compatible;
+            ps4_input|=ps4;
             for(unsigned i=0;i<layout.count;++i) {
                 const uc_hid_field *f=&layout.fields[i];
                 if((unsigned)f->bit_offset+f->bits>(layout.has_report_ids?504u:512u) ||
                    (layout.has_report_ids && !f->report_id) || f->logical_max<f->logical_min) { partial=true;continue; }
                 observed_field *o=&fields[field_count++];o->field=*f;o->iface=e->interface_number;
                 o->flags=(f->logical_min<0?UP_SIGNED:0)|(layout.has_report_ids?UP_REPORT_ID:0);
-                // DS3 reports Y down-positive; Switch Pro and Xbox report up-positive.
-                // Keep report bytes and descriptor identity intact. Both live fields
-                // and profile mapping use uc_hid_field_value for this conversion.
-                if(input_protocol==UC_PROTOCOL_DUALSHOCK3 && e->interface_number==0 &&
-                   f->report_id==1 && f->bits==8 && (f->bit_offset==48 || f->bit_offset==64) &&
-                   f->usage_page==1 && (f->usage==0x31 || f->usage==0x34)) {
+                // DS3 and standard PS4 USB Y axes report down-positive.
+                // Keep report bytes and descriptor identity intact. The shared
+                // decoder normalizes live fields and newly learned bindings;
+                // legacy stored bindings continue in their original coordinates.
+                bool ds3_y=input_protocol==UC_PROTOCOL_DUALSHOCK3 && e->interface_number==0 &&
+                    f->report_id==1 && f->bits==8 && (f->bit_offset==48 || f->bit_offset==64) &&
+                    f->usage_page==1 && (f->usage==0x31 || f->usage==0x34);
+                bool ps4_y=ps4 && f->report_id==1 && f->bits==8 && f->usage_page==1 &&
+                    ((f->bit_offset==8 && f->usage==0x31) || (f->bit_offset==24 && f->usage==0x35));
+                if(ds3_y || ps4_y) {
                     o->field.flags|=UC_FIELD_REVERSED;o->flags|=UP_SOURCE_REVERSED;
                 }
             }
@@ -534,7 +540,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         memcpy(reply,"UPG1",4);put16(reply+4,1);put16(reply+6,UP_PROFILE_BYTES);reply[8]=UP_PROFILE_COUNT;
         reply[9]=(uint8_t)upr_active_slot();put16(reply+10,(uint16_t)field_count);put16(reply+12,vid);
         put16(reply+14,pid);put16(reply+16,revision);
-        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT|UPR_CAP_PADDLE_ANALOG|UPR_CAP_SHARED_ANALOG_STICK|UPR_CAP_INTEGER_VIRTUAL_POINT|UPR_CAP_NORMALIZED_PADDLE|UPR_CAP_LOW_SPEED_CURVE);
+        put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT|UPR_CAP_PADDLE_ANALOG|UPR_CAP_SHARED_ANALOG_STICK|UPR_CAP_INTEGER_VIRTUAL_POINT|UPR_CAP_NORMALIZED_PADDLE|UPR_CAP_LOW_SPEED_CURVE|UPR_CAP_PS4_INPUT_DIRECTIONS|UPR_CAP_GENERIC_PS4|(ps4_input?UPR_STATUS_PS4_INPUT:0));
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
         reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
         put32(reply+40,input_initialization);

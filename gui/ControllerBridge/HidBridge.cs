@@ -19,6 +19,9 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     public bool SupportsIntegerVirtualPoint => (Flags & 1024) != 0;
     public bool SupportsNormalizedPaddle => (Flags & 2048) != 0;
     public bool SupportsLowSpeedCurve => (Flags & 4096) != 0;
+    public bool SupportsPs4InputDirections => (Flags & 8192) != 0;
+    public bool SupportsGenericPs4 => (Flags & 32768) != 0;
+    public bool Ps4Input => InputProtocol == 1 && (Flags & 16384) != 0;
     public bool SupportsVirtualPoint => (Flags & 128) != 0;
     public bool SupportsExtendedCurves => (Flags & 64) != 0;
     public bool SupportsRapidFire => (Features & 1) != 0;
@@ -97,6 +100,10 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
 public sealed class InputField
 {
     public bool DualShock3 { get; init; }
+    public bool Ps4Compatible { get; init; }
+    // The identified PS4 pad puts counters and status bytes on its vendor page.
+    // Retain these raw fields for diagnostics, but never learn them as controls.
+    public bool VendorTelemetry => Ps4Compatible && UsagePage == 0xff00;
     public bool Motion => DualShock3 && UsagePage == 0xff00 && Usage is >= 1 and <= 4;
     public bool Gyroscope => Motion && Usage == 4;
     public bool Accelerometer => Motion && Usage <= 3;
@@ -114,7 +121,7 @@ public sealed class InputField
     public int Maximum { get; init; }
     public int Value { get; set; }
     public bool Valid { get; set; }
-    public bool Learnable => !Gyroscope && (HidFlags & 4) == 0 && Maximum > Minimum && Bits is > 0 and <= 32 &&
+    public bool Learnable => !VendorTelemetry && !Gyroscope && (HidFlags & 4) == 0 && Maximum > Minimum && Bits is > 0 and <= 32 &&
         (!(UsagePage == 1 && Usage == 0x39) || Hat);
     public bool Hat => UsagePage == 1 && Usage == 0x39 && (long)Maximum - Minimum is 3 or 7;
     public bool Binary => (long)Maximum - Minimum == 1;
@@ -127,7 +134,7 @@ public sealed class InputField
           0x90 => L.T("十字キー 上", "D-pad up"), 0x91 => L.T("十字キー 下", "D-pad down"), 0x92 => L.T("十字キー 右", "D-pad right"), 0x93 => L.T("十字キー 左", "D-pad left"), _ => $"HID {UsagePage:X2}:{Usage:X2}" }
         : $"HID {UsagePage:X2}:{Usage:X2}";
     public override string ToString() => $"{Label}  [IF{Interface}/ID{ReportId}/bit{BitOffset}]";
-    internal static InputField Read(byte[] b, bool dualShock3 = false) => new() { DualShock3 = dualShock3, Index = Wire.U16(b, 6), Interface = b[8], ReportId = b[9], Bits = b[10], Flags = b[11],
+    internal static InputField Read(byte[] b, bool dualShock3 = false, bool ps4Compatible = false) => new() { DualShock3 = dualShock3, Ps4Compatible = ps4Compatible, Index = Wire.U16(b, 6), Interface = b[8], ReportId = b[9], Bits = b[10], Flags = b[11],
         BitOffset = Wire.U16(b, 12), UsagePage = Wire.U16(b, 14), Usage = Wire.U16(b, 16), HidFlags = Wire.U16(b, 18),
         Minimum = Wire.I32(b, 20), Maximum = Wire.I32(b, 24), Value = Wire.I32(b, 28), Valid = b[36] != 0 };
     public DigitalBinding Digital(byte mode, int low, int high) => new() { Interface = Interface, ReportId = ReportId,
@@ -325,7 +332,8 @@ internal sealed class HidBridge : IDisposable
                     restart = true; break;
                 }
                 if (Wire.U32(b, 0) != before.ConnectionGeneration || Wire.U16(b, 4) != before.FieldCount) { restart = true; break; }
-                fields.Add(InputField.Read(b, before.InputProtocol == 32 && before.Vid == 0x054c && before.Pid == 0x0268));
+                fields.Add(InputField.Read(b, before.InputProtocol == 32 && before.Vid == 0x054c && before.Pid == 0x0268,
+                    before.Ps4Input));
             }
             Capabilities after = Caps();
             if (!restart && after.ConnectionGeneration == before.ConnectionGeneration && after.FieldCount == before.FieldCount && after.DescriptorHash == before.DescriptorHash)

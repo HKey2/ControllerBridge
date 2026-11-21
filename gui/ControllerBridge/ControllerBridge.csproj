@@ -16,7 +16,7 @@
     <Product>ControllerBridge</Product>
     <Title>ControllerBridge</Title>
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../../firmware-version.txt').Trim())</Version>
-    <GuiRevision>4</GuiRevision>
+    <GuiRevision>1</GuiRevision>
     <AssemblyVersion>$(Version).$(GuiRevision)</AssemblyVersion>
     <FileVersion>$(Version).$(GuiRevision)</FileVersion>
     <FirmwareBuildDirectory Condition="'$(FirmwareBuildDirectory)' == ''">$(MSBuildProjectDirectory)/../../build</FirmwareBuildDirectory>

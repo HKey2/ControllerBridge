@@ -37,13 +37,17 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.30.0 - GUI r4 (firmware 0.30.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.31.0 (firmware 0.31.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
-**GUI r4:** LED RGB sliders increase with Up/Right and decrease with Down/Left, one step per arrow-key press. Saved RGB values are retained.
+**0.31.0:** Adds common wired PS4-compatible USB input, intended especially for reusing PS4-compatible arcade sticks on Switch. Matching is based on the report format rather than the manufacturer or model ID; devices with a different format remain subject to ordinary HID support. Install the bundled firmware, then unplug and reconnect the controller at USB-A; press HOME after recognition. Use **Add controller** to create a PS4-mode profile. Existing Xbox-mode profiles remain saved and are not converted automatically. Buttons, the D-pad, both sticks and analog triggers are available; this version does not add gyro, rumble, touch gestures or audio support for these controllers. Large HID layouts retain their first 64 scalar input fields per interface; later fields are ignored without preventing connection. Existing slots and settings are retained.
 
-**GUI r3:** **Save settings to device** saves pending edits across all 16 slots together, regardless of the selected row. Restoring a value to its saved setting clears its unsaved mark. Save availability, backup/restore and the close warning share the same pending-settings state.
+PS4-compatible controllers using the standard USB gamepad format now show both stick Y directions correctly in the setup wizard, matching DUALSHOCK 3. Install the bundled firmware even if the displayed version is already 0.31.0. Existing profiles retain their physical response; rerun the stick wizard if you want to replace an earlier direction setting.
 
-**GUI r2:** The profile list shows each profile's LED color in a narrow chip at the right edge, using the LED preview correction and a soft glow. Confirming an LED color change updates the draft's chip immediately; save the profile to apply it to the device. Unused slots have no chip. Firmware 0.30.0 is unchanged.
+**0.30.0 GUI r4:** LED RGB sliders increase with Up/Right and decrease with Down/Left, one step per arrow-key press. Saved RGB values are retained.
+
+**0.30.0 GUI r3:** **Save settings to device** saves pending edits across all 16 slots together, regardless of the selected row. Restoring a value to its saved setting clears its unsaved mark. Save availability, backup/restore and the close warning share the same pending-settings state.
+
+**0.30.0 GUI r2:** The profile list shows each profile's LED color in a narrow chip at the right edge, using the LED preview correction and a soft glow. Confirming an LED color change updates the draft's chip immediately; save the profile to apply it to the device. Unused slots have no chip. Firmware 0.30.0 is unchanged.
 
 **0.30.0:** Paddle now offers **Virtual Cursor(Analog)** with four destinations: **Left stick (X), Left stick (Y), Right stick (X), Right stick (Y)**. Analog range, curve, speed, smoothing and inertia are stored independently from Trackball. New Paddle profiles start with Left stick (X), minimum 25%, maximum 100%, Low-speed preserve, Speed 3.00, Smoothing 100% and Inertia 0 ms; saved profiles retain their settings. Only the selected axis is controlled; its paired axis retains its assignment. Main Paddle inversion applies. Small movements are retained across ordinary stops, including with short inertia settings. Both Trackball and Paddle offer a **Low-speed preserve** curve: it gives the tiniest movements a square-root-shaped start, smoothly joins a proportional low-to-medium response, then rises more steeply at high speed. Curve is applied before Speed, so sensitivity changes retain their proportional effect below the output ceiling. Trackball and Paddle may share the same stick, with the active source retaining control while it moves. After it stops for 40 ms, the other source can take control with its next movement report. Install the matching firmware; existing slots and settings are retained. See [Paddle setup](docs/configurator-guide.md#paddle-virtual-cursoranalog).
 
@@ -161,6 +165,7 @@ EGRET controls, X68000 Z JOYCARD controls, and wired M30 Switch-compatible input
 | Path | Responsibility |
 |---|---|
 | `lib/controller_usb` | PIO USB host, enumeration, input protocols, HID decoding |
+| `lib/ps4_usb_protocol` | Common PS4-compatible USB Feature-session framing and validation |
 | `lib/controller_device` | Native RP2350 USB device, gamepad/mouse output and Feature transport |
 | `lib/controller_bridge` | Mapping, queues, profiles, storage, switching, measurements |
 | `apps/egret_switch` | Normal bridge firmware and status LED |
@@ -188,13 +193,13 @@ Allocation figures for the current firmware, calculated from its binary and link
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 181,756; persistent storage 49,152 | 1,866,244 |
-| SRAM, 532,480 bytes | Static data 165,552; two stacks 8,192 | 358,736 |
+| Flash, 2,097,152 bytes | Code/initial values 184,708; persistent storage 49,152 | 1,863,292 |
+| SRAM, 532,480 bytes | Static data 165,652; two stacks 8,192 | 358,636 |
 | One bank copy, 16,384 bytes | Payload 14,164 + header 16 | 2,204 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
 
-Static SRAM consists of vector table 272, initialized data 43,512, and BSS 121,768 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 363,520 bytes.
+Static SRAM consists of vector table 272, initialized data 43,608, and BSS 121,772 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 369,664 bytes.
 
 ## Repository contents and license
 
@@ -203,3 +208,5 @@ Diagnostic output under `captures/`, build outputs, release binaries, and caches
 Project code is provided under the [BSD 2-Clause License](LICENSE), copyright 2026 HKey2. Third-party code retains its own licenses under `third_party/` and `licenses/`. The remixed case STL files are separately licensed under [CC BY 4.0](hardware/case/LICENSE.md), with attribution to the original designer, barrenechea.
 
 Switch 2 initialization commands are adapted from SDL under its [zlib license](licenses/SDL-zlib.txt); see the pinned source and protocol references in [XInput output](docs/xinput-output.md).
+
+PS4-compatible USB input uses the project's BSD-licensed [protocol library and interoperability specification](docs/ps4-usb-protocol.md). PS4-console output is not included; saving an authentication response alone cannot enable a different controller to answer a fresh console challenge.

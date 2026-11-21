@@ -2,6 +2,7 @@
 #include "transport.h"
 #include "controller_feedback.h"
 #include "input_protocol.h"
+#include "ps4_usb_protocol.h"
 #include "xbox_one.h"
 #include "switch2.h"
 #include "pico/stdlib.h"
@@ -454,8 +455,61 @@ static void ds3_motion_initialize(uint8_t iface) {
     options.event(&event,options.context);
 }
 
+// Service already-open input pipes during startup feature transfers. This is
+// never called by the steady-state input path, including ordinary profiles.
+static bool ps4_startup_input(void) {
+    ut_pump();
+    for(unsigned i=0;i<endpoint_count;++i) {
+        input_endpoint *ep=&endpoints[i];uint16_t actual=0;
+        ut_result result=ut_result_for(1,ep->descriptor[2],&actual);
+        if(result==UT_PENDING)continue;
+        if(result==UT_OK && uc_input_packet_valid(ep->protocol,ep->buffer,actual)) {
+            uc_event event={.type=UC_INPUT,.interface_number=ep->interface_number,
+                .endpoint=ep->descriptor[2],.length=actual,.sequence=++stats.reports,
+                .time_us=ut_received_us(1,ep->descriptor[2])};
+            memcpy(event.data,ep->buffer,actual);options.event(&event,options.context);
+        }
+        if(result!=UT_OK || !ut_submit(1,ep->descriptor[2],ep->buffer,le16(ep->descriptor+4))) {
+            stats.transfer_errors++;
+            if(result==UT_STALL)stats.stalls++;
+            ready=false;ut_close_device(1);status(UC_DISCONNECTED,result);return false;
+        }
+    }
+    return true;
+}
+// Parse only at enumeration. Keep the temporary layout off the polling frame.
+static bool __attribute__((noinline)) ps4_session_format(const hid_interface *iface) {
+    uc_hid_layout layout;
+    return uc_hid_parse(iface->report,iface->report_length,&layout) && layout.ps4_session;
+}
+// The protocol engine owns wire framing and validation; the host owns USB and
+// input service. No session state or work is retained in the normal input loop.
+static void __attribute__((noinline)) ps4_start(uint8_t iface) {
+    uint8_t challenge[P4_CHALLENGE_BYTES];
+    for(unsigned i=0;i<sizeof(challenge);++i)challenge[i]=(uint8_t)i;
+    p4_session session;p4_transfer request;
+    p4_begin(&session,1,challenge,time_us_32());
+    ut_result last=UT_OK;
+    while(p4_running(&session)) {
+        pause_point();
+        if(!ps4_startup_input())return;
+        if(!p4_next(&session,time_us_32(),&request)) {
+            if(p4_running(&session))ut_delay_ms(1);
+            continue;
+        }
+        uint16_t actual=0;
+        last=control(1,request.write?0x21:0xa1,request.write?9:1,
+                     (uint16_t)(0x0300u|request.report),iface,request.length,request.data,&actual);
+        p4_accept(&session,time_us_32(),last==UT_OK,request.data,actual);
+    }
+    if(session.error==P4_ERROR_EXPIRED)last=UT_TIMEOUT;
+    else if(session.error!=P4_ERROR_NONE && last==UT_OK)last=UT_ERROR;
+    status(UC_INPUT_INIT,0x40000u|((uint32_t)session.error<<8)|(uint32_t)last);
+}
+
 static bool enumerate(void) {
     ready = false;probe_missing=false;
+    uint8_t ps4_interfaces[UC_MAX_INTERFACES];unsigned ps4_count=0;
     memset(&xbox_out,0,sizeof(xbox_out));memset(xbox_rx,0,sizeof(xbox_rx));
     status(UC_PROBING, ++stats.attempts);
     ut_reset();
@@ -516,6 +570,14 @@ static bool enumerate(void) {
             continue;
         }
         if(iface->protocol==UC_PROTOCOL_XBOX360) {
+            // Input-only personalities cannot receive wired Xbox startup.
+            // Avoid the optional vendor identification request as well: it can
+            // select Xbox mode on a multi-mode device before HID discovery.
+            if(!iface->output_descriptor[0]) {
+                status(UC_INPUT_INIT,0x40000u|UT_PENDING);
+                const uint8_t *schema=uc_xbox360_layout(&iface->report_length);
+                memcpy(iface->report,schema,iface->report_length);continue;
+            }
             // Standard Xbox 360 vendor/interface read used during input start.
             // Some compatible pads use it to finish automatic mode detection.
             // A stall is optional on other pads; input itself remains authoritative.
@@ -545,6 +607,7 @@ static bool enumerate(void) {
         if (!read_descriptor(1,0x81,0x2200,iface->number,iface->report,iface->report_length)) {
             status(UC_REPORT_DESCRIPTOR_FAILED,iface->number); return false;
         }
+        if(ps4_session_format(iface))ps4_interfaces[ps4_count++]=iface->number;
     }
     for (unsigned i = 0; i < interface_count; ++i)
         descriptor_event(0x22,interfaces[i].number,interfaces[i].report,interfaces[i].report_length);
@@ -570,7 +633,8 @@ static bool enumerate(void) {
     stats.poll_interval_ms = interval_override ? interval_override : endpoints[0].native_interval;
     ready = true;
     status(UC_CONFIGURED,stats.poll_interval_ms);
-    return true;
+    for(unsigned i=0;ready && i<ps4_count;++i)ps4_start(ps4_interfaces[i]);
+    return ready;
 }
 void uc_request_dump(void) { atomic_store_explicit(&request_dump,1,memory_order_release); }
 void uc_request_statistics(void) { atomic_store_explicit(&request_statistics,1,memory_order_release); }

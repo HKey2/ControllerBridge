@@ -8,17 +8,28 @@ internal static class InputDirections
 
     // Migrate the editor copy, preserving the physical response of stored profiles.
     // Firmware continues to read legacy bindings in their original coordinates.
-    internal static void NormalizeProfile(DeviceProfile p)
+    internal static void NormalizeProfile(DeviceProfile p, Capabilities? device = null, IEnumerable<InputField>? fields = null)
     {
-        if (p.Vid != 0x054c || p.Pid != 0x0268) return;
+        bool ds3 = p.Vid == 0x054c && p.Pid == 0x0268;
+        // Unknown PS4-compatible identities are normalized only against the
+        // connected descriptor and its already-normalized Y fields. Offline
+        // imports and unrelated saved devices are never guessed from axis names.
+        InputField[] ps4 = !ds3 && device is { Connected: true, Ps4Input: true } && fields is not null &&
+            p.Vid == device.Vid && p.Pid == device.Pid && p.Revision == device.Revision && p.DescriptorHash == device.DescriptorHash
+            ? fields.Where(f => f.Ps4Compatible && (f.Flags & Reversed) != 0).ToArray() : [];
+        if (!ds3 && ps4.Length == 0) return;
+        bool Legacy(byte iface, byte id, ushort offset, byte bits, byte flags) => ds3
+            ? LegacyDs3(iface, id, offset, bits, flags)
+            : (flags & SourceFlags) == 2 && ps4.Any(f => f.Interface == iface && f.ReportId == id &&
+                f.BitOffset == offset && f.Bits == bits && (f.Flags & SourceFlags) == (2 | Reversed));
         void Digital(DigitalBinding b)
         {
-            if (b.Mode != 1 || !LegacyDs3(b.Interface, b.ReportId, b.BitOffset, b.Bits, b.Flags)) return;
+            if (b.Mode != 1 || !Legacy(b.Interface, b.ReportId, b.BitOffset, b.Bits, b.Flags)) return;
             (b.Low, b.High) = (255 - b.High, 255 - b.Low); b.Flags |= Reversed;
         }
         void Half(AnalogHalfBinding a)
         {
-            if (!LegacyDs3(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags)) return;
+            if (!Legacy(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags)) return;
             a.Neutral = 255 - a.Neutral; a.Maximum = 255 - a.Maximum; a.Flags |= Reversed;
         }
         foreach (DigitalBinding b in p.Buttons.Concat(p.Shift.Keys).Concat(p.Shift.Buttons)) Digital(b);
@@ -27,7 +38,7 @@ internal static class InputDirections
             if (axis.Mode == 1)
             {
                 AnalogBinding a = axis.Analog;
-                if (!a.Gyro && LegacyDs3(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags))
+                if (!a.Gyro && Legacy(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags))
                 {
                     (a.Minimum, a.Center, a.Maximum) = (255 - a.Maximum, 255 - a.Center, 255 - a.Minimum);
                     a.Flags = (byte)((a.Flags ^ 4) | Reversed);

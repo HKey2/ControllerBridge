@@ -18,6 +18,9 @@ bool uc_hid_parse(const uint8_t *desc, size_t length, uc_hid_layout *layout) {
     uint32_t usages[32], usage_min = 0, usage_max = 0;
     uint16_t offsets[256] = {0};
     bool range = false;
+    uint16_t ps4_features[5]={0}; // 03, F0, F1, F2, F3 data-byte counts
+    uint16_t ps4_output=0;
+    uint8_t ps4_invalid=0;
     for (size_t pos = 0; pos < length;) {
         uint8_t prefix = desc[pos++];
         if (prefix == 0xfe) return false; // unsupported long item, never guess
@@ -53,22 +56,61 @@ bool uc_hid_parse(const uint8_t *desc, size_t length, uc_hid_layout *layout) {
                     uint32_t usage = range ? usage_min + j : usage_count ? usages[j < usage_count ? j : usage_count-1] : 0;
                     if (range && usage > usage_max) usage = usage_max;
                     if (!(value & 1) && (value & 2) && g.size && usage) {
-                        if (layout->count == UC_HID_MAX_FIELDS) return false;
-                        uc_hid_field *f = &layout->fields[layout->count++];
-                        f->usage_page = (uint16_t)(usage > 65535 ? usage >> 16 : g.page);
-                        f->usage = (uint16_t)(usage & 65535);
-                        f->bit_offset = offsets[g.report_id];
-                        f->bits = (uint8_t)g.size;
-                        f->report_id = (uint8_t)g.report_id;
-                        f->logical_min = g.logical_min;
-                        f->logical_max = g.logical_max;
-                        f->flags = (uint16_t)(value & ~(UC_FIELD_BIG_ENDIAN|UC_FIELD_REVERSED));
+                        // Consume the complete descriptor; keep only the bounded prefix.
+                        // Skipped fields still advance this report's bit offset below.
+                        if (layout->count < UC_HID_MAX_FIELDS) {
+                            uc_hid_field *f = &layout->fields[layout->count++];
+                            f->usage_page = (uint16_t)(usage > 65535 ? usage >> 16 : g.page);
+                            f->usage = (uint16_t)(usage & 65535);
+                            f->bit_offset = offsets[g.report_id];
+                            f->bits = (uint8_t)g.size;
+                            f->report_id = (uint8_t)g.report_id;
+                            f->logical_min = g.logical_min;
+                            f->logical_max = g.logical_max;
+                            f->flags = (uint16_t)(value & ~(UC_FIELD_BIG_ENDIAN|UC_FIELD_REVERSED));
+                        }
                     }
                     offsets[g.report_id] = (uint16_t)(offsets[g.report_id]+g.size);
                 }
             }
+            // Only protocol metadata is retained for these vendor reports;
+            // no Feature bytes become input fields or consume field capacity.
+            int ps4_slot=tag==11?(g.report_id==3?0:g.report_id>=0xf0 && g.report_id<=0xf3?(int)g.report_id-0xef:-1):-1;
+            if(ps4_slot>=0) {
+                bool bytes=g.size==8 && g.count<=65535 && g.logical_min==0 && g.logical_max==255 &&
+                    (value&7)==2 && g.page>=0xff00 && g.count+ps4_features[ps4_slot]<=65535;
+                if(bytes)ps4_features[ps4_slot]+=(uint16_t)g.count;
+                else ps4_invalid|=(uint8_t)(1u<<ps4_slot);
+            }
+            if(tag==9 && g.report_id==5) {
+                if(g.size==8 && g.count<=65535 && g.logical_min==0 && g.logical_max==255 &&
+                   (value&7)==2 && g.page>=0xff00 && g.count+ps4_output<=65535)ps4_output+=(uint16_t)g.count;
+                else ps4_invalid|=32;
+            }
             usage_count = 0; range = false; usage_min = usage_max = 0;
         }
+    }
+    // Match the documented control prefix and an independent wire-format
+    // marker. Product IDs, interface numbers and sensor support are irrelevant.
+    bool definition=!(ps4_invalid&1) && ps4_features[0]==47;
+    bool output=!(ps4_invalid&32) && ps4_output==31;
+    if ((definition || output) && layout->has_report_ids && offsets[1] == 504) {
+        static const uint8_t usages_ps4[] = {0x30,0x31,0x32,0x35,0x39,0x33,0x34};
+        static const uint8_t offsets_ps4[] = {0,8,16,24,32,56,64};
+        bool match = true;
+        for (unsigned i=0;i<7;++i) {
+            const uc_hid_field *f=uc_hid_find(layout,1,usages_ps4[i],1);
+            if (!f || f->bit_offset!=offsets_ps4[i] || f->bits!=(i==4?4:8) ||
+                f->logical_min!=0 || f->logical_max!=(i==4?7:255) || (f->flags&7)!=2) match=false;
+        }
+        for (unsigned i=0;i<14;++i) {
+            const uc_hid_field *f=uc_hid_find(layout,9,(uint16_t)(i+1),1);
+            if (!f || f->bit_offset!=36+i || f->bits!=1 || f->logical_min!=0 ||
+                f->logical_max!=1 || (f->flags&7)!=2) match=false;
+        }
+        layout->ps4_compatible=match;
+        layout->ps4_session=match && !ps4_invalid && definition &&
+            ps4_features[1]==63 && ps4_features[2]==63 && ps4_features[3]==15 && ps4_features[4]==7;
     }
     return depth == 0 && layout->count != 0;
 }

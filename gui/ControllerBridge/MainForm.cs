@@ -376,13 +376,13 @@ internal sealed partial class MainForm : Form
     private async Task WaitForPoll() { while (polling && !closing) await Task.Delay(5); }
     private async Task WaitForConnection() { while (connecting && !closing) await Task.Delay(5); }
     private bool ModalEditorOpen => !Enabled || OwnedForms.Any(form => form.Modal);
-    private void ApplyBank(DeviceProfile[] data, uint version, bool normalizeInputs)
+    private void ApplyBank(DeviceProfile[] data, uint version, bool normalizeInputs, DeviceState? input = null)
     {
         // Keep the device snapshot in its stored coordinates for backup,
         // conflict detection and reconnects. Only the editor copy is normalized.
         persistedProfiles = data.Select(p => p.Clone()).ToArray();
         profiles = data.Select(p => p.Clone()).ToArray();
-        if (normalizeInputs) foreach (DeviceProfile profile in profiles) InputDirections.NormalizeProfile(profile);
+        if (normalizeInputs) foreach (DeviceProfile profile in profiles) InputDirections.NormalizeProfile(profile, input?.Caps ?? caps, input?.Fields ?? fields);
         editorBaseline = profiles.Select(p => p.Clone()).ToArray();
         Array.Clear(dirty); bankGeneration = observedBankGeneration = version;
     }
@@ -414,10 +414,12 @@ internal sealed partial class MainForm : Form
             firmwareNotices.Observe(read.Status, allowFirmwareNotice);
             bridge = read.TakeBridge(); var bank = read.Bank;
             bool retain = GetSaveState().HasEdits, unchanged = Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i]));
-            if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
+            if (!retain) ApplyBank(bank.Profiles, bank.Caps.BankGeneration, bank.Caps.SupportsInputDirections, read.Device); else if (unchanged) bankGeneration = bank.Caps.BankGeneration;
             observedBankGeneration = bank.Caps.BankGeneration;
             DeviceState device = read.Device!; caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
             liveInput.Reset(); fields.Clear(); fields.AddRange(device.Fields); outputState = read.Output;
+            if (caps.SupportsInputDirections)
+                foreach (DeviceProfile profile in profiles.Concat(editorBaseline)) InputDirections.NormalizeProfile(profile, caps, fields);
             OutputPresentation.HostMode = read.HostMode; OutputPresentation.SelectedHostMode = read.SelectedHostMode;
             if (!retain && caps.ActiveSlot < profiles.Length) selected = caps.ActiveSlot;
             UpdateConnection();
@@ -477,6 +479,8 @@ internal sealed partial class MainForm : Form
         }
         DeviceState device = await bridge.ReadDeviceAsync(); caps = device.Caps; generation = caps.ConnectionGeneration; cursor = device.Cursor;
         liveInput.Reset(); fields.Clear(); fields.AddRange(device.Fields); outputState = caps.SupportsMouseOutput ? await bridge.ReadOutputStateAsync() : null;
+        if (caps.SupportsInputDirections)
+            foreach (DeviceProfile profile in profiles.Concat(editorBaseline)) InputDirections.NormalizeProfile(profile, caps, fields);
         HostOutputState host = await bridge.ReadHostOutputAsync();
         OutputPresentation.HostMode = host.Active; OutputPresentation.SelectedHostMode = host.Selected;
         SyncOutputControls(); UpdateConnection();
