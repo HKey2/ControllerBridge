@@ -51,7 +51,8 @@ static bool analog_enabled;
 static uint32_t analog_idle_us=20000u;
 static uint32_t hold_idle_us=20000u;
 static udk_settings direction_settings=UDK_DEFAULT_SETTINGS;
-static bool connected,partial,persisted,binding_error,ps4_input;
+static bool connected,partial,persisted,binding_error,ps4_input,low_speed,rumble_enabled;
+static uint8_t effective_output;
 static uint8_t host_status,input_protocol,motion_path;
 static uc_event last_input;
 static uint32_t input_initialization;
@@ -96,6 +97,7 @@ static bool profile_exists(const up_profile *p) {
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(!digital_exists(&p->digital[i]))return false;
     for(unsigned i=0;i<p->shift.count;++i)if(!digital_exists(&p->shift.keys[i]))return false;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if((p->shift.overrides&(1u<<i)) && !digital_exists(&p->shift.digital[i]))return false;
+    if(low_speed)return true;
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         if(mode==UP_AXIS_ANALOG) {
@@ -129,12 +131,17 @@ static void seed_buttons(void) {
         }
     }
 }
+static void select_button_path(void) {
+    effective_output=low_speed?0:up_profile_output_options(mapper.profile);
+    rumble_enabled=!low_speed && mapper.profile && (mapper.profile->flags&(UP_ENABLED|UP_RUMBLE))==(UP_ENABLED|UP_RUMBLE);
+    if(low_speed)up_mapper_buttons_only(&mapper);
+}
 static void refresh_conversion(void) {
     const up_conversion defaults=UP_DEFAULT_CONVERSION;
     up_conversion_apply(active>=0?&bank.profiles[active].shift.conversion:&defaults,&direction_settings);
-    analog_enabled=active>=0 && direction_settings.trackball_mode==UDK_ANALOG_ANGLE_MODE &&
+    analog_enabled=!low_speed && active>=0 && direction_settings.trackball_mode==UDK_ANALOG_ANGLE_MODE &&
         (bank.profiles[active].mouse.flags&(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS))==(UP_MOUSE_TRACKBALL|UP_MOUSE_TRACKBALL_KEYS);
-    paddle_analog_enabled=active>=0 && direction_settings.paddle_mode==UDK_ANALOG_ANGLE_MODE &&
+    paddle_analog_enabled=!low_speed && active>=0 && direction_settings.paddle_mode==UDK_ANALOG_ANGLE_MODE &&
         (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS);
     analog_shared_stick=false;
     if(analog_enabled && (bank.profiles[active].mouse.flags&(UP_MOUSE_PADDLE|UP_MOUSE_PADDLE_KEYS))==
@@ -153,7 +160,7 @@ static void select_profile(void) {
     refresh_conversion();
     refresh_group();
     up_mapper_attach(&mapper,active>=0?&bank.profiles[active]:NULL);
-    seed_buttons();
+    seed_buttons();select_button_path();
     uc_request_poll_interval(active>=0?bank.profiles[active].input_interval_ms:0);
 }
 static uint8_t mouse_sources(void) { return (mouse_x>=0 && mouse_y>=0?1:0)|(mouse_wheel>=0?2:0); }
@@ -349,8 +356,9 @@ void upr_init(const udk_settings *common) {
 bool upr_ready(void) { return connected && active>=0; }
 unsigned upr_field_count(void) { return field_count; }
 unsigned upr_active_slot(void) { return active<0?255:(unsigned)active; }
+const char *upr_profile_name(void) { return active<0?NULL:bank.profiles[active].name; }
 uint8_t upr_input_interval(void) { return active<0?0:bank.profiles[active].input_interval_ms; }
-uint8_t upr_output_options(void) { return up_profile_output_options(active<0?NULL:&bank.profiles[active]); }
+uint8_t upr_output_options(void) { return effective_output; }
 uint32_t upr_led_rgb(void) { return up_profile_led_rgb(active<0?NULL:&bank.profiles[active]); }
 void upr_output_report(uint32_t now,sw_report *report) {
     if(active<0)sw_neutral(report);else up_mapper_tick(&mapper,now,false,report);
@@ -375,7 +383,7 @@ bool upr_switch_released(void) { return !switch_guard.held; }
 static void activate(unsigned slot) {
     upr_mouse_reset();
     active=(int)slot;binding_error=false;refresh_conversion();up_mapper_attach(&mapper,&bank.profiles[slot]);
-    seed_buttons();
+    seed_buttons();select_button_path();
     refresh_group();
     uc_request_poll_interval(bank.profiles[slot].input_interval_ms);
 }
@@ -406,7 +414,7 @@ bool upr_event(const uc_event *e) {
             // Registration belongs to this attachment, even if the same model returns.
             if(stage_registration)stage_slot=-1;
             switch_guard.keys=switch_guard.held=0;
-            connected=false;partial=false;binding_error=false;ps4_input=false;active=-1;field_count=received=0;
+            connected=false;partial=false;binding_error=false;ps4_input=false;low_speed=false;rumble_enabled=false;effective_output=0;active=-1;field_count=received=0;
             mouse_x=mouse_y=mouse_wheel=-1;upr_mouse_reset();
             group_count=profile_number=0;
             vid=pid=revision=0;descriptor_crc=~0u;connection_generation++;
@@ -416,6 +424,7 @@ bool upr_event(const uc_event *e) {
             input_initialization=0;motion_path=0;
             memset(fields,0,sizeof(fields));up_mapper_attach(&mapper,NULL);return true;
         }
+        if(e->code==UC_INPUT_SPEED)low_speed=e->sequence==1;
         if(e->code==UC_DEVICE_FOUND) { vid=(uint16_t)(e->sequence>>16);pid=(uint16_t)e->sequence; }
         if(e->code==UC_INPUT_INIT)input_initialization=e->sequence;
         if(e->code==UC_MOTION_CALIBRATION)motion_path=(uint8_t)e->sequence;
@@ -519,8 +528,14 @@ bool upr_event(const uc_event *e) {
     }
     return false;
 }
+uint32_t upr_device_ids(void) { return connected?((uint32_t)vid<<16)|pid:0; }
 uint8_t upr_gyro_axes(void) { return mapper.gyro_axes; }
-bool upr_rumble_enabled(void) { return mapper.profile && (mapper.profile->flags&(UP_ENABLED|UP_RUMBLE))==(UP_ENABLED|UP_RUMBLE); }
+bool upr_low_speed(void) { return low_speed; }
+bool upr_rumble_enabled(void) { return rumble_enabled; }
+bool upr_apply_buttons(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
+    if(!up_mapper_apply_buttons(&mapper,e->interface_number,e->data,e->length,out))return false;
+    up_mapper_tick(&mapper,now,output_ready,out);return true;
+}
 bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
     bool motion=false;
     if(mapper.gyro_axes) {
@@ -542,7 +557,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put16(reply+14,pid);put16(reply+16,revision);
         put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT|UPR_CAP_PADDLE_ANALOG|UPR_CAP_SHARED_ANALOG_STICK|UPR_CAP_INTEGER_VIRTUAL_POINT|UPR_CAP_NORMALIZED_PADDLE|UPR_CAP_LOW_SPEED_CURVE|UPR_CAP_PS4_INPUT_DIRECTIONS|UPR_CAP_GENERIC_PS4|(ps4_input?UPR_STATUS_PS4_INPUT:0));
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
-        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=motion_path;
+        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=(uint8_t)((motion_path&0x3fu)|UPR_INPUT_SPEED_SUPPORTED|(low_speed?UPR_INPUT_LOW_SPEED:0u));
         put32(reply+40,input_initialization);
         put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS|UPR_FEATURE_RUMBLE|UPR_FEATURE_ANALOG_ANGLE);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();

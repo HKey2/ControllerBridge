@@ -205,8 +205,13 @@ internal sealed partial class MainForm : Form
             if (slot < 0 || slot != selected || !slots.GetItemRectangle(slot).Contains(e.Location)) return;
             await UseProfile();
         };
-        slots.CanMove = i => i >= 0 && i < profiles.Length && profiles[i].Enabled && !working && !GetSaveState().HasEdits && (bridge is not null && caps?.SupportsBankTransfer == true);
-        slots.MoveRequested += async (_, e) => await MoveSlot(e.Source, e.Destination);
+        slots.CanMove = i => i >= 0 && i < profiles.Length && profiles[i].Enabled && !working && !connecting && !closing && (bridge is not null && caps?.SupportsBankTransfer == true);
+        slots.MoveRequested += async (_, e) =>
+        {
+            // Finish the native drag loop before a save prompt opens.
+            await Task.Yield();
+            if (!IsDisposed && !closing) await MoveSlot(e.Source, e.Destination);
+        };
         InitializeProfileMenu();
         name.TextChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].Name = name.Text; MarkDirty(); };
         rumbleOn.CheckedChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].RumbleEnabled = rumbleOn.Checked; MarkDirty(); };
@@ -216,7 +221,7 @@ internal sealed partial class MainForm : Form
         {
             if (syncingOutput || loading) return;
             // Reject the selection before controls move or the profile becomes dirty.
-            e.Cancel = OutputModeUnavailableReason() is not null;
+            e.Cancel = OutputModeUnavailableReason() is not null || SelectedButtonsOnly && e.TabPageIndex != 0;
         };
         outputTabs.SelectedIndexChanged += (_, _) =>
         {
@@ -302,6 +307,9 @@ internal sealed partial class MainForm : Form
         // Move only when the selected row is outside the visible area.
         slots.EnsureVisible(selected);
     }
+    private bool SelectedButtonsOnly => caps is { LowSpeedInput: true } && profiles[selected].Matches(caps);
+    private static string ButtonsOnlyNotice => L.T("Low Speed接続ではボタンと十字キーのみ出力します。保存済みのその他の設定は保持されます。",
+        "Low Speed connections output only buttons and the D-pad. Other saved settings are retained.");
     private void BindSelected()
     {
         using IDisposable layout = Ui.BatchLayout(this, deferPaint: true);
@@ -319,6 +327,7 @@ internal sealed partial class MainForm : Form
         foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor })
         {
             mapping.ReleaseTogglesAsync = caps?.SupportsButtonToggle == true && ConnectedSlot == selected ? ReleaseToggles : null;
+            mapping.SetButtonsOnly(SelectedButtonsOnly);
             mapping.Bind(p, fields, learn, caps?.SupportsRapidFire == true, caps?.SupportsButtonToggle == true);
         }
         UpdateProfileOutputStatus();
@@ -337,36 +346,36 @@ internal sealed partial class MainForm : Form
     private void UpdateEnabled()
     {
         DeviceSaveState state = GetSaveState();
-        bool online = bridge is not null, enabled = profiles[selected].Enabled, clean = !state.HasEdits;
+        bool online = bridge is not null, enabled = profiles[selected].Enabled;
         body.Enabled = !working; connect.Enabled = !working; firmwareUpdate.Enabled = !working;
         reload.Enabled = online && !working; saveButton.Enabled = state.CanSave;
         SetTip(saveButton, state.SaveReason ?? L.T("全16スロットの未保存の変更をまとめてデバイスへ保存します。", "Save pending changes across all 16 slots to the device together."));
         UpdateOutputAvailability();
         name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
         interval.Enabled = enabled && !working;
-        rumbleOn.Visible = enabled; rumbleOn.Enabled = enabled && !working && profiles[selected].OutputMode == 0 && (caps is null || caps.SupportsRumble);
-        delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration && fields.Any(f => f.Learnable && f.Valid)));
+        rumbleOn.Visible = enabled; rumbleOn.Enabled = enabled && !working && !SelectedButtonsOnly && profiles[selected].OutputMode == 0 && (caps is null || caps.SupportsRumble);
+        delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration));
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;
-        ledSettings.Enabled = conversionSettings.Enabled = enabled && !working;
+        ledSettings.Enabled = enabled && !working; conversionSettings.Enabled = enabled && !working && !SelectedButtonsOnly;
         SetTip(duplicate, ProfileSlots.EmptyBelow(profiles, selected) >= 0 ? L.T("下側の最も近い未使用スロットへ複製します。", "Copy to the nearest unused slot below this profile.") : L.T("このスロットより下に未使用スロットがありません。", "There are no unused slots below this profile."));
         backup.Enabled = restore.Enabled = state.CanTransfer;
         string backupTip = caps?.SupportsBankTransfer == true ? L.T("全16スロットと切替設定を保存・復帰します。", "Back up or restore all 16 slots and profile switching settings.") :
             L.T("ファームウェア0.14.0以降が必要です。", "Requires firmware 0.14.0 or later.");
         SetTip(backup, state.TransferReason ?? backupTip); SetTip(restore, state.TransferReason ?? backupTip);
-        switchMethod.Enabled = online && !working && clean && enabled && caps?.SupportsSwitchKeys == true;
+        switchMethod.Enabled = online && !working && !connecting && !closing && enabled && caps?.SupportsSwitchKeys == true;
         mouseUdlrSettings.Enabled = online && !working && (caps?.SupportsProfileConversion == true);
         SetTip(mouseUdlrSettings, caps?.SupportsProfileConversion == true
             ? L.T("全プロファイル共通のしきい値・時間・感度を調整します。", "Adjust thresholds, timings and sensitivity shared by all profiles.")
             : L.T("同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware."));
-        trackballOn.Enabled = paddleOn.Enabled = enabled && !working;
-        invertX.Enabled = invertY.Enabled = enabled && !working && trackballOn.Checked;
+        trackballOn.Enabled = paddleOn.Enabled = enabled && !working && !SelectedButtonsOnly;
+        invertX.Enabled = invertY.Enabled = enabled && !working && !SelectedButtonsOnly && trackballOn.Checked;
         mouseGain.Enabled = invertX.Enabled;
-        invertPaddle.Enabled = enabled && !working && paddleOn.Checked;
+        invertPaddle.Enabled = enabled && !working && !SelectedButtonsOnly && paddleOn.Checked;
         paddleGain.Enabled = invertPaddle.Enabled;
-        bool conversionAvailable = profiles[selected].OutputMode != 1;
+        bool conversionAvailable = profiles[selected].OutputMode != 1 && !SelectedButtonsOnly;
         trackballKeys.Enabled = enabled && !working && conversionAvailable && trackballOn.Checked;
         paddleKeys.Enabled = enabled && !working && conversionAvailable && paddleOn.Checked;
-        paddleAxis.Enabled = enabled && !working && paddleOn.Checked;
+        paddleAxis.Enabled = enabled && !working && !SelectedButtonsOnly && paddleOn.Checked;
         paddleKeys.Text = L.T("変換を有効", "Enable conversion");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
         useProfile.Enabled = CanUseSelectedProfile;
@@ -534,6 +543,7 @@ internal sealed partial class MainForm : Form
             text += L.T($"  •  ポインタ感度: ボール {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / パドル {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}",
                 $"  •  Pointer gain: ball {(p.Mouse.TrackballEnabled ? p.Mouse.TrackballGain.ToString("0.0") + "×" : "OFF")} / Paddle {(p.Mouse.PaddleEnabled ? p.Mouse.PaddleGain.ToString("0.0") + "× " + p.Mouse.PaddleAxis : "OFF")}");
         if (p.OutputMode != 1 && p.Mouse.DirectionKeysEnabled) text += L.T("  •  移動変換ON", "  •  Movement conversion ON");
+        if (SelectedButtonsOnly) text = ButtonsOnlyNotice;
         SetText(outputStatus, p.Enabled ? text : "");
     }
     private void ApplyChanges(IEnumerable<InputChange> changes, bool deliver)
@@ -648,9 +658,9 @@ internal sealed partial class MainForm : Form
     private DeviceSaveState GetSaveState() => DeviceSaveState.Create(dirty, caps?.Persisted,
         bridge is not null, working || connecting || closing, caps?.SupportsBankTransfer == true);
 
-    private async Task SaveSettings()
+    private async Task<bool> SaveSettings()
     {
-        if (!GetSaveState().CanSave || bridge is null) return;
+        if (!GetSaveState().CanSave || bridge is null) return false;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {
@@ -670,14 +680,18 @@ internal sealed partial class MainForm : Form
             ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true);
             await RefreshDevice(); RefreshSlots(); BindSelected();
             SetText(saved, L.T("全スロットの変更をデバイスに保存しました。", "Saved changes across all slots to the device."));
+            return !GetSaveState().NeedsSave;
         }
-        catch (Exception ex) { SetText(saved, L.T("保存結果を確認できませんでした。編集内容は保持しています。", "The save could not be verified. Your edits are kept.")); Ui.Error(this, ex); }
+        catch (Exception ex) { SetText(saved, L.T("保存結果を確認できませんでした。編集内容は保持しています。", "The save could not be verified. Your edits are kept.")); Ui.Error(this, ex); return false; }
         finally { working = false; UpdateEnabled(); }
     }
     private void CheckDuplicate(int slot, DeviceProfile profile) => ProfileSlots.Validate(persistedProfiles, slot, profile, caps?.SupportsOnBoardVariants == true);
     private async Task ConfigureSwitchMethod()
     {
-        if (bridge is null || working || GetSaveState().HasEdits) return;
+        if (bridge is null || working || connecting || closing || !profiles[selected].Enabled || caps?.SupportsSwitchKeys != true) return;
+        int slot = selected;
+        if (!await SaveBeforeAction(L.T("プロファイル切替方法", "Profile switching method")) ||
+            bridge is null || selected != slot || !profiles[slot].Enabled || caps?.SupportsSwitchKeys != true) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {
@@ -706,8 +720,9 @@ internal sealed partial class MainForm : Form
         string? reason = OutputModeUnavailableReason();
         for (int i = 0; i < outputTabs.TabCount; i++)
         {
-            outputTabs.SetTabMuted(i, reason is not null);
-            string description = reason ?? (i == 1
+            string? tabReason = reason ?? (SelectedButtonsOnly && i != 0 ? ButtonsOnlyNotice : null);
+            outputTabs.SetTabMuted(i, tabReason is not null);
+            string description = tabReason ?? (i == 1
                 ? L.T("マウス専用の出力です。移動からゲームパッドへの変換設定は保持しますが、このモードでは変換せず、変換項目も変更できません。",
                     "Mouse-only output. Movement-to-gamepad conversion settings are retained, but conversion is inactive and its controls are disabled in this mode.")
                 : "");
@@ -745,11 +760,14 @@ internal sealed partial class MainForm : Form
         finally { syncingOutput = previousSync; }
     }
     private bool CanUseSelectedProfile => bridge is not null && !working && !connecting && !closing &&
-        !dirty[selected] && caps is { SupportsOnBoardVariants: true, Connected: true } &&
+        caps is { SupportsOnBoardVariants: true, Connected: true } &&
         caps.ActiveSlot != selected && profiles[selected].Matches(caps);
     private async Task UseProfile()
     {
         if (!CanUseSelectedProfile || bridge is null) return;
+        int slot = selected; InputConnection input = InputConnection.From(caps!);
+        if (!await SaveBeforeAction(L.T("この設定を使用", "Use this profile")) ||
+            !CanUseSelectedProfile || selected != slot || !input.Matches(caps!)) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try { bankGeneration = observedBankGeneration = await bridge.SelectProfileAsync(selected, bankGeneration); await RefreshDevice(); BindSelected();
             SetText(saved, L.T("選択したプロファイルへ切り替えました。", "Switched to the selected profile.")); }
@@ -758,11 +776,14 @@ internal sealed partial class MainForm : Form
     }
     private async Task AddController()
     {
-        if (working || closing || !CanRegisterSlot(selected) || (!CanRegisterInput || !caps!.SupportsGuardedRegistration || !fields.Any(f => f.Learnable && f.Valid))) return;
+        if (working || closing || !CanRegisterSlot(selected) || (!CanRegisterInput || !caps!.SupportsGuardedRegistration)) return;
         int slot = selected; HidBridge? targetBridge = bridge; InputConnection input = InputConnection.From(caps!);
+        if (!await SaveBeforeAction(L.T("コントローラーを追加", "Add controller")) ||
+            caps is null || !input.Matches(caps) || !ReferenceEquals(bridge, targetBridge) ||
+            selected != slot || !RegistrationDestinationSaved(slot) || !CanRegisterInput) return;
         uint expectedBank = bankGeneration;
         bool SameTarget() => !closing && caps is not null && input.Matches(caps) && ReferenceEquals(bridge, targetBridge) &&
-            (bridge is not null) && CanRegisterSlot(slot) && bankGeneration == expectedBank && caps.BankGeneration == expectedBank;
+            (bridge is not null) && RegistrationDestinationSaved(slot) && bankGeneration == expectedBank && caps.BankGeneration == expectedBank;
         AbortLearning(); if (!await PrepareLearning() || !SameTarget()) return;
         using RegistrationWizard dialog = new(slot, caps!, fields, PrepareLearning, async p =>
         {
@@ -794,7 +815,7 @@ internal sealed partial class MainForm : Form
     }
     private void DeleteProfile()
     {
-        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n\n削除は「設定をデバイスに保存」で反映されます。\n未保存の変更をデバイスに反映するまで、リストをドラッグして並べ替えることはできません。", "Delete “{1}” from slot {0}?\n\nDeletion is applied when you choose “Save settings to device”.\nDragging profiles to reorder the list is disabled until all unsaved changes are saved to the device.", selected + 1, profiles[selected].Name),
+        if (MessageBox.Show(this, L.F("スロット {0} の「{1}」を削除しますか？\n\n削除は「設定をデバイスに保存」で反映されます。\n保存前に追加や並べ替えを行う場合は、全スロットの変更を保存して続行するか確認します。", "Delete “{1}” from slot {0}?\n\nDeletion is applied when you choose “Save settings to device”.\nAdding or reordering before saving asks whether to save all slot changes and continue.", selected + 1, profiles[selected].Name),
             L.T("プロファイル削除", "Delete profile"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         profiles[selected] = new(); MarkDirty(); RefreshSlots(); BindSelected();
     }
@@ -820,6 +841,7 @@ internal sealed partial class MainForm : Form
     private async Task BackupAll()
     {
         if (!GetSaveState().CanTransfer || bridge is null) return;
+        if (!await SaveBeforeAction(L.T("全スロットをバックアップ", "Back up all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
         using SaveFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), FileName = $"ControllerBridge-slots-{DateTime.Now:yyyyMMdd-HHmmss}.json", OverwritePrompt = true };
         tips.Hide(backup);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -831,6 +853,7 @@ internal sealed partial class MainForm : Form
     private async Task RestoreAll()
     {
         if (!GetSaveState().CanTransfer || bridge is null) return;
+        if (!await SaveBeforeAction(L.T("全スロットを復帰", "Restore all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
         using OpenFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), Title = L.T("全スロットを復帰", "Restore all slots") };
         tips.Hide(restore);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -855,7 +878,9 @@ internal sealed partial class MainForm : Form
     }
     private async Task MoveSlot(int source, int destination)
     {
-        if (slots.CanMove?.Invoke(source) != true) return;
+        if (slots.CanMove?.Invoke(source) != true || destination < 0 || destination >= profiles.Length || source == destination) return;
+        selected = source; RefreshSlots(); BindSelected();
+        if (!await SaveBeforeAction(L.T("プロファイルの並べ替え", "Reorder profiles")) || slots.CanMove?.Invoke(source) != true) return;
         working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
         try
         {

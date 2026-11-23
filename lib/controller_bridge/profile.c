@@ -495,6 +495,43 @@ static void UC_RAM_FUNC(resolve_shift)(up_mapper *m) {
         else if(mode==UP_AXIS_ANALOG_PAIR)m->axes[i]=analog_pair_value(m,i,blocked);
     }
 }
+static void UC_RAM_FUNC(resolve_button_shift)(up_mapper *m) {
+    const up_profile *p=m->profile;
+    bool active=p->shift.count && m->shift_held==((1u<<p->shift.count)-1u);
+    if(active)m->shift_consumed=true;
+    else if(!m->shift_held)m->shift_consumed=false;
+    bool layer_changed=active!=m->shift_active;
+    if(layer_changed) {
+        uint32_t reset=m->toggle_any?p->shift.overrides:0x3ffffu;
+        m->rapid_held&=~reset;m->rapid_on&=~reset;m->shift_active=active;
+    }
+    uint8_t blocked=m->shift_consumed?m->shift_held:0;
+    uint32_t overrides_held=0;
+    if(active)for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(m->shift_digital[i] && (p->shift.overrides&(1u<<i)))overrides_held|=1u<<i;
+    m->rapid_configured=0;m->physical=0;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+        bool replace=active && (p->shift.overrides&(1u<<i));
+        m->digital[i]=replace?m->shift_digital[i]:m->base_digital[i];
+        if((replace?m->back_modifiers[i]:m->base_modifiers[i])&blocked)m->digital[i]=false;
+        if(!replace && active && (m->inherited_conflicts[i]&overrides_held))m->digital[i]=false;
+        if((replace?p->shift.digital[i].rapid_hz:p->digital[i].rapid_hz))m->rapid_configured|=1u<<i;
+        if(m->base_digital[i])m->physical|=1u<<i;
+    }
+    if(m->toggle_any)resolve_toggles(m,layer_changed,blocked,overrides_held);
+}
+void up_mapper_buttons_only(up_mapper *m) {
+    m->gyro_axes=0;
+    memset(m->axes,128,sizeof(m->axes));memset(m->raw_axes,128,sizeof(m->raw_axes));
+    memset(m->pairs,0,sizeof(m->pairs));memset(m->analog_halves,0,sizeof(m->analog_halves));
+    m->toggle_any=0;
+    const up_profile *p=m->profile;if(!p || !(p->flags&UP_ENABLED))return;
+    // The effective output is a gamepad even when the stored profile was a
+    // mouse profile. Preserve all configured button toggles without editing it.
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)
+        if((p->digital[i].flags&UP_TOGGLE) || ((p->shift.overrides&(1u<<i)) &&
+           (p->shift.digital[i].flags&UP_TOGGLE)))m->toggle_any|=1u<<i;
+    resolve_button_shift(m);reset_toggles(m);m->have_output=false;
+}
 void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_t bits,uint8_t flags,int32_t value) {
     const up_profile *p=m->profile;if(!p || !(p->flags&UP_ENABLED))return;
     up_digital field={.interface_number=iface,.report_id=id,.bit_offset=offset,.bits=bits,.flags=flags};
@@ -563,6 +600,33 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
         }
     }
     resolve_shift(m);
+    if(m->toggle_any) {
+        m->toggle_updated=0;
+        for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {
+            uint32_t bit=1u<<i;if(!(m->toggle_configured&bit))continue;
+            const up_digital *d=m->shift_active && (p->shift.overrides&bit)?&p->shift.digital[i]:&p->digital[i];
+            bool pressed;
+            if(digital_value(d,iface,raw,n,&pressed))m->toggle_updated|=bit;
+        }
+    }
+    up_mapper_report(m,out);return touched;
+}
+
+bool UC_RAM_FUNC(up_mapper_apply_buttons)(up_mapper *m,uint8_t iface,const uint8_t *raw,unsigned n,sw_report *out) {
+    if(!m->profile || !(m->profile->flags&UP_ENABLED))return false;
+    const up_profile *p=m->profile;bool touched=false;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)
+        if(digital_value(&p->digital[i],iface,raw,n,&m->base_digital[i]))touched=true;
+    for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if(p->shift.overrides&(1u<<i))
+        if(digital_value(&p->shift.digital[i],iface,raw,n,&m->shift_digital[i]))touched=true;
+    for(unsigned k=0;k<p->shift.count;++k) {
+        bool held;
+        if(digital_value(&p->shift.keys[k],iface,raw,n,&held)) {
+            if(held)m->shift_held|=(uint8_t)(1u<<k);else m->shift_held&=(uint8_t)~(1u<<k);
+            touched=true;
+        }
+    }
+    resolve_button_shift(m);
     if(m->toggle_any) {
         m->toggle_updated=0;
         for(unsigned i=0;i<UP_DIGITAL_COUNT;++i) {

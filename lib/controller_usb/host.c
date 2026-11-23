@@ -18,7 +18,7 @@ typedef struct {
 typedef struct {
     uint8_t descriptor[7], interface_number, native_interval, protocol;
     uint8_t buffer[64];
-    unsigned errors;
+    unsigned errors,handle;
 } input_endpoint;
 static uc_host_options options;
 static uc_statistics stats;
@@ -27,7 +27,8 @@ static uint16_t config_length;
 static hid_interface interfaces[UC_MAX_INTERFACES];
 static input_endpoint endpoints[UC_MAX_ENDPOINTS];
 static unsigned interface_count, endpoint_count;
-static bool ready;
+static bool ready,low_speed;
+static uint32_t last_statistics;
 static bool probe_missing;
 // Only Xbox One keeps an OUT endpoint open after initialization. This state
 // never changes the transport engine, endpoint intervals or legacy packet path.
@@ -63,6 +64,7 @@ static void __attribute__((noinline)) __not_in_flash_func(pause_point)(void) {
     if (!atomic_load_explicit(&pause_requested,memory_order_acquire)) return;
     atomic_store_explicit(&pause_acknowledged,1,memory_order_release);
     while (atomic_load_explicit(&pause_requested,memory_order_acquire)) __asm volatile("nop");
+    ut_display_invalidate();
     atomic_store_explicit(&pause_acknowledged,0,memory_order_release);
 }
 bool uc_host_pause(uint32_t timeout_ms) {
@@ -124,7 +126,13 @@ static bool read_descriptor(uint8_t address, uint8_t kind, uint16_t value,
 static bool parse_config(void) {
     uc_input_configuration parsed;
     if(!uc_input_config_parse(configuration,config_length,&parsed))return false;
-    if(!uc_input_config_identify(&parsed,le16(device_descriptor+8),le16(device_descriptor+10)))return false;
+    if(low_speed) {
+        // Low Speed supports a direct HID button device, with at most two
+        // interrupt-IN pipes. No vendor startup or feedback protocol is used.
+        if(parsed.protocols!=UC_PROTOCOL_HID || parsed.endpoint_count>2)return false;
+        for(unsigned i=0;i<parsed.endpoint_count;++i)
+            if(le16(parsed.endpoints[i].descriptor+4)>8)return false;
+    } else if(!uc_input_config_identify(&parsed,le16(device_descriptor+8),le16(device_descriptor+10)))return false;
     interface_count=parsed.interface_count;endpoint_count=parsed.endpoint_count;
     for(unsigned i=0;i<interface_count;++i) {
         interfaces[i].number=parsed.interfaces[i].number;
@@ -512,7 +520,8 @@ static bool enumerate(void) {
     uint8_t ps4_interfaces[UC_MAX_INTERFACES];unsigned ps4_count=0;
     memset(&xbox_out,0,sizeof(xbox_out));memset(xbox_rx,0,sizeof(xbox_rx));
     status(UC_PROBING, ++stats.attempts);
-    ut_reset();
+    if(!ut_reset()) { probe_missing=true;status(UC_PROBE_FAILED,0);return false; }
+    low_speed=ut_low_speed();status(UC_INPUT_SPEED,low_speed?1u:2u);
     ut_ep0(0,8);
     if (!read_descriptor(0,0x80,0x0100,0,device_descriptor,8)) {
         probe_missing=true;status(UC_PROBE_FAILED,0); return false;
@@ -607,7 +616,7 @@ static bool enumerate(void) {
         if (!read_descriptor(1,0x81,0x2200,iface->number,iface->report,iface->report_length)) {
             status(UC_REPORT_DESCRIPTOR_FAILED,iface->number); return false;
         }
-        if(ps4_session_format(iface))ps4_interfaces[ps4_count++]=iface->number;
+        if(!low_speed && ps4_session_format(iface))ps4_interfaces[ps4_count++]=iface->number;
     }
     for (unsigned i = 0; i < interface_count; ++i)
         descriptor_event(0x22,interfaces[i].number,interfaces[i].report,interfaces[i].report_length);
@@ -619,6 +628,7 @@ static bool enumerate(void) {
         if(ep->protocol==UC_PROTOCOL_XBOX_ONE && xbox_elite2() &&
            control(1,2,1,0,desc[2],0,NULL,NULL)!=UT_OK)return false;
         if (!ut_open(1,desc) || !ut_submit(1,desc[2],ep->buffer,le16(desc+4))) return false;
+        int handle=ut_input_handle(desc[2]);if(handle<0)return false;ep->handle=(unsigned)handle;
     }
     for(unsigned i=0;i<interface_count;++i)if(interfaces[i].protocol==UC_PROTOCOL_SWITCH_PRO) {
         if(!switch_start(&interfaces[i],&endpoints[0]))return false;
@@ -629,9 +639,11 @@ static bool enumerate(void) {
     for(unsigned i=0;i<interface_count;++i)if(interfaces[i].protocol==UC_PROTOCOL_SWITCH2) {
         if(!switch2_start(&interfaces[i]))return false;
     }
+    if(low_speed && !ut_lowspeed_begin())return false;
     stats.generation++;
     stats.poll_interval_ms = interval_override ? interval_override : endpoints[0].native_interval;
     ready = true;
+    ut_display_select(endpoints[0].descriptor[2]);
     status(UC_CONFIGURED,stats.poll_interval_ms);
     for(unsigned i=0;ready && i<ps4_count;++i)ps4_start(ps4_interfaces[i]);
     return ready;
@@ -645,6 +657,7 @@ static void commands(void) {
     unsigned poll = atomic_exchange_explicit(&request_interval,0,memory_order_acquire);
     if (poll) {
         interval_override = (uint8_t)poll;
+        ut_display_invalidate();
         if (ready) for (unsigned i = 0; i < endpoint_count; ++i)
             ut_set_interval(1,endpoints[i].descriptor[2],interval_override ? interval_override : endpoints[i].native_interval);
         stats.poll_interval_ms = interval_override ? interval_override : (ready ? endpoints[0].native_interval : 0);
@@ -652,26 +665,27 @@ static void commands(void) {
     }
     if (atomic_exchange_explicit(&request_dump,0,memory_order_acquire) && ready) dump();
 }
-void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
-    options = *opts;
-    ut_init(options.dp_pin);
-    status(UC_START,0);
-    uint32_t last_statistics = time_us_32();
-    for (;;) {
-        pause_point();
-        uc_bootsel_host_service();
-        commands();
-        if (!ready) {
-            ucf_detach();
-            if (!enumerate()) {
-                status(UC_ENUM_FAILED,stats.attempts);
-                // No response at address zero: leave the bus idle between probes
-                // so a newly attached controller can finish startup without SOFs.
-                // Once a device answers, preserve its normal startup retry path.
-                if(probe_missing)ut_wait_for_device(750);
-                else ut_delay_ms(750);
-            }
-        } else {
+static void __not_in_flash_func(publish_statistics)(void) {
+        uint32_t now = time_us_32();
+        if ((uint32_t)(now-last_statistics) >= 1000000 || atomic_exchange_explicit(&request_statistics,0,memory_order_acquire)) {
+            last_statistics = now;
+            ut_display_publish(ready,stats.poll_interval_ms);
+            ut_metrics metrics;
+            ut_metrics_get(&metrics);
+            stats.frame_late = metrics.late_frames;
+            stats.frame_us_max = metrics.max_frame_us;
+            stats.in_tokens = metrics.in_tokens;
+            stats.in_naks = metrics.in_naks;
+            stats.in_duplicates = metrics.in_duplicates;
+            stats.in_packet_errors = metrics.in_packet_errors;
+            uc_event event = {.type=UC_STATISTICS,.length=sizeof(stats)};
+            memcpy(event.data,&stats,sizeof(stats));
+            emit(&event);
+        }
+}
+static void __not_in_flash_func(run_full_speed)(void) {
+    while(ready) {
+        pause_point();uc_bootsel_host_service();commands();
             ut_pump();
             // Bounded asynchronous ACK service; never wait for controller OUT
             // during active input. Legacy devices never enter this function.
@@ -709,7 +723,7 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
                     stats.transfer_errors++;
                     if (result == UT_STALL) stats.stalls++;
                     status(UC_INPUT_ERROR,result);
-                    if (++ep->errors >= 3 || result == UT_STALL) {
+                    if (++ep->errors >= 3 || result == UT_STALL || result == UT_DISCONNECTED) {
                         ready = false;
                         ut_close_device(1);
                         status(UC_DISCONNECTED,stats.transfer_errors);
@@ -721,22 +735,50 @@ void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
                     status(UC_DISCONNECTED,UT_ERROR);
                 }
             }
-        }
         if(ready && ucf_pending())ucf_service();
-        uint32_t now = time_us_32();
-        if ((uint32_t)(now-last_statistics) >= 1000000 || atomic_exchange_explicit(&request_statistics,0,memory_order_acquire)) {
-            last_statistics = now;
-            ut_metrics metrics;
-            ut_metrics_get(&metrics);
-            stats.frame_late = metrics.late_frames;
-            stats.frame_us_max = metrics.max_frame_us;
-            stats.in_tokens = metrics.in_tokens;
-            stats.in_naks = metrics.in_naks;
-            stats.in_duplicates = metrics.in_duplicates;
-            stats.in_packet_errors = metrics.in_packet_errors;
-            uc_event event = {.type=UC_STATISTICS,.length=sizeof(stats)};
-            memcpy(event.data,&stats,sizeof(stats));
-            emit(&event);
+        publish_statistics();
+    }
+}
+static void __not_in_flash_func(run_low_speed)(void) {
+    while(ready) {
+        pause_point();uc_bootsel_host_service();commands();ut_lowspeed_pump();
+        for(unsigned i=0;i<endpoint_count && ready;++i) {
+            input_endpoint *ep=&endpoints[i];uint16_t actual=0;
+            ut_result result=ut_input_result(ep->handle,&actual);
+            if(result==UT_PENDING)continue;
+            if(result==UT_OK) {
+                ep->errors=0;
+                if(actual && actual<=8) {
+                    uc_event event={.type=UC_INPUT,.interface_number=ep->interface_number,
+                        .endpoint=ep->descriptor[2],.length=actual,.sequence=++stats.reports};
+                    memcpy(event.data,ep->buffer,actual);
+                    event.time_us=ut_input_received_us(ep->handle);
+                    options.event(&event,options.context);
+                }
+            } else {
+                ++stats.transfer_errors;if(result==UT_STALL)++stats.stalls;
+                status(UC_INPUT_ERROR,result);
+                if(++ep->errors>=3 || result==UT_STALL || result==UT_DISCONNECTED) {
+                    ready=false;ut_close_device(1);status(UC_DISCONNECTED,stats.transfer_errors);break;
+                }
+            }
+            if(!ut_input_submit(ep->handle,ep->buffer,le16(ep->descriptor+4))) {
+                ready=false;status(UC_DISCONNECTED,UT_ERROR);
+            }
         }
+        publish_statistics();
+    }
+}
+void __not_in_flash_func(uc_host_run)(const uc_host_options *opts) {
+    options=*opts;ut_init(options.dp_pin,options.sense_speed);
+    status(UC_START,0);last_statistics=time_us_32();
+    for(;;) {
+        pause_point();uc_bootsel_host_service();commands();ucf_detach();
+        if(!enumerate()) {
+            status(UC_ENUM_FAILED,stats.attempts);
+            if(probe_missing)ut_wait_for_device(750);else ut_delay_ms(750);
+            publish_statistics();continue;
+        }
+        if(low_speed)run_low_speed();else run_full_speed();
     }
 }

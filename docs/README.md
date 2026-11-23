@@ -1,8 +1,8 @@
 # ControllerBridge documentation
 
-These documents describe the current Windows configurator v0.31.0 and normal firmware 0.31.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
+These documents describe the current Windows configurator v0.32.0 and normal firmware 0.32.0. Documentation and screenshots are English. The application itself retains Japanese and English interfaces.
 
-The current configurator is **v0.31.0**; its bundled firmware is **0.31.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
+The current configurator is **v0.32.0**; its bundled firmware is **0.32.0**. The unsuffixed base is the first edition, and the first GUI-only revision starts at **r2**, following the committed v0.19.0 and v0.20.16 numbering. Uncommitted edits and rebuilds keep the same GUI revision; later committed GUI releases increment it; a new main version starts without a suffix.
 
 | Document | Contents |
 |---|---|
@@ -14,6 +14,7 @@ The current configurator is **v0.31.0**; its bundled firmware is **0.31.0**. The
 | [Reference-board case](case.md) | Clear PETG case remix, sample photos, STL downloads and original-design credits |
 | [GPIO assignment and board porting](gpio-assignment.md) | Standard pins and exact source locations to change for another board |
 | [Status LED](status-led.md) | Per-profile RGB settings, operating colors, profile number indication, and LED diagnostics |
+| [OLED status display](oled-display.md) | GP6/GP7 wiring reference, display types, and layouts |
 | [Compatibility](compatibility.md) | Tested controllers, unsupported cases, and unresolved limitations |
 | [XInput output and Switch 2 Pro](xinput-output.md) | S/X host modes, wire layout, Windows binding and verified physical controls |
 | [Latency and polling](latency-scheduling.md) | Input/X output intervals, scheduling analysis, GP2040-CE/Wingman references, and measurement boundaries |

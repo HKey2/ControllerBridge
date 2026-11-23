@@ -47,7 +47,7 @@ internal sealed class StickCalibration
         internal double Position => Normalize(Field, Center, Value);
         internal void Begin(bool captureCenter = false)
         {
-            if (captureCenter) Center = Valid ? Value : AxisSourceList.Midpoint(Field);
+            if (captureCenter) Center = Field.MinimumNeutral ? Field.Minimum : Valid ? Value : AxisSourceList.Midpoint(Field);
             RestartMeasurement(); MotionAnchor = Center;
             holdAnchor = 0; holdMilliseconds = 0; holdSample = 0; holdChanged = false;
             Motion = 0; MotionMagnitude = 0;

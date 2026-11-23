@@ -48,13 +48,13 @@ internal sealed class AxisSelection
     {
         Clear();
         Whole = f.Gyroscope && SavedGyro is not null ? SavedGyro : f.Analog(f.Minimum,
-            f.Pressure ? f.Minimum : f.Valid ? Math.Clamp(f.Value, f.Minimum, f.Maximum) : AxisSourceList.Midpoint(f), f.Maximum, (ushort)(f.Pressure ? 0 : 5), AxisDirections.ProfileInvert(axis, false));
+            f.MinimumNeutral ? f.Minimum : f.Valid ? Math.Clamp(f.Value, f.Minimum, f.Maximum) : AxisSourceList.Midpoint(f), f.Maximum, (ushort)(f.Pressure ? 0 : 5), AxisDirections.ProfileInvert(axis, false));
     }
     internal void ToggleHalf(int side, InputField f)
     {
         bool remove = Matches(f, Halves[side]);
         Whole = null; Array.Clear(Buttons);
-        int neutral = f.Pressure ? f.Minimum : f.Valid ? Math.Clamp(f.Value, f.Minimum, f.Maximum) : AxisSourceList.Midpoint(f);
+        int neutral = f.MinimumNeutral ? f.Minimum : f.Valid ? Math.Clamp(f.Value, f.Minimum, f.Maximum) : AxisSourceList.Midpoint(f);
         Halves[side] = remove ? null : new() { Interface = f.Interface, ReportId = f.ReportId, BitOffset = f.BitOffset,
             Bits = f.Bits, Flags = f.Flags, Neutral = neutral, Maximum = neutral == f.Maximum ? f.Minimum : f.Maximum,
             Deadzone = (ushort)(f.Pressure ? 0 : 5) };

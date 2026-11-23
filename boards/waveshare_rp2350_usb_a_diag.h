@@ -13,6 +13,8 @@
 #define CONTROLLER_USB_DP_PIN 12
 #define CONTROLLER_USB_DM_PIN 13
 #define CONTROLLER_STATUS_LED_PIN 16
+#define CONTROLLER_OLED_SDA_PIN 6
+#define CONTROLLER_OLED_SCL_PIN 7
 // The tested board needs RGB on the wire (GRB swapped red/green physically).
 // Set to 1 only when porting to a board whose LED is confirmed to use GRB.
 #define CONTROLLER_STATUS_LED_GRB 0

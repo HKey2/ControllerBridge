@@ -18,6 +18,8 @@ static uint32_t store_offset(unsigned slot) {
 }
 static uint32_t store_size(unsigned slot) { return (slot<4?1u:4u)*FLASH_SECTOR_SIZE; }
 typedef struct { uint32_t magic, version, length, crc; } store_header;
+static uint32_t write_generation;
+uint32_t ub_store_write_generation(void) { return write_generation; }
 static uint8_t write_buffer[4*FLASH_SECTOR_SIZE];
 #define DIRECTION_OFFSET 64u
 #define DIRECTION_MAGIC 0x31434b44u // DKC1
@@ -43,8 +45,10 @@ typedef struct { uint32_t magic,version,value,crc; } rolling_setting;
 typedef struct { uint32_t magic,version,options,interval_ms,crc; } inertia_setting;
 #define HOST_MODE_MAGIC 0x314d5348u // HSM1 at offset 228; legacy settings default to S.
 
-typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait;direction_map_setting map,paddle_map;rolling_setting rolling,trackball_hold,rolling_step;inertia_setting inertia;rolling_setting host_mode; } direction_records;
-_Static_assert(sizeof(direction_records)==180,"cursor Flash records layout");
+#define DISPLAY_MAGIC 0x31505344u // DSP1 at offset 244; stable display type ID.
+
+typedef struct { direction_setting threshold;direction_gain_setting gains;direction_hold_setting hold;direction_wait_setting wait;direction_map_setting map,paddle_map;rolling_setting rolling,trackball_hold,rolling_step;inertia_setting inertia;rolling_setting host_mode,display; } direction_records;
+_Static_assert(sizeof(direction_records)==196,"cursor Flash records layout");
 _Static_assert(DIRECTION_OFFSET+sizeof(direction_records)<=FLASH_SECTOR_SIZE,"cursor records fit configuration sector");
 _Static_assert(sizeof(store_header)+sizeof(ub_configuration)<=DIRECTION_OFFSET,"configuration extension overlap");
 extern char __flash_binary_end;
@@ -77,6 +81,7 @@ static bool save(unsigned slot,const void *data,uint32_t bytes,bool host_running
     memcpy(write_buffer,&h,sizeof(h)); memcpy(write_buffer+sizeof(h),data,bytes);
     if(direction)memcpy(write_buffer+DIRECTION_OFFSET,direction,sizeof(*direction));
     if(host_running && !uc_host_pause(1000))return false;
+    ++write_generation; // Polling averages must discard this IRQ-masked window.
     uint32_t irq=save_and_disable_interrupts();
     uint32_t offset=store_offset(slot);
     uint32_t size=store_size(slot);
@@ -156,7 +161,11 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
     bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=3 &&
         host->crc==crc32((const uint8_t *)host,12);
     if(host_valid)settings->host_mode=(uint8_t)host->value;
-    return host_valid && inertia_valid && threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;
+    const rolling_setting *display=host+1;
+    bool display_valid=display->magic==DISPLAY_MAGIC && display->version==1 && udisplay_valid(display->value) &&
+        display->crc==crc32((const uint8_t *)display,12);
+    if(display_valid)settings->display_type=(uint8_t)display->value;
+    return display_valid && host_valid && inertia_valid && threshold_valid && gains_valid && hold_valid && wait_valid && map_valid && paddle_valid && rolling_valid && trackball_valid && step_valid;
 }
 bool ub_store_save_configuration(const ub_configuration *config,const udk_settings *settings,bool host_running) {
     if(!udk_settings_valid(settings))return false;
@@ -171,7 +180,8 @@ bool ub_store_save_configuration(const ub_configuration *config,const udk_settin
         .trackball_hold={TRACKBALL_HOLD_MAGIC,1,udk_hold_pack(settings),0},
         .rolling_step={ROLLING_STEP_MAGIC,1,settings->rolling_step_deg,0},
         .inertia={INERTIA_MAGIC,1,udk_inertia_pack(settings),settings->inertia_interval_ms,0},
-        .host_mode={HOST_MODE_MAGIC,1,settings->host_mode,0}};
+        .host_mode={HOST_MODE_MAGIC,1,settings->host_mode,0},
+        .display={DISPLAY_MAGIC,1,settings->display_type,0}};
     memcpy(records.map.targets,settings->targets,4);memcpy(records.paddle_map.targets,settings->paddle_targets,4);
     records.threshold.crc=crc32((const uint8_t *)&records.threshold,12);
     records.gains.crc=crc32((const uint8_t *)&records.gains,12);
@@ -184,5 +194,6 @@ bool ub_store_save_configuration(const ub_configuration *config,const udk_settin
     records.rolling_step.crc=crc32((const uint8_t *)&records.rolling_step,12);
     records.inertia.crc=crc32((const uint8_t *)&records.inertia,16);
     records.host_mode.crc=crc32((const uint8_t *)&records.host_mode,12);
+    records.display.crc=crc32((const uint8_t *)&records.display,12);
     return save(0,config,sizeof(*config),host_running,&records);
 }

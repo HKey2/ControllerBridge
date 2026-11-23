@@ -23,6 +23,8 @@ typedef struct __attribute__((packed)) { uint8_t kind, request; uint16_t value, 
 typedef enum { C_IDLE, C_IN, C_OUT, C_STATUS_IN, C_STATUS_OUT, C_STALL } control_state;
 static ud_options opt;
 static ud_statistics stat;
+static volatile uint32_t bus_generation;
+uint32_t ud_bus_generation(void) { return bus_generation; }
 static control_state control;
 static uint8_t control_data[512], last_input[64];
 static uint16_t control_length, control_offset, control_expected;
@@ -519,7 +521,7 @@ static void __not_in_flash_func(usb_irq)(void) {
     if(opt.observe_event)opt.observe_event(1,ints,opt.context);
     if (ints&USB_INTS_BUS_RESET_BITS) {
         HW_CLR->sie_status=USB_SIE_STATUS_BUS_RESET_BITS;
-        stat.resets++; stat.configured=0; stat.suspended=0;
+        ++bus_generation;stat.resets++; stat.configured=0; stat.suspended=0;
         remote_wakeup=false;
         idle_rate=secondary_idle=0;protocol=secondary_protocol=1;
         if(opt.secondary_relative_mouse)memset(secondary_last,0,sizeof(secondary_last));
@@ -538,7 +540,7 @@ static void __not_in_flash_func(usb_irq)(void) {
         HW_CLR->ep_nak_stall_status=pending;
     }
     if (ints&USB_INTS_DEV_SUSPEND_BITS) {
-        stat.suspended=1; HW_CLR->sie_status=USB_SIE_STATUS_SUSPENDED_BITS;
+        ++bus_generation;stat.suspended=1; HW_CLR->sie_status=USB_SIE_STATUS_SUSPENDED_BITS;
         if(opt.try_output)ud_output_discard();
         if(opt.bus_event)opt.bus_event(UD_BUS_SUSPEND,opt.context);
     }
@@ -556,7 +558,7 @@ void ud_init(const ud_options *options) {
     in_busy=secondary_busy=aux_busy=false; control=C_IDLE; remote_wakeup=false; pending_address=pending_config=-1;
     halted=configuration_halted=secondary_halted=output_halted=false;
     idle_rate=secondary_idle=0;protocol=secondary_protocol=1;
-    opt=*options; memset(&stat,0,sizeof(stat)); memset(last_input,0,sizeof(last_input));
+    ++bus_generation;opt=*options; memset(&stat,0,sizeof(stat)); memset(last_input,0,sizeof(last_input));
     memset(secondary_last,0,sizeof(secondary_last));
     if(opt.secondary_initial_input && opt.secondary_input_length<=64)memcpy(secondary_last,opt.secondary_initial_input,opt.secondary_input_length);
     if(opt.initial_input && opt.input_length<=64)memcpy(last_input,opt.initial_input,opt.input_length);
@@ -617,6 +619,11 @@ bool ud_secondary_cancel_repeat(void) {
     usb_dpram->ep_buf_ctrl[secondary_endpoint()].in=0;secondary_pid^=1;secondary_busy=false;
     release_abort(mask);restore_interrupts(irq);return true;
 }
+uint8_t ud_input_snapshot(uint8_t *data,uint8_t capacity) {
+    if(!ud_ready() || opt.relative_mouse)return 0;
+    uint8_t length=opt.input_length<capacity?opt.input_length:capacity;
+    memcpy(data,last_input,length);return length;
+}
 void ud_statistics_get(ud_statistics *out) {
     uint32_t irq=save_and_disable_interrupts(); *out=stat; restore_interrupts(irq);
 }
@@ -629,6 +636,7 @@ bool ud_mouse_send(bool secondary,bool report_protocol,const uint8_t *data,uint1
     restore_interrupts(irq);return sent;
 }
 void ud_disconnect(void) {
+    ++bus_generation;
     if(opt.bus_event)opt.bus_event(UD_BUS_DISCONNECT,opt.context);
     // Stop callbacks before callers replace descriptors or clear queued reports.
     // ud_init re-enables this IRQ when the new layout is ready.

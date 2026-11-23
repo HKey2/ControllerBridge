@@ -18,6 +18,7 @@
 #include "profile_button.h"
 #include "controller_mouse.h"
 #include "status_led.h"
+#include "status_oled.h"
 #include "firmware_version.h"
 #include <stdatomic.h>
 #include <string.h>
@@ -51,7 +52,7 @@ static uint32_t mouse_drops_begin,mouse_button_drops_begin;
 static uint32_t mouse_flushes_begin,mouse_input_x_begin,mouse_input_y_begin,mouse_acked_x_begin,mouse_acked_y_begin;
 static uint32_t last_mouse_ack_sequence,last_mouse_armed_sequence,last_mouse_poll_ack;
 static uint8_t output_configuration[XW_COMBINED_CONFIGURATION_BYTES];
-static bool input_ready;
+static bool input_ready,oled_work;
 static uc_statistics host_stats;
 static ub_queue outgoing;
 static ub_direction_pulse direction_pulse;
@@ -61,6 +62,15 @@ static uint32_t flight_analog_epoch;
 static bool flight_valid,pad_was_ready;
 static uint32_t direction_generated,direction_enqueued,direction_pressed,direction_released,direction_dropped,direction_blocked;
 static void reset_output(uint32_t timestamp);
+static void process_standard_ack(void),process_button_ack(void);
+static void schedule_standard_output(void),schedule_button_output(void);
+static void standard_input_tasks(void),button_input_tasks(void);
+static void handle_standard_input(const uc_event *e),handle_button_input(const uc_event *e);
+static void (*process_ack)(void)=process_standard_ack;
+static void (*schedule_output)(void)=schedule_standard_output;
+static void (*input_tasks)(void)=standard_input_tasks;
+static void (*handle_input)(const uc_event *e)=handle_standard_input;
+static bool (*receive_feedback)(const uint8_t *,uint16_t,void *)=xfo_receive;
 static uint32_t input_sequence,raw_reports,last_ack_sequence,last_armed_sequence;
 static uint8_t last_raw[4];
 static atomic_bool ack_pending,command_pending;
@@ -90,6 +100,10 @@ static uint8_t effective_host_selection(uint8_t options) {
 }
 static bool combined_mode(void) { return (active_output_options&UM_COMBINED)!=0; }
 static bool mouse_output_ready(void) { return combined_mode()?ud_secondary_ready():ud_ready(); }
+bool status_oled_mouse_totals(oled_mouse_totals *out) {
+    if(!input_ready || !mouse_mode() || !upr_mouse_ready() || !mouse_output_ready())return false;
+    *out=(oled_mouse_totals){mouse_queue.acked_x,mouse_queue.acked_y,mouse_queue.epoch};return true;
+}
 static bool cancel_mouse_repeat(void) { return combined_mode()?ud_secondary_cancel_repeat():ud_cancel_repeat(); }
 static bool load_snapshot(ub_snapshot *s) {
     memset(s,0,sizeof(*s));
@@ -111,7 +125,9 @@ static bool next_event(uc_event *e) {
     *e=events[read]; atomic_store_explicit(&event_tail,(read+1)%EVENT_COUNT,memory_order_release); return true;
 }
 static void host_core(void) {
-    uc_host_options options={.dp_pin=12,.event=host_event}; uc_host_run(&options);
+    // OLED installation and the USB-A resistor configuration are independent.
+    // Select speed from USB signals; enumeration still requires device replies.
+    uc_host_options options={.dp_pin=12,.event=host_event,.sense_speed=true}; uc_host_run(&options);
 }
 static uint16_t get_feature(uint8_t *data,uint16_t capacity,void *context) {
     (void)context; unsigned n=capacity<64?capacity:64; memcpy(data,response,n); return n;
@@ -132,7 +148,7 @@ static int host_control_read(const uint8_t setup[8],uint8_t *data,uint16_t capac
 static bool host_output_received(const uint8_t *data,uint16_t length,void *context) {
     (void)context;
     if(uh_xinput_output(data,length))atomic_store_explicit(&xinput_accepted,true,memory_order_release);
-    return xfo_receive(data,length,context);
+    return receive_feedback(data,length,context);
 }
 static void input_complete(uint32_t cookie,uint32_t time_us,bool acked,void *context) {
     (void)context;
@@ -196,7 +212,7 @@ static void process_mouse_ack(uint32_t cookie,uint32_t time,bool success) {
         } else { um_flush(&mouse_queue,mouse_queue.buttons);upr_mouse_reset(); }
         mouse_flight_valid=false;
 }
-static void process_ack(void) {
+static void process_standard_ack(void) {
     if(atomic_exchange_explicit(&mouse_ack_pending,false,memory_order_acquire))
         process_mouse_ack(mouse_ack_cookie,mouse_ack_time,mouse_ack_success);
     if(!atomic_exchange_explicit(&ack_pending,false,memory_order_acquire))return;
@@ -260,7 +276,7 @@ static void schedule_mouse(void) {
         last_mouse_armed_sequence=mouse_flight.sequence;
     }
 }
-static void schedule_output(void) {
+static void schedule_standard_output(void) {
     if(mouse_mode()) { schedule_mouse();if(!combined_mode())return; }
     if(!ud_ready()) {
         if(pad_was_ready && upr_direction_enabled())reset_output(time_us_32());
@@ -518,15 +534,18 @@ static void handle_mouse_only_input(const uc_event *e,bool mapped,ub_frame *fram
         if(in_window(e->time_us))ub_hist_add(&measurement.mapping,time_us_32()-e->time_us);
     } else { um_flush(&mouse_queue,buttons);upr_mouse_reset(); }
 }
-static void handle_host_event(const uc_event *e) {
-    if(active_host_mode==UH_XINPUT && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED))feedback_stop();
-    if(active_host_mode==UH_SWITCH_PRO && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED)) {
-        pro_input_changed=true;spo_stop();
-    }
-    if(e->type!=UC_INPUT && upr_event(e)) { config.input_interval_ms=upr_input_interval();reset_output(e->time_us); }
-    input_ready=upr_ready();
-    if(e->type==UC_STATUS && e->code==UC_CONFIGURED && input_ready)request_profile_output(time_us_32());
-    if(e->type==UC_INPUT) {
+static bool discard_feedback(const uint8_t *data,uint16_t length,void *context) {
+    (void)data;(void)length;(void)context;return true;
+}
+static void select_processing_path(void) {
+    bool buttons=upr_low_speed();
+    process_ack=buttons?process_button_ack:process_standard_ack;
+    schedule_output=buttons?schedule_button_output:schedule_standard_output;
+    input_tasks=buttons?button_input_tasks:standard_input_tasks;
+    handle_input=buttons?handle_button_input:handle_standard_input;
+    receive_feedback=buttons?discard_feedback:xfo_receive;
+}
+static void handle_standard_input(const uc_event *e) {
         ub_frame frame={.received_us=e->time_us,.sequence=++input_sequence};
         raw_reports++;
         if(measuring())measurement.counts.raw_reports++;
@@ -575,7 +594,35 @@ static void handle_host_event(const uc_event *e) {
             else if(ub_direction_offer(&direction_pulse,keys.direction[i],keys.source[i],e->time_us))direction_enqueued++;
             else direction_dropped++;
         }
-    } else if(e->type==UC_STATUS) {
+}
+static void handle_button_input(const uc_event *e) {
+    ub_frame frame={.received_us=e->time_us,.sequence=++input_sequence};
+    ++raw_reports;if(measuring())++measurement.counts.raw_reports;
+    if(!e->length || e->length>8) {
+        if(input_ready && measuring())++measurement.counts.bad_reports;
+        return;
+    }
+    if(!upr_apply_buttons(e,time_us_32(),ud_ready(),&frame.report))return;
+    memset(last_raw,0,sizeof(last_raw));memcpy(last_raw,e->data,e->length<4?e->length:4);
+    // A preceding mouse profile can still be disconnecting. Its wire format
+    // must never receive a gamepad packet while the new output is prepared.
+    if(mouse_mode())return;
+    if(in_window(e->time_us))ub_hist_add(&measurement.mapping,time_us_32()-e->time_us);
+    if(measuring() && (!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8)))++measurement.counts.input_changes;
+    ub_queue_push(&outgoing,&frame);
+}
+static void handle_host_event(const uc_event *e) {
+    if(e->type==UC_INPUT) { handle_input(e);return; }
+    if(active_host_mode==UH_XINPUT && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED))feedback_stop();
+    if(active_host_mode==UH_SWITCH_PRO && e->type==UC_STATUS && (e->code==UC_DEVICE_FOUND || e->code==UC_DISCONNECTED)) {
+        pro_input_changed=true;spo_stop();
+    }
+    if(e->type!=UC_INPUT && upr_event(e)) { config.input_interval_ms=upr_input_interval();reset_output(e->time_us); }
+    if(e->type==UC_STATUS && (e->code==UC_INPUT_SPEED || e->code==UC_PROBING || e->code==UC_DISCONNECTED))
+        select_processing_path();
+    input_ready=upr_ready();
+    if(e->type==UC_STATUS && e->code==UC_CONFIGURED && input_ready)request_profile_output(time_us_32());
+    if(e->type==UC_STATUS) {
         if(e->code==UC_DISCONNECTED) {
             if(measuring())measurement.counts.input_disconnects++;
         }
@@ -716,16 +763,18 @@ static void handle_command(void) {
                 status_led_saved(direction_setting_saved);
                 if(!direction_setting_saved) { reply[7]=3;break; }
                 direction_settings=next;upr_set_direction_settings(&direction_settings);
+                oled_work=status_oled_set_type(direction_settings.display_type);
                 // Cancel only generated directions; ordinary buttons and the
                 // pointer queue remain independent of this common-setting edit.
                 ub_direction_reset(&direction_pulse);ub_queue_clear_hold(&outgoing);
             }
         }
-        memcpy(payload,"UDSA",4);put32(payload+4,10);
+        memcpy(payload,"UDSB",4);put32(payload+4,11);
         put32(payload+8,direction_settings.threshold);put32(payload+12,direction_settings.hold_ms);
         put32(payload+16,direction_settings.wait_ms);put32(payload+20,direction_setting_saved?1:0);
         memcpy(payload+24,direction_settings.targets,4);memcpy(payload+28,direction_settings.paddle_targets,4);put32(payload+32,udk_modes_pack(&direction_settings));put32(payload+36,direction_settings.host_mode);
-        put32(payload+40,udk_inertia_pack(&direction_settings));put32(payload+44,direction_settings.inertia_interval_ms);break;
+        put32(payload+40,udk_inertia_pack(&direction_settings));put32(payload+44,direction_settings.inertia_interval_ms);put32(payload+48,direction_settings.display_type);
+        put32(payload+52,UDISPLAY_SUPPORTED_MASK);break;
     }
     case CMD_DIRECTION_TIMING:
         memcpy(payload,"DPT1",4);payload[4]=1;payload[5]=direction_pulse.phase;
@@ -905,47 +954,76 @@ static void output_change_task(uint32_t now) {
     }
 }
 // Run dispatch from SRAM so UI/configuration code growth cannot evict this loop from XIP cache.
-int __not_in_flash_func(main)(void) {
-    set_sys_clock_khz(120000,true);
-    pico_get_unique_board_id(&configuration_device_id);
-    status_led_init();
-    bool config_valid=ub_store_load(0,&config,sizeof(config)) && configuration_valid(&config);
-    if(!config_valid)egret_default_configuration(&config);
-    direction_setting_saved=config_valid && ub_store_load_direction_settings(&direction_settings);
-    // Resolve old profile routing while its original common defaults are intact.
-    // Commit the migrated bank before extending the single common-settings sector.
-    upr_init(&direction_settings);
-    upr_set_direction_settings(&direction_settings);
-    boot_capture_ms=config.boot_capture_ms;
-    // Add missing hidden records once; preserve each independently valid value.
-    // Consume a boot capture in the same write.
-    // Existing profiles, measurement data, and the legacy config prefix survive.
-    if(boot_capture_ms || !direction_setting_saved) {
-        config.boot_capture_ms=0;
-        direction_setting_saved=ub_store_save_configuration(&config,&direction_settings,false);
-        if(!direction_setting_saved)boot_capture_ms=0;
+static void process_button_ack(void) {
+    if(!atomic_exchange_explicit(&ack_pending,false,memory_order_acquire))return;
+    if(pro_reply_flight && !ack_cookie) {
+        spo_reply_complete(ack_success);pro_reply_flight=false;return;
     }
-    saved_valid=load_snapshot(&selected_snapshot);
-    start_usb_output(0);
-    uc_request_poll_interval(config.input_interval_ms);
-    multicore_launch_core1(host_core);
-    for(;;) {
-        process_ack();
-        uc_event e;
-        while(next_event(&e)) {
-            handle_host_event(&e); process_ack(); schedule_output();
-            // Learning/GUI observation is not on the input-to-output-ready path.
-            // Retain every source state, but only after the mapped packet is armed.
-            if(e.type==UC_INPUT) {
-                upr_event(&e);
-                // Cache only after output is armed; never scan controls in the idle loop.
-                switch_inputs=upr_switch_inputs();boot_controls_idle=switch_inputs==0 && upr_switch_released();
-                // Use source reception time, so a backlog cannot compress
-                // physically separated edges into the 100 ms chord window.
-                hotkey_task(e.time_us);
-            } else if(!input_ready)boot_controls_idle=false;
-            status_led_event(&e);
+    if(!flight_valid || flight.sequence!=ack_cookie)return;
+    if(ack_success) {
+        if(measuring()) {
+            if(last_poll_ack)ub_hist_add(&measurement.poll_gap,ack_time-last_poll_ack);
+            last_poll_ack=ack_time;
+            if(flight.transition)++measurement.counts.transitions_acked;
+            if(flight.sequence && flight.sequence!=last_ack_sequence && in_window(flight.received_us)) {
+                ++measurement.counts.fresh_acked;ub_hist_add(&measurement.ack,ack_time-flight.received_us);
+                if(flight.transition)ub_hist_add(&measurement.transition_ack,ack_time-flight.received_us);
+            } else ++measurement.counts.repeat_acked;
         }
+        last_ack_sequence=flight.sequence;
+    }
+    flight_valid=false;
+}
+static void schedule_button_output(void) {
+    if(mouse_mode() || !ud_ready()) { pad_was_ready=false;return; }
+    if(!pad_was_ready)xinput_clock.next_report=time_us_32();
+    pad_was_ready=true;
+    if(atomic_load_explicit(&ack_pending,memory_order_acquire))return;
+    if(active_host_mode==UH_SWITCH_PRO) {
+        if(pro_reply_flight)return;
+        const uint8_t *reply=spo_reply();
+        if(reply) {
+            if(flight_valid) {
+                if(flight.transition || !ud_cancel_repeat())return;
+                flight_valid=false;
+            }
+            uint32_t armed;
+            if(ud_send(reply,64,0,&armed)) { spo_reply_started();pro_reply_flight=true; }
+            return;
+        }
+    }
+    if(active_host_mode==UH_XINPUT && !xw_report_due(&xinput_clock,time_us_32()))return;
+    bool from_queue=ub_queue_depth(&outgoing)!=0;ub_frame next;
+    if(from_queue)next=outgoing.pending[outgoing.read];
+    else {
+        if(outgoing.have_latest)next=outgoing.latest;
+        else { memset(&next,0,sizeof(next));sw_neutral(&next.report); }
+        next.transition=false;
+    }
+    if(flight_valid) {
+        if(!flight.transition && (from_queue || memcmp(&flight.report,&next.report,8))) {
+            if(!ud_cancel_repeat())return;
+            if(measuring())++measurement.counts.repeats_replaced;
+            flight_valid=false;
+        } else return;
+    }
+    flight=next;uint32_t armed;uint8_t encoded[64];
+    const uint8_t *wire=(const uint8_t *)&flight.report;unsigned length=sizeof(flight.report);
+    if(active_host_mode==UH_XINPUT) { xw_encode(&flight.report,encoded);wire=encoded;length=XW_REPORT_BYTES; }
+    else if(active_host_mode==UH_SWITCH_PRO) { sp_encode(SP_PRO1,&flight.report,encoded,time_us_32());wire=encoded;length=64; }
+    if(ud_send(wire,length,flight.sequence,&armed)) {
+        flight_analog_epoch=0;memset(&flight_analog_plan,0,sizeof(flight_analog_plan));
+        if(active_host_mode==UH_XINPUT)xw_report_sent(&xinput_clock,armed);
+        if(from_queue) { ub_frame consumed;ub_queue_pop(&outgoing,&consumed); }
+        flight_valid=true;
+        if(flight.sequence && flight.sequence!=last_armed_sequence && in_window(flight.received_us)) {
+            ub_hist_add(&measurement.ready,armed-flight.received_us);
+            if(flight.transition)ub_hist_add(&measurement.transition_ready,armed-flight.received_us);
+        }
+        last_armed_sequence=flight.sequence;
+    }
+}
+static void __not_in_flash_func(standard_input_tasks)(void) {
         // Repeat edges are generated even by HID devices that only report
         // physical changes. They use the same ordered transition queue as input.
         uint32_t rapid_now=time_us_32();sw_report rapid_report;
@@ -983,12 +1061,72 @@ int __not_in_flash_func(main)(void) {
                 input_ready && ud_ready() && !output_change_requested && !reboot_at);
             ud_output_service();
         }
+}
+static void __not_in_flash_func(button_input_tasks)(void) {
+    uint32_t now=time_us_32();sw_report report;
+    if(upr_tick(now,ud_ready(),&report) && !mouse_mode()) {
+        ub_frame frame={.report=report,.received_us=now,.sequence=++input_sequence};
+        if(measuring())++measurement.counts.input_changes;
+        ub_queue_push(&outgoing,&frame);
+    }
+    // Pro output still owes its host protocol replies, with feedback disabled.
+    if(active_host_mode==UH_SWITCH_PRO) {
+        sw_report current;if(outgoing.have_latest)current=outgoing.latest.report;else sw_neutral(&current);
+        spo_service(&current,false);ud_output_service();
+    } else if(active_host_mode==UH_XINPUT)ud_output_service();
+}
+int __not_in_flash_func(main)(void) {
+    set_sys_clock_khz(120000,true);
+    pico_get_unique_board_id(&configuration_device_id);
+    status_led_init();
+    bool config_valid=ub_store_load(0,&config,sizeof(config)) && configuration_valid(&config);
+    if(!config_valid)egret_default_configuration(&config);
+    direction_setting_saved=config_valid && ub_store_load_direction_settings(&direction_settings);
+    // Resolve old profile routing while its original common defaults are intact.
+    // Commit the migrated bank before extending the single common-settings sector.
+    upr_init(&direction_settings);
+    upr_set_direction_settings(&direction_settings);
+    boot_capture_ms=config.boot_capture_ms;
+    // Add missing hidden records once; preserve each independently valid value.
+    // Consume a boot capture in the same write.
+    // Existing profiles, measurement data, and the legacy config prefix survive.
+    if(boot_capture_ms || !direction_setting_saved) {
+        config.boot_capture_ms=0;
+        direction_setting_saved=ub_store_save_configuration(&config,&direction_settings,false);
+        if(!direction_setting_saved)boot_capture_ms=0;
+    }
+    bool oled_present=status_oled_init(direction_settings.display_type);
+    oled_work=oled_present && direction_settings.display_type!=UDISPLAY_OFF;
+    saved_valid=load_snapshot(&selected_snapshot);
+    start_usb_output(0);
+    uc_request_poll_interval(config.input_interval_ms);
+    multicore_launch_core1(host_core);
+    for(;;) {
+        process_ack();
+        uc_event e;
+        while(next_event(&e)) {
+            handle_host_event(&e); process_ack(); schedule_output();
+            // Learning/GUI observation is not on the input-to-output-ready path.
+            // Retain every source state, but only after the mapped packet is armed.
+            if(e.type==UC_INPUT) {
+                upr_event(&e);
+                // Cache only after output is armed; never scan controls in the idle loop.
+                switch_inputs=upr_switch_inputs();boot_controls_idle=switch_inputs==0 && upr_switch_released();
+                // Use source reception time, so a backlog cannot compress
+                // physically separated edges into the 100 ms chord window.
+                hotkey_task(e.time_us);
+            } else if(!input_ready)boot_controls_idle=false;
+            status_led_event(&e);
+        }
+        input_tasks();
         schedule_output(); handle_command();
         uint32_t now=time_us_32();
         boot_button_task(now);
         now=time_us_32();
         if(!reboot_at) { host_auto_task(now);output_change_task(now); }
         status_led_task(now,input_ready,ud_ready(),upr_led_rgb());
+        if(oled_work)oled_work=status_oled_task(now,active_host_mode==UH_XINPUT?'X':'S',
+            upr_active_slot(),upr_bank_generation(),upr_profile_name());
         if(boot_capture_ms && input_ready && ud_ready() && !output_change_requested) {
             if(!ready_since)ready_since=now;
             if((uint32_t)(now-ready_since)>=config.warmup_ms*1000) {

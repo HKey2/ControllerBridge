@@ -15,7 +15,7 @@ internal sealed record DeviceSaveState(bool HasEdits, bool NeedsSave, string? Sa
             !bankTransfer ? L.T("設定全体の保存には、同梱ファームウェアへの更新が必要です。", "Update to the bundled firmware to save the complete settings set.") : null;
         return new(edits, pending,
             blocked ?? (pending ? null : L.T("未保存の設定はありません。", "There are no unsaved settings.")),
-            blocked ?? (edits ? L.T("先に「設定をデバイスに保存」で全スロットの変更を保存するか、再読込で破棄してください。", "First save all slot changes with “Save settings to device”, or discard them with Reload device.") : null));
+            blocked);
     }
 
     internal static bool ProfileChanged(DeviceProfile draft, DeviceProfile baseline)

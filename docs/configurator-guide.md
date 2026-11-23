@@ -30,9 +30,9 @@ For MS-GIPUSB controllers (wired Xbox One family), see [MS-GIPUSB input setup an
 
 The board stores 16 profiles in total, including multiple profiles for one controller. Each stores its name, device matching information, output mode, button behavior, mappings, button shift, rapid fire, input interval, mouse settings, and LED color. The profile currently active for the connected controller is bold and outlined in blue in the list, with a **Connected** label. This remains visible when another row is selected and clears when the controller or bridge disconnects. The bold styling applies only inside the list; the editor keeps its normal fonts.
 
-Single-clicking a registered slot opens its settings without changing the active profile on the board. Double-click a different saved profile matching the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. A double-click does not activate another controller's profile, an unused slot, a profile with unsaved edits, or a profile that is already active. Unsaved edits have a `*`; choose **Save settings to device** to apply them. An unused slot shows **Unused** in a disabled gray profile-name field, hides the settings, and offers **Add controller**. Selecting a registered slot restores the normal editable name field.
+Single-clicking a registered slot opens its settings without changing the active profile on the board. Double-click a different saved profile matching the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. A double-click does not activate another controller's profile, an unused slot, or a profile that is already active. Pending settings prompt you to save before activation. Unsaved edits have a `*`; choose **Save settings to device** to apply them. An unused slot shows **Unused** in a disabled gray profile-name field, hides the settings, and offers **Add controller**. Selecting a registered slot restores the normal editable name field.
 
-When a supported controller finishes initialization and has no matching saved or draft profile, the GUI selects the first available slot from the top. This only changes the list selection: no confirmation opens, no wizard starts automatically, and nothing is written to the board. Later manual selection is preserved until another attachment. Unsaved edits, another modal window, and ongoing operations defer this selection. A pending deletion is not an available slot until it is saved.
+When a supported controller finishes initialization and has no matching saved or draft profile, the GUI selects the first available slot from the top. This only changes the list selection: no confirmation opens, no wizard starts automatically, and nothing is written to the board. Later manual selection is preserved until another attachment. Another modal window and ongoing operations defer this selection. Edits in other slots are retained. A slot marked for deletion can be selected for addition; the deletion must be saved through the confirmation before registration starts.
 
 If there is no matching profile and no usable empty slot, the connection header displays **A controller without a profile is connected, but no empty slot is available.** It does not open a popup or overwrite an existing profile. The message clears when the condition no longer applies. Matching uses the existing VID/PID and optional descriptor/revision rules, not individual physical unit serial numbers.
 
@@ -42,11 +42,11 @@ In this screenshot, unused slot 05 was selected manually to show its controls. T
 
 ### Add, duplicate, and delete
 
-**Add controller** opens a registration wizard. Confirm the detected device, assign inputs, configure any analog axes, and save to the board. Registration requires valid input from the connected controller and an empty slot in both the saved bank and the editor. The GUI retains the original bridge handle and input identity; firmware 0.19.0 and later checks the input connection generation and identity at transfer start and again at commit. Disconnecting, reconnecting even the same controller, changing the input identity, or occupying the destination cancels that registration transaction. Ordinary saved-profile edits keep their existing offline behavior.
+**Add controller** opens a registration wizard. Confirm the detected device, assign inputs, configure any analog axes, and save to the board. Registration requires a connected controller with a recognized, assignable input layout. You can open the wizard before its first input report arrives; operate the physical controls on the mapping page. **Add controller** remains available when an empty editor slot has a pending deletion or other settings need saving. It asks to save all slot changes first: **Yes** saves and then opens the wizard; **No** cancels addition and retains the edits. Registration begins only after the destination is empty in both the saved bank and the editor. A failed save cancels the requested operation. The GUI retains the original bridge handle and input identity; firmware 0.19.0 and later checks the input connection generation and identity at transfer start and again at commit. Disconnecting, reconnecting even the same controller, changing the input identity, or occupying the destination cancels that registration transaction. Ordinary saved-profile edits keep their existing offline behavior.
 
 **Duplicate profile** copies the selection into the nearest unused slot below it. It creates a new ID and appends an available `[2]`, `[3]`, and so on to the stored name. Copying a numbered copy does not nest suffixes. The original name stays unchanged. Reordering or deleting other profiles does not renumber names. Names are shortened at complete Unicode character boundaries when necessary to fit the 47-byte UTF-8 limit. Save the new slot to persist it. Duplication does not wrap to unused slots above the source.
 
-**Delete profile** marks the selected slot unused after confirmation. Choose **Save settings to device** to apply the deletion together with all other pending slot edits. The Yes/No confirmation explains that dragging profiles to reorder the list is disabled until all unsaved changes have been saved to the device. Before saving, **Reload device** can discard the draft.
+**Delete profile** marks the selected slot unused after confirmation. Choose **Save settings to device** to apply the deletion together with all other pending slot edits. Adding or reordering while the deletion is pending asks whether to save all slot changes and continue. Before saving, **Reload device** can discard the draft.
 
 ### Inspect raw inputs during registration
 
@@ -93,9 +93,9 @@ New profiles and existing 0.16.x/0.17.x profiles default to dim blue. Duplicatin
 
 Drag a registered profile to the blue insertion line. The upper half of a row inserts before it; the lower half inserts after it. The list scrolls near its edges. `Alt+Up` and `Alt+Down` also move the selection.
 
-Save pending edits before reordering. A completed move is saved immediately and verified by reading back the bank. Profile data, ID, shortcut, and saved selection move together. BOOT and controller shortcuts cycle matching profiles in this order.
+Reordering remains available with pending edits. When requested, it asks to save all slot changes first. **Yes** saves and continues; **No** cancels the move and retains the edits. A completed move is saved immediately and verified by reading back the bank. Profile data, ID, shortcut, and saved selection move together. BOOT and controller shortcuts cycle matching profiles in this order.
 
-The 16 slots form one saved settings set. A profile is one part of that set. **Save settings to device** saves all pending slot edits together, including LED colors, even after you select a different or unused row. Returning a value to the loaded setting clears its unsaved mark. The same pending-settings state controls saving, backup/restore availability and the close warning. If disconnected, edits are retained and the save tooltip explains that reconnection is required. Saving keeps the existing profile selections and shortcuts; browsing a row does not activate it.
+The 16 slots form one saved settings set. A profile is one part of that set. **Save settings to device** saves all pending slot edits together, including LED colors, even after you select a different or unused row. Returning a value to the loaded setting clears its unsaved mark. Adding a controller, activating a profile, editing the switching method, reordering, and whole-bank backup/restore remain available with pending settings. Each operation asks to save all slot changes and continue. **Yes** continues only after a successful save; **No** cancels that operation without discarding edits. Disconnection, unsupported firmware, and ongoing operations can still make these controls unavailable. The close and reload confirmations continue to protect unsaved edits. If disconnected, edits are retained and the save tooltip explains that reconnection is required. Saving keeps the existing profile selections and shortcuts; browsing a row does not activate it.
 
 ## Backup and restore
 
@@ -120,7 +120,9 @@ Individual files use `ControllerBridge.Profile`, JSON version 6. JSON v2/v3/v5 e
 
 ## Map inputs and calibrate axes
 
-Select an output control, release the physical input, and perform the action to assign. Already-held inputs must return to neutral before learning. A connection change or event overrun cancels learning.
+Select an output control, release the physical input, and perform the action to assign. An axis that remains unchanged from the start of that assignment is ignored, including one intentionally held. If an axis first reports when pressed, press and release it to confirm the assignment in the same operation. A connection change or event overrun cancels learning.
+
+A Low Speed connection is labeled **Low Speed HID (buttons only)**. Assign buttons and the D-pad, including D-pad directions reported as numeric axes. Analog stick setup, gyro, rumble and mouse output are unavailable for that connection; rapid fire, toggle and button shift remain available. Existing profile settings are preserved for other supported connections. Install the bundled firmware when prompted, including when the version number is unchanged.
 
 Analog axes support measured minimum, center, maximum, a 0-50% dead zone, and inversion. Alternatively, use two digital inputs for negative and positive movement; pressing both produces center.
 
@@ -218,7 +220,7 @@ See [Button shift](button-shift.md) for an example, the difference between overr
 
 ## S / Auto / X / Pro host mode
 
-Open **Shared settings** and use the last group. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference. **Pro** selects the original Switch Pro protocol for gamepad profiles and enables rumble forwarding when the profile also enables Rumble. Mouse layouts use S while Pro is selected. See [Pro output and rumble](#pro-output-and-rumble).
+Open **Shared settings** and use the **Host mode** group, directly above **Display**. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference. **Pro** selects the original Switch Pro protocol for gamepad profiles and enables rumble forwarding when the profile also enables Rumble. Mouse layouts use S while Pro is selected. See [Pro output and rumble](#pro-output-and-rumble).
 
 Choose **Save to device** to persist a change and reconnect USB. The configurator reconnects through its separate settings interface, preserving all profile drafts. Button names and their screen positions stay fixed in every mode: X at the top, Y at the left, A at the right and B at the bottom. Mapping, rapid fire, toggle, shifted mapping, direction conversion and shortcut settings use the same names. Mode changes do not rewrite assignments or drafts. The status line identifies the active output mode. HOME sends Guide in X; Capture retains its label but is unavailable in X because Xbox 360 has no counterpart. See [wire mapping, Windows behavior and Switch 2 Pro setup](xinput-output.md).
 
@@ -267,7 +269,7 @@ Choose **Apply to draft**, then **Save settings to device** to persist and apply
 
 ![Per-profile Paddle mapping and rotation options](gui-conversion-paddle-en.png)
 
-Open **Shared settings** at the top, immediately after **Profile switching...**, to tune response for all profiles. A matching 0.22.0 board is required. These values do not change when switching profiles:
+Open **Shared settings** at the top, immediately after **Profile switching...**, to tune response for all profiles. Use the matching firmware bundled with the configurator. These values do not change when switching profiles:
 
 | Parameter | Default | Editing range |
 |---|---:|---:|
@@ -280,7 +282,7 @@ Open **Shared settings** at the top, immediately after **Profile switching...**,
 | Inertia decay interval | 100 ms | 1–1,000 ms |
 | Rotation sensitivity | 1.0°/pt | 0.1–10.0°/pt, steps of 0.1 |
 
-The dialog groups click conversion (Trackball Virtual Cursor(Repeat) / Paddle Virtual Cursor(Repeat)), Trackball Virtual Cursor(Hold), and Paddle Virtual Rolling in separate panels. Pseudo-inertia and its explanation sit inside the Hold panel.
+The dialog groups click conversion (Trackball Virtual Cursor(Repeat) / Paddle Virtual Cursor(Repeat)), Trackball Virtual Cursor(Hold), and Paddle Virtual Rolling in separate panels. Pseudo-inertia and its explanation sit inside the Hold panel. Host mode follows these panels, with **Display** directly below it. Choose OFF, profile name with polling interval and slot index, or a maximum 30-character name with S/X mode. The display choice also participates in Save to device and remains common to all profiles. See [OLED display](oled-display.md).
 
 **Save to device** is disabled until a displayed setting differs from its opening value; reverting all edits disables it again. The same rule applies to **Apply to draft** in Conversion mapping. Browsing the Trackball/Paddle tabs does not count as an edit.
 

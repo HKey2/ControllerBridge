@@ -27,7 +27,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
             if (current is not null)
             {
                 RequiresDataUpgrade = await FirmwareDataMigration.ReadAsync(device.RawAsync);
-                try { RequiresFeatureUpgrade = !FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)); }
+                try { RequiresFeatureUpgrade = !FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)) || !FirmwareInfo.SupportsSharedDisplay(await device.RawAsync(52)); }
                 catch (BridgeCommandException ex) when (ex.Status == 1) { RequiresFeatureUpgrade = true; }
             }
             return current;
@@ -164,7 +164,7 @@ internal sealed class FirmwareDevice : IFirmwareDevice
                     FirmwareInfo? info = FirmwareInfo.Read(await device.RawAsync(47));
                     if (info is not null && device.UsbLocation?.Location == target?.Usb.Location)
                     {
-                        if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)))
+                        if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)) || !FirmwareInfo.SupportsSharedDisplay(await device.RawAsync(52)))
                             throw new IOException(L.T("書き込み後に必要な機能を確認できませんでした。ファームウェア更新をやり直してください。", "Required features were not found after writing. Run Firmware update again."));
                         return info;
                     }

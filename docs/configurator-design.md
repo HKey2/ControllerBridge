@@ -82,7 +82,7 @@ The version-11 bank is 14,164 bytes: 16-byte bank header, 16 x 864-byte profiles
 | 4 | `0x1F4000` | 16,384 | Bank A; first v5-to-v8 commit |
 | 5 | `0x1F8000` | 16,384 | Bank B; overlaps both old 8 KiB bank copies |
 | Unused | `0x1FC000` | 8,192 | Reserved; no reads or writes |
-| 0 | `0x1FE000` | 4,096 | Common settings, 244 bytes used |
+| 0 | `0x1FE000` | 4,096 | Common settings, 260 bytes used (3,836 bytes remaining) |
 | 1 | `0x1FF000` | 4,096 | Saved measurement, unchanged |
 
 The Flash header retains magic `CBST` (`0x54534243`), storage version 1, payload length and CRC-32. A valid v10 bank takes priority; among v10 copies the newest generation wins. Otherwise the newest valid v9, v8 or v6 bank in the two 16 KiB areas is expanded, and the opposite area is written before adoption. If neither exists, the newest valid legacy v5 copy is expanded into Bank A. Conversion retains generation, IDs, selection and shortcuts; v9 entries keep their complete old field prefix. New output levels start at 0% minimum, 100% maximum and linear. Retain a backup readable by the old GUI when returning to older firmware.
@@ -298,3 +298,10 @@ The device-wide host preference selects the XInput report encoder and USB config
 Command 54 returns 56 bytes: `HOS1` at 0, selected mode at 4 (S=0/X=1/Auto=2), currently presented gamepad format at 5 (S=0/X=1), Auto state at 6 (fixed=0/waiting=1/probing=2/confirmed-X=3/final-S=4), gamepad interface present at 7, and u32 probe interval 5000 ms at 8. Remaining bytes are zero. During a pending explicit mode change, the saved selection can differ from the currently presented format until command 46 applies it. In mouse-only mode byte 7 is zero and byte 5 retains the gamepad preference/result.
 
 The UDSA schema and 244-byte common storage allocation remain unchanged; HSM1 accepts the additional value 2. Older firmware cannot apply Auto. Use the matching configurator/firmware pair. Auto does not persist its runtime result or alter profile data. USB reset never rearms the attempt; boot or changing the selected mode does. The command is operational status, not a diagnostic control.
+
+
+## Display settings (0.32.0)
+
+Shared settings places **Display** directly below **Host mode**. Its selection applies across profiles and is retained after restart. Choose OFF, name with measured output polling interval and slot index, or a name wrapped over 30 characters with S/X at the bottom right. OFF retains startup display detection and then stops display updates and interval sampling. See [OLED setup and layouts](oled-display.md).
+
+Use the matching configurator and bundled firmware, including when upgrading an earlier build bearing the same version number. Existing profiles and common tuning values are retained. Current common storage uses 260 of 4,096 bytes, leaving 3,836 bytes; runtime common settings remain 40 bytes. The 0.23.0 storage and transaction descriptions above describe that older version.

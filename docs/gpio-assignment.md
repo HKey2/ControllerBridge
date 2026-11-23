@@ -1,6 +1,6 @@
 # GPIO assignment and board porting
 
-The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.20.16. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
+The standard target is **Waveshare RP2350-USB-A**, using RP2350A and 2 MiB Flash. This describes firmware 0.32.0. Numbers below are RP2350 GPIO numbers, not connector positions or physical IC pins.
 
 Consult the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB-A/RP2350-USB-A.pdf) and [board wiki](https://www.waveshare.com/wiki/RP2350-USB-A) for wiring. Software restrictions below come from this repository.
 
@@ -10,6 +10,7 @@ Consult the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB
 |---|---|---|
 | USB-A input host D+ | GPIO12 | `uc_host_options.dp_pin` in each application's `host_core()` |
 | USB-A input host D- | GPIO13 | Derived as D+ + 1 by default PIO-USB configuration |
+| Optional 64×32 OLED SDA / SCL | GPIO6 / GPIO7, I²C1 | Startup detection; [OLED wiring and display](oled-display.md) |
 | WS2812B status LED DIN | GPIO16 | `CONTROLLER_STATUS_LED_PIN` and `status_led.c` |
 | USB-C output D+ / D- | Dedicated `USB_DP` / `USB_DM` | Native USB PHY; not remappable to ordinary GPIO in this implementation |
 | BOOT button | Flash `QSPI_SS` / CS | Dedicated QSPI register access in `bootsel.c` |
@@ -17,7 +18,7 @@ Consult the [manufacturer schematic](https://files.waveshare.com/wiki/RP2350-USB
 | UART0 defaults | TX GPIO0 / RX GPIO1 | SDK defaults only; all three applications disable UART stdio |
 | USB-A VBUS power | Board power circuit | No GPIO-controlled VBUS switch is implemented |
 
-The ordinary GPIOs used by the standard bridge are **12, 13, and 16**. Dedicated Flash, native USB, and RUN connections are separate.
+The ordinary GPIOs used by the standard bridge are **12, 13, and 16**, plus **6 and 7** when an OLED is fitted. GP6/GP7 are checked once at startup, then released if no display responds. Dedicated Flash, native USB, and RUN connections are separate.
 
 ## Files to change
 
@@ -26,7 +27,7 @@ The ordinary GPIOs used by the standard bridge are **12, 13, and 16**. Dedicated
 | [`boards/waveshare_rp2350_usb_a_diag.h`](../boards/waveshare_rp2350_usb_a_diag.h) | Board constants, RP2350A selection, Flash size and boot settings, USB/LED declarations |
 | [`CMakeLists.txt`](../CMakeLists.txt) | `PICO_BOARD`, default `waveshare_rp2350_usb_a_diag` |
 | [`apps/egret_switch/main.c`](../apps/egret_switch/main.c) | Main bridge: `.dp_pin=12` in `host_core()` |
-| [`lib/controller_usb/transport_pio.c`](../lib/controller_usb/transport_pio.c) | `ut_init()`: PIO selection, pin order, Full Speed startup |
+| [`lib/controller_usb/transport_pio.c`](../lib/controller_usb/transport_pio.c) | `ut_init()`: PIO selection, pin order, input-speed selection |
 | [`apps/egret_switch/status_led.c`](../apps/egret_switch/status_led.c), [`status_led.pio`](../apps/egret_switch/status_led.pio) | LED data format and timing |
 | [`lib/controller_usb/bootsel.c`](../lib/controller_usb/bootsel.c) | BOOT sampling and synchronization around Flash access |
 | [`lib/controller_device/native_rp2350.c`](../lib/controller_device/native_rp2350.c) | Native USB device and PHY initialization |
@@ -54,6 +55,7 @@ For reverse-adjacent wiring, **D- = D+ - 1**, also set `cfg.pinout = PIO_USB_PIN
 |---|---|
 | Input USB | PIO1, SM0 TX, SM1 RX, SM2 EOP, TX DMA channel 0 |
 | Status LED | One available PIO0 state machine, 800 kHz WS2812, RGB order on the tested board |
+| Optional OLED | I²C1, 400 kHz, no DMA channel or PIO state machine |
 | Output USB | Native USB controller and PHY |
 | System clock | 120 MHz, set by each application's `main()` |
 
@@ -65,6 +67,6 @@ BOOT is not a normal GPIO input. `uc_bootsel_poll()` briefly releases QSPI CS an
 
 USB-A 5 V power comes from the board circuit. A GPIO-controlled power switch needs explicit initialization. Native USB VBUS detection is overridden; there is no VBUS-detect GPIO setting. Follow the target board's electrical design.
 
-The standard board retains R13. The firmware attempts Full Speed initialization and checks EP0 communication instead of relying solely on the electrical attachment level. This does not imply Low Speed support or require the manufacturer's generic host modification procedure. With the tested Low Speed retro freak controller, retained R13 produces an invalid SE1 idle state; changing the PIO speed alone did not establish communication. See the [Low Speed limitation](compatibility.md#low-speed-and-the-unmodified-board).
+USB input speed is selected from the connection signals, and device responses establish a usable connection. The original R13-fitted board retains Full Speed support. Removing R13 enables the Low Speed path for compatible HID button and D-pad input with packets up to 8 bytes. See [Low Speed hardware requirements](compatibility.md#low-speed-and-the-unmodified-board).
 
 The final 48 KiB of Flash hold settings, measurements, and profiles. [`store.c`](../lib/controller_bridge/store.c) calculates addresses from `PICO_FLASH_SIZE_BYTES`. Changing capacity moves those addresses; use a GUI backup to transfer profiles to the new board. See the current [memory budget](../README.md#memory-budget).

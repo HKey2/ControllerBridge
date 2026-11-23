@@ -1,4 +1,6 @@
 #include "transport.h"
+#include "controller_usb.h"
+#include <stdatomic.h>
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/sync.h"
@@ -13,7 +15,33 @@ uint8_t uc_feedback_endpoint;
 extern void uc_pio_feedback_frame(void);
 extern bool uc_pio_feedback_slice(uint8_t endpoint);
 static ut_metrics metrics;
+static bool sense_speed;
 static uint32_t received_us[PIO_USB_EP_POOL_CNT];
+static uint8_t receive_slot[16];
+
+static atomic_bool display_enabled;
+static uint8_t display_endpoint;
+static uint32_t display_polls,display_bytes,display_generation,display_reports;
+static atomic_uint display_sequence,display_words[7];
+void uc_display_enable(bool enabled) { atomic_store_explicit(&display_enabled,enabled,memory_order_relaxed); }
+void ut_display_select(uint8_t endpoint) { display_endpoint=endpoint;++display_generation; }
+void ut_display_invalidate(void) { ++display_generation; }
+void ut_display_publish(bool connected,uint32_t interval_ms) {
+    if(!atomic_load_explicit(&display_enabled,memory_order_relaxed))return;
+    uint32_t values[]={time_us_32(),display_polls,display_bytes,display_generation,connected,display_reports,connected?interval_ms:0};
+    // Atomic words avoid C data races; an odd/changed sequence rejects a torn
+    // snapshot. No spinning or waiting on either USB core.
+    atomic_fetch_add(&display_sequence,1);
+    for(unsigned i=0;i<7;++i)atomic_store(&display_words[i],values[i]);
+    atomic_fetch_add(&display_sequence,1);
+}
+bool uc_display_get(uc_display_metrics *out) {
+    unsigned sequence=atomic_load(&display_sequence);if(!sequence || (sequence&1))return false;
+    uint32_t words[7];for(unsigned i=0;i<7;++i)words[i]=atomic_load(&display_words[i]);
+    if(sequence!=atomic_load(&display_sequence))return false;
+    _Static_assert(sizeof(*out)==sizeof(words),"display snapshot size");
+    memcpy(out,words,sizeof(words));return true;
+}
 
 // Called after RX/ACK finishes. The receive timestamp feeds normal input timing;
 // bus-response counters also provide the device's operational status.
@@ -22,15 +50,19 @@ void __not_in_flash_func(uc_pio_input_complete)(uint8_t address, uint8_t endpoin
     if (!(endpoint & 127) || address != 1) return;
     uint32_t now = time_us_32();
     metrics.in_tokens++;
+    if(atomic_load_explicit(&display_enabled,memory_order_relaxed)) {
+        if(endpoint==display_endpoint)++display_polls;
+        if(length>=0 && pid==expected) {
+            display_bytes+=(uint32_t)length;
+            if(length && endpoint==display_endpoint)++display_reports;
+        }
+    }
     if (pid == USB_PID_NAK && length < 0) metrics.in_naks++;
     else if (length >= 0 && pid != expected) metrics.in_duplicates++;
     else if (length < 0) metrics.in_packet_errors++;
     if (length >= 0 && pid == expected) {
-        for (unsigned i=0;i<PIO_USB_EP_POOL_CNT;++i) {
-            endpoint_t *ep=PIO_USB_ENDPOINT(i);
-            if (ep->size && ep->dev_addr==address && ep->ep_num==endpoint)
-                received_us[i]=now;
-        }
+        unsigned slot=receive_slot[endpoint&15u];
+        if(slot)received_us[slot-1]=now;
     }
 }
 
@@ -56,11 +88,16 @@ void __not_in_flash_func(pio_usb_host_irq_handler)(uint8_t root_index) {
             completed[i] = (stall & mask) ? UT_STALL : (error & mask) ? UT_ERROR : UT_OK;
         }
     }
+    // Resolve electrical detach once at the notification. A fixed D+ pull-up
+    // can mask it; transfer errors still return that connection to discovery.
+    if(sense_speed && (root->ints&PIO_USB_INTS_DISCONNECT_BITS))
+        for(unsigned i=0;i<PIO_USB_EP_POOL_CNT;++i)completed[i]=UT_DISCONNECTED;
     root->ep_complete = root->ep_error = root->ep_stalled = root->ep_continue = 0;
     root->ints = 0;
 }
 
-void ut_init(uint8_t dp_pin) {
+void ut_init(uint8_t dp_pin,bool detect_speed) {
+    sense_speed=detect_speed;
     // This core owns the PIO engine. Core 0 owns native USB/CDC interrupts.
     save_and_disable_interrupts();
     pio_usb_configuration_t cfg = PIO_USB_DEFAULT_CONFIG;
@@ -70,9 +107,9 @@ void ut_init(uint8_t dp_pin) {
     cfg.skip_alarm_pool = true;
     pio_usb_host_init(&cfg);
     root_port_t *root = PIO_USB_ROOT_PORT(0);
-    // R13 masks electrical attachment. Probing always starts as full speed;
-    // successful EP0 traffic, not a high D+ line, proves a device is present.
-    root->connected = true;
+    // Line-state detection does not identify the resistor configuration.
+    // R13 may hold D+ high with no device; EP0 replies establish a connection.
+    root->connected = !sense_speed;
     root->is_fullspeed = true;
     root->suspended = true;
     next_frame = time_us_32() + 1000;
@@ -101,7 +138,7 @@ uint32_t __not_in_flash_func(ut_idle_budget_us)(void) {
     return remaining>0?(uint32_t)remaining:0;
 }
 
-void ut_close_device(uint8_t address) { pio_usb_host_close_device(0, address); }
+void ut_close_device(uint8_t address) { if(address==1) { ut_display_select(0);memset(receive_slot,0,sizeof(receive_slot)); }pio_usb_host_close_device(0, address); }
 void ut_wait_for_device(uint32_t ms) {
     ut_close_device(0);ut_close_device(1);
     // Leave the bus at idle without SOFs or probes so a newly attached
@@ -109,17 +146,29 @@ void ut_wait_for_device(uint32_t ms) {
     PIO_USB_ROOT_PORT(0)->suspended = true;
     ut_delay_ms(ms);
 }
-void ut_reset(void) {
+bool ut_reset(void) {
     ut_close_device(0);
     ut_close_device(1);
     memset(completed, 0, sizeof(completed));
     root_port_t *root = PIO_USB_ROOT_PORT(0);
-    root->connected = true;
-    root->is_fullspeed = true;
+    root->suspended=true;
+    if(sense_speed) {
+        // Sample idle before reset drives both lines low. Reject SE0/SE1 and
+        // an attachment that changes during this short settling interval.
+        port_pin_status_t idle=pio_usb_bus_get_line_state(root);
+        ut_delay_ms(2);
+        if((idle!=PORT_PIN_FS_IDLE && idle!=PORT_PIN_LS_IDLE) ||
+           idle!=pio_usb_bus_get_line_state(root)) {
+            root->connected=false;return false;
+        }
+        root->is_fullspeed=idle==PORT_PIN_FS_IDLE;
+    } else root->is_fullspeed=true;
+    root->connected=true;
     pio_usb_host_port_reset_start(0);
     ut_delay_ms(30);
     pio_usb_host_port_reset_end(0);
     ut_delay_ms(10);
+    return !sense_speed || root->connected;
 }
 
 // Only used during failed Elite 2 enumeration, never during active input.
@@ -166,9 +215,16 @@ void ut_resume_fullspeed(void) {
 }
 
 bool ut_open(uint8_t address, const uint8_t descriptor[7]) {
+    if(!PIO_USB_ROOT_PORT(0)->is_fullspeed) {
+        unsigned size=descriptor[4]|((unsigned)descriptor[5]<<8),type=descriptor[3]&3;
+        if(!size || size>8 || (type!=0 && type!=3) || (!(descriptor[2]&127) && size!=8))return false;
+    }
     bool ok = pio_usb_host_endpoint_open(0, address, descriptor, false);
     int i = find_ep(address, descriptor[2]);
-    if (i >= 0) completed[i] = UT_PENDING;
+    if (i >= 0) {
+        completed[i] = UT_PENDING;
+        if(address==1 && (descriptor[2]&0x80) && (descriptor[2]&15))receive_slot[descriptor[2]&15]=(uint8_t)(i+1);
+    }
     return ok;
 }
 void ut_ep0(uint8_t address, uint8_t size) {
@@ -293,3 +349,28 @@ ut_result ut_idle_control_service(void) {
     }
     ut_idle_output_service();return UT_PENDING;
 }
+
+bool ut_low_speed(void) { return !PIO_USB_ROOT_PORT(0)->is_fullspeed; }
+extern bool uc_pio_lowspeed_begin(void);
+extern void uc_pio_lowspeed_frame(void);
+bool ut_lowspeed_begin(void) { return uc_pio_lowspeed_begin(); }
+void __not_in_flash_func(ut_lowspeed_pump)(void) {
+    uint32_t now=time_us_32();
+    if((int32_t)(now-next_frame)<0)return;
+    uint32_t delay=now-next_frame;
+    if(delay>50)metrics.late_frames++;
+    next_frame+=1000;
+    if(delay>=1000)next_frame=now+1000;
+    uc_pio_lowspeed_frame();
+    uint32_t elapsed=time_us_32()-now;
+    if(elapsed>metrics.max_frame_us)metrics.max_frame_us=elapsed;
+}
+int ut_input_handle(uint8_t endpoint) { return find_ep(1,endpoint); }
+ut_result ut_input_result(unsigned handle,uint16_t *actual) {
+    *actual=lengths[handle];return completed[handle];
+}
+bool ut_input_submit(unsigned handle,uint8_t *data,uint16_t length) {
+    completed[handle]=UT_PENDING;
+    return pio_usb_ll_transfer_start(PIO_USB_ENDPOINT(handle),data,length);
+}
+uint32_t ut_input_received_us(unsigned handle) { return received_us[handle]; }

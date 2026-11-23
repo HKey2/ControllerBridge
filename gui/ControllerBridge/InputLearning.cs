@@ -6,13 +6,44 @@ internal sealed class ButtonLearner
 {
     private readonly Dictionary<ushort, int> baseline;
     private readonly HashSet<ushort> armed = [];
+    private readonly HashSet<ushort> unseenAxes = [];
+    private readonly Dictionary<ushort, int> firstPress = [];
     private readonly bool dpad;
     public ButtonLearner(IEnumerable<InputField> fields, bool dpad)
     {
         this.dpad = dpad;
-        baseline = fields.Where(f => f.Valid && f.Learnable && !f.Motion).ToDictionary(f => f.Index, f => f.Value);
-        foreach (InputField f in fields.Where(f => f.Valid && f.Learnable && !f.Motion))
-            if (f.Binary ? f.Value == f.Minimum : f.Hat ? f.Value < f.Minimum || f.Value > f.Maximum : true) armed.Add(f.Index);
+        InputField[] candidates = fields.Where(f => f.Learnable && !f.Motion).ToArray();
+        baseline = candidates.ToDictionary(f => f.Index, f => f.MinimumNeutral ? f.Minimum : f.Value);
+        foreach (InputField f in candidates)
+        {
+            // An unseen scalar's first sample establishes its actual starting
+            // value. Repeated identical values never constitute an operation.
+            if (!f.Binary && !f.Hat && !f.Valid) unseenAxes.Add(f.Index);
+            if (f.MinimumNeutral)
+            {
+                if (!f.Valid || f.Value == f.Minimum) armed.Add(f.Index);
+            }
+            else if (f.Ps4Stick)
+            {
+                if (!f.Valid || Resting(f, f.Value)) armed.Add(f.Index);
+                else baseline[f.Index] = AxisSourceList.Midpoint(f);
+            }
+            else if (!f.Valid || (f.Binary ? f.Value == f.Minimum : f.Hat ? f.Value < f.Minimum || f.Value > f.Maximum : true)) armed.Add(f.Index);
+        }
+    }
+    private static bool Centered(InputField f) => f.Ps4Stick ||
+        f.UsagePage == 1 && f.Usage is 0x30 or 0x31 or 0x33 or 0x34;
+    private static bool Resting(InputField f, int value) => f.MinimumNeutral ? value == f.Minimum :
+        Centered(f) && Math.Abs((long)value - AxisSourceList.Midpoint(f)) <= ((long)f.Maximum - f.Minimum) / 10;
+    private static long Threshold(InputField f) => Math.Max(1, ((long)f.Maximum - f.Minimum) * 35 / 100);
+    private static LearnedInput? Axis(InputField f, int start, int value)
+    {
+        long delta = (long)value - start;
+        if (value < f.Minimum || value > f.Maximum || Math.Abs(delta) < Threshold(f)) return null;
+        int threshold = (int)(start + delta / 2);
+        if (delta > 0) threshold = Math.Max(start + 1, threshold);
+        else threshold = Math.Min(start - 1, threshold);
+        return new(f, delta > 0 ? f.Digital(1, threshold, f.Maximum) : f.Digital(1, f.Minimum, threshold));
     }
     public LearnedInput? Observe(InputField f, int value)
     {
@@ -30,15 +61,41 @@ internal sealed class ButtonLearner
             int position = value - f.Minimum;
             if (!dpad) return new(f, f.Digital(1, value, value));
             bool eight = f.Maximum - f.Minimum == 7;
-            if (eight && (position & 1) != 0) return null; // Ask for a cardinal press, preserve diagonals during play.
+            if (eight && (position & 1) != 0) return null;
             return new(f, f.Digital((byte)(2 + (eight ? position / 2 : position)), f.Minimum, f.Maximum));
         }
-        long span = (long)f.Maximum - f.Minimum, delta = (long)value - start;
-        if (value < f.Minimum || value > f.Maximum || Math.Abs(delta) < Math.Max(1, span * 35 / 100)) return null;
-        int threshold = (int)(start + delta / 2);
-        if (delta > 0) threshold = Math.Max(start + 1, threshold);
-        else threshold = Math.Min(start - 1, threshold);
-        return new(f, delta > 0 ? f.Digital(1, threshold, f.Maximum) : f.Digital(1, f.Minimum, threshold));
+        if (value < f.Minimum || value > f.Maximum) return null;
+        if (unseenAxes.Remove(f.Index))
+        {
+            baseline[f.Index] = value;
+            int neutral = f.MinimumNeutral ? f.Minimum : AxisSourceList.Midpoint(f);
+            // A report-on-change device may send its first sample while pressed.
+            // Confirm that first gesture on release, without another selection.
+            // A constant/continuously held axis never passes this confirmation.
+            if ((f.MinimumNeutral || Centered(f)) && Math.Abs((long)value - neutral) >= Threshold(f))
+                firstPress[f.Index] = value;
+            return null;
+        }
+        if (firstPress.TryGetValue(f.Index, out int first) && Resting(f, value))
+        {
+            firstPress.Remove(f.Index); baseline[f.Index] = value; armed.Add(f.Index);
+            return Axis(f, value, first);
+        }
+        if (!armed.Contains(f.Index))
+        {
+            if (Resting(f, value)) { baseline[f.Index] = value; armed.Add(f.Index); }
+            return null;
+        }
+        // Releasing an axis already held at selection is not a new press.
+        // Keep a measured off-center neutral for ordinary outward gestures.
+        if (!f.MinimumNeutral && Centered(f) && Resting(f, value) &&
+            Math.Abs((long)value - start) >= Threshold(f))
+        {
+            baseline[f.Index] = value; firstPress.Remove(f.Index); return null;
+        }
+        LearnedInput? result = Axis(f, start, value);
+        if (result is not null) firstPress.Remove(f.Index);
+        return result;
     }
 }
 
@@ -61,7 +118,8 @@ internal sealed partial class MappingEditor : UserControl
     private readonly ToolTip tips = new() { AutoPopDelay = 15000 };
     private ButtonLearner? learner;
     private int selected = -1;
-    private bool canLearn;
+    private bool canLearn, buttonsOnly;
+    internal void SetButtonsOnly(bool value) { buttonsOnly = value; }
     private bool supportsRapid;
     private bool supportsToggle;
     private DeviceProfile profile = new();
@@ -219,7 +277,8 @@ internal sealed partial class MappingEditor : UserControl
         if (request != learningRequest || IsDisposed) return;
         learner = new(fields, index >= 14);
         instruction.Text = L.T($"{TargetName(index)} に割り当てる操作を行ってください", $"Perform the action to assign to {TargetName(index)}.");
-        detail.Text = ""; detail.Visible = false;
+        detail.Text = L.T("開始時から保持した入力は登録されません。初めて受信する軸は、押して離すと確定します。",
+            "Inputs held from the start are ignored. A newly received axis is confirmed when you press and release it."); detail.Visible = true;
         ScrollControlIntoView(instruction.Parent!);
     }
     internal void InputEventsLost(string reason)
@@ -246,7 +305,7 @@ internal sealed partial class MappingEditor : UserControl
     internal void GyroEventsLost() => stickWizard?.GyroEventsLost();
     private async void EditSticks()
     {
-        if (!profile.Enabled || !canLearn) return;
+        if (!profile.Enabled || !canLearn || buttonsOnly) return;
         int request = ++learningRequest; learner = null;
         if (PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
@@ -262,7 +321,7 @@ internal sealed partial class MappingEditor : UserControl
     }
     private async void EditAxis(int axis)
     {
-        if (!profile.Enabled) return;
+        if (!profile.Enabled || buttonsOnly) return;
         int request = ++learningRequest; learner = null;
         if (canLearn && PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
@@ -354,7 +413,7 @@ internal sealed partial class MappingEditor : UserControl
         clear.Enabled = selected >= 0 && profile.Enabled;
         inherit.Enabled = shiftPage && selected >= 0 && profile.Enabled;
         shift.Enabled = profile.Enabled;
-        axisWizard.Enabled = profile.Enabled && canLearn && fields.Any(StickCalibration.IsAnalog);
+        axisWizard.Enabled = profile.Enabled && canLearn && !buttonsOnly && fields.Any(StickCalibration.IsAnalog);
         tips.SetToolTip(axisWizard, canLearn ? L.T("左X、左Y、右X、右Yの順に操作して設定します。", "Configure left X, left Y, right X, then right Y by moving each axis.") :
             L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."));
         shift.Text = profile.Shift.Keys.Count == 0 ? L.T("シフト設定…", "Button shift…") : L.T($"シフト設定…（{profile.Shift.Keys.Count}キー）", $"Button shift… ({profile.Shift.Keys.Count} {(profile.Shift.Keys.Count == 1 ? "key" : "keys")})");
@@ -379,6 +438,7 @@ internal sealed partial class MappingEditor : UserControl
                 3 => L.T("アナログ合成", "Analog pair"),
                 _ => L.T("未使用", "Unused")
             };
+            axes[i].Enabled = !buttonsOnly;
             axes[i].Text = shortNames[i] + " · " + mode;
             axes[i].AccessibleName = shortNames[i] + " · " + mode;
             axes[i].AccessibleDescription = AxisDirections.Describe(i, axis);

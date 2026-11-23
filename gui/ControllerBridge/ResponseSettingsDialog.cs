@@ -11,6 +11,8 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private readonly Button save, cancel;
     private readonly TableLayoutPanel values;
     private bool saving;
+    private readonly ComboBox displayType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+    private uint SelectedDisplayType => displayType.SelectedItem is DisplayTypes.Choice choice ? choice.Id : original.DisplayType;
     private readonly DarkRadioButton hostS = new() { Text = "S", AutoSize = true },
         hostPro = new() { Text = "Pro", AutoSize = true },
         hostAuto = new() { Text = "Auto", AutoSize = true },
@@ -23,16 +25,16 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist, bool supportsRumble = false)
     {
         original = Result = current; this.persist = persist;
-        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 880));
+        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 930));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 4 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
         Label hint = Ui.Label(L.T("全プロファイル共通です。変換先・モード・回転刻みは、各プロファイルの「方向変換の割り当て」で設定します。",
             "Shared by all profiles. Set targets, modes and rotation steps in each profile's Conversion mapping."), 9);
         hint.MaximumSize = new(560, 0); hint.ForeColor = Ui.Muted; root.Controls.Add(hint, 0, 0);
-        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty, Padding = new(0, 10, 0, 0) };
+        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty, Padding = new(0, 10, 0, 0) };
         values.ColumnStyles.Add(new(SizeType.Percent, 100));
-        for (int i = 0; i < 4; i++) values.RowStyles.Add(new(SizeType.AutoSize));
+        for (int i = 0; i < 5; i++) values.RowStyles.Add(new(SizeType.AutoSize));
         TableLayoutPanel Group(string title, int row)
         {
             RaisedTableLayoutPanel group = new() { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -89,6 +91,11 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         // });
         // ps4Files.Anchor = AnchorStyles.Left;
         // host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(ps4Files, 0, host.RowCount++); host.SetColumnSpan(ps4Files, 3);
+        TableLayoutPanel display = Group(L.T("ディスプレイ", "Display"), 4);
+        displayType.AccessibleName = L.T("表示タイプ", "Display type");
+        displayType.Items.AddRange(DisplayTypes.Choices);
+        displayType.SelectedItem = displayType.Items.Cast<DisplayTypes.Choice>().Single(item => item.Id == current.DisplayType);
+        display.RowStyles.Add(new(SizeType.AutoSize)); display.Controls.Add(displayType, 0, display.RowCount++); display.SetColumnSpan(displayType, 3);
         threshold.Value = Math.Clamp(current.Threshold, 1u, 256u); hold.Value = Math.Clamp(current.HoldMs, 1u, 512u); wait.Value = Math.Clamp(current.WaitMs, 1u, 512u);
         holdThreshold.Value = current.TrackballHoldThreshold; inertiaThreshold.Value = current.InertiaThreshold; inertiaInterval.Value = current.InertiaIntervalMs;
         inertiaDecay.DecimalPlaces = 2; inertiaDecay.Increment = .01m; inertiaDecay.Value = current.InertiaDecayPercent / 100m;
@@ -99,8 +106,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             status.Visible = true;
             status.Text = L.T("旧設定が編集範囲を超えているため、表示値を編集範囲へ収めています。デバイスへの変更は保存時に行います。", "Older values exceed the editing range. Displayed values are clamped; the device changes only when you save.");
         }
-        Panel scroll = new() { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty, Padding = new(0, 0, 18, 0) };
-        scroll.Controls.Add(values); root.Controls.Add(scroll, 0, 1); root.Controls.Add(status, 0, 2);
+        root.Controls.Add(values, 0, 1); root.Controls.Add(status, 0, 2);
         FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         save = Ui.Button(L.T("デバイスに保存", "Save to device"), async (_, _) => await SaveSettings(), true);
         cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
@@ -112,6 +118,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             control.ValueChanged += (_, _) => UpdateSaveButton();
             control.TextChanged += (_, _) => UpdateSaveButton();
         }
+        displayType.SelectedIndexChanged += (_, _) => UpdateSaveButton();
         hostPro.CheckedChanged += (_, _) => UpdateSaveButton();
         hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton(); hostAuto.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
@@ -119,7 +126,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     }
     private bool HasChanges()
     {
-        bool changed = (hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode;
+        bool changed = (hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode || SelectedDisplayType != original.DisplayType;
         for (int i = 0; i < editors.Length; i++)
         {
             NumericUpDown control = editors[i];
@@ -141,7 +148,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         {
             MouseUdlrSettings next = original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
                 Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value, InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
-                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
+                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), DisplayType = SelectedDisplayType, HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
             saving = true; values.Enabled = save.Enabled = cancel.Enabled = false;
             MouseUdlrSettings actual = await persist(original, next);
             if (actual != next) throw new IOException(L.T("保存結果が一致しません。", "Saved values do not match."));

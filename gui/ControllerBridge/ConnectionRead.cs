@@ -69,7 +69,7 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
             FirmwareInfo? firmware = await device.ReadFirmwareAsync();
             if (firmware is null) return new(new(ConnectionKind.UnknownFirmware, device.DevicePath));
             if (firmware.Version != bundled) return new(new(ConnectionKind.DifferentFirmware, device.DevicePath, firmware.Version));
-            if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)))
+            if (!FirmwareInfo.SupportsRequiredFeatures(await device.RawAsync(20)) || !FirmwareInfo.SupportsSharedDisplay(await device.RawAsync(52)))
                 return new(new(ConnectionKind.DifferentFirmware, device.DevicePath, firmware.Version, true));
             var bank = await device.ReadProfilesAsync();
             DeviceState state = await device.ReadDeviceAsync();

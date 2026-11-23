@@ -41,6 +41,10 @@ uint32_t ucf_status(void) {
 }
 uint32_t ucf_pad_generation(void) { return atomic_load_explicit(&pad_generation,memory_order_acquire); }
 bool ucf_quiesce(uint32_t timeout_us) {
+    // No output backend exists for a detached/button-only input. Publish the
+    // disable request for any later attachment without waiting for service
+    // from the dedicated Low Speed input loop.
+    if(!(ucf_status()&256u)) { ucf_select(false);return true; }
     uint32_t wanted=atomic_load_explicit(&request,memory_order_acquire);
     if(!(wanted&1) && (ucf_status()&255)==UCF_OFF && atomic_load_explicit(&acknowledged,memory_order_acquire)==wanted)return true;
     ucf_select(false);wanted=atomic_load_explicit(&request,memory_order_acquire);

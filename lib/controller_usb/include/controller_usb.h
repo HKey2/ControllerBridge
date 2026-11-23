@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Current backend: one directly attached full-speed device. Bounds are explicit;
+// Current backend: one directly attached full/low-speed device. Bounds are explicit;
 // unsupported configurations are rejected, never truncated and presented as valid.
 #define UC_CONFIG_CAPACITY 1024
 #define UC_REPORT_DESCRIPTOR_CAPACITY 2048
@@ -16,7 +16,7 @@ typedef enum { UC_STATUS, UC_DESCRIPTOR, UC_INPUT, UC_STATISTICS } uc_event_type
 typedef enum {
     UC_START, UC_PROBING, UC_PROBE_FAILED, UC_DEVICE_FOUND, UC_REJECTED,
     UC_CONFIGURED, UC_REPORT_DESCRIPTOR_FAILED, UC_INPUT_ERROR,
-    UC_DISCONNECTED, UC_POLL_CHANGED, UC_ENUM_FAILED, UC_INPUT_PROTOCOL, UC_INPUT_INIT, UC_MOTION_CALIBRATION
+    UC_DISCONNECTED, UC_POLL_CHANGED, UC_ENUM_FAILED, UC_INPUT_PROTOCOL, UC_INPUT_INIT, UC_MOTION_CALIBRATION, UC_INPUT_SPEED
 } uc_status;
 typedef struct {
     uint32_t reports, transfer_errors, stalls, attempts;
@@ -33,6 +33,7 @@ typedef void (*uc_event_callback)(const uc_event *event, void *context);
 typedef bool (*uc_accept_device)(uint16_t vid, uint16_t pid, void *context);
 typedef struct {
     uint8_t dp_pin;
+    bool sense_speed; // detect speed from USB line state, independently of optional displays
     uc_accept_device accept;
     uc_event_callback event;
     void *context;
@@ -56,6 +57,17 @@ void uc_request_statistics(void);
 // A timeout leaves the host running and the caller must not write flash.
 bool uc_host_pause(uint32_t timeout_ms);
 void uc_host_resume(void);
+
+// OLED Detail only. Core 0 enables and reads; core 1 publishes once a second.
+// The primary input endpoint is counted separately; bytes cover successful
+// interrupt-IN payloads from all input endpoints, excluding duplicate packets.
+// reports counts nonempty successful data packets on the primary endpoint,
+// including unchanged values, excluding NAKs, errors and duplicate retries.
+// interval_ms is the configured primary endpoint interval (override or bInterval),
+// not a measured interval. Zero means unavailable/invalid.
+typedef struct { uint32_t time_us,polls,bytes,generation,connected,reports,interval_ms; } uc_display_metrics;
+void uc_display_enable(bool enabled);
+bool uc_display_get(uc_display_metrics *snapshot);
 
 // A bounded HID layout parser, independent of the PIO backend and of any VID/PID.
 // Scalar Variable Input fields are decoded; arrays remain available as raw data.

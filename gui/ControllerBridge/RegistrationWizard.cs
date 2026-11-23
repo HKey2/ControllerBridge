@@ -36,7 +36,7 @@ internal sealed partial class RegistrationWizard : Form
         Button cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); }); CancelButton = cancel;
         logButton = Ui.Button(L.T("入力ログ…", "Input log…"), (_, _) => ShowInputLog());
         footer.Controls.Add(next); footer.Controls.Add(back); footer.Controls.Add(cancel); footer.Controls.Add(logButton); root.Controls.Add(footer, 0, 3); Controls.Add(root);
-        editor.PrepareLearningAsync = prepare; editor.Bind(profile, fields, true, caps.SupportsRapidFire, caps.SupportsButtonToggle); name.Text = profile.Name;
+        editor.PrepareLearningAsync = prepare; editor.SetButtonsOnly(caps.LowSpeedInput); editor.Bind(profile, fields, true, caps.SupportsRapidFire, caps.SupportsButtonToggle); name.Text = profile.Name;
         Tag = slot; BuildPages(); ShowStep(); Ui.ThemeInputs(this);
         FormClosing += (_, e) =>
         {
@@ -59,6 +59,8 @@ internal sealed partial class RegistrationWizard : Form
         intro.Controls.Add(Ui.Label(L.T($"デバイスのスロット {(int)Tag! + 1} を使用します。保存後はPCなしで自動選択されます。", $"Uses slot {(int)Tag! + 1} on the device. After saving, the profile is selected automatically without a PC."), 11));
         intro.Controls.Add(Ui.Label(L.T("表示名", "Display name"), 11, true)); intro.Controls.Add(name);
         intro.Controls.Add(Ui.Label(L.T("次の画面で出力ボタンを選び、実際の入力を押します。\r\n使わないボタン・軸は未割り当てのままで構いません。", "On the next page, select an output button, then press the physical input.\r\nYou can leave unused buttons and axes unassigned."), 11));
+        if (caps.LowSpeedInput) intro.Controls.Add(Ui.Label(L.T("Low Speed接続ではボタンと十字キーを使用できます。振動・アナログスティック・マウス出力は使用できません。",
+            "Low Speed connections support buttons and the D-pad. Rumble, analog stick and mouse output are unavailable."), 11));
         if (caps.Partial) intro.Controls.Add(Ui.Label(L.T("一部の入力形式は未対応です。検出できた絶対値入力だけを登録できます。", "Some input formats are not supported. Only detected absolute inputs can be mapped."), 11));
         review.Columns.Add(L.T("出力ボタン", "Output button"), 180); review.Columns.Add(L.T("入力コントローラーの割り当て", "Input controller mapping"), 680);
         page.Controls.Add(intro); page.Controls.Add(editor); page.Controls.Add(review);
@@ -77,7 +79,9 @@ internal sealed partial class RegistrationWizard : Form
         }
         else if (step == 1)
         {
-            hint.Text = L.T("ボタン・方向キー・トリガーを割り当て、必要なら下段からスティック軸を校正します。", "Assign buttons, directions, and triggers. Use the lower section to calibrate stick axes if needed.");
+            hint.Text = caps.LowSpeedInput
+                ? L.T("ボタンと十字キーを割り当てます。Low Speed接続ではアナログスティックを使用しません。", "Assign buttons and the D-pad. Analog sticks are unavailable on this Low Speed connection.")
+                : L.T("ボタン・方向キー・トリガーを割り当て、必要なら下段からスティック軸を校正します。", "Assign buttons, directions, and triggers. Use the lower section to calibrate stick axes if needed.");
         }
         else
         {

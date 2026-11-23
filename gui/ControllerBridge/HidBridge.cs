@@ -7,9 +7,11 @@ namespace ControllerBridge;
 
 public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid, ushort Pid, ushort Revision,
     ushort Flags, uint ConnectionGeneration, uint DescriptorHash, uint BankGeneration, uint EventHead, byte Interval, byte HostStatus, byte InputProtocol = 0, uint Features = 0,
-    byte ProfileNumber = 0, byte ProfileCount = 0, uint SwitchKeys = 0)
+    byte ProfileNumber = 0, byte ProfileCount = 0, uint SwitchKeys = 0, byte InputTraits = 0)
 {
     public bool Connected => (Flags & 1) != 0;
+    public bool SupportsUsbSpeedRouting => (InputTraits & 64) != 0;
+    public bool LowSpeedInput => Connected && SupportsUsbSpeedRouting && (InputTraits & 128) != 0;
     public bool Partial => (Flags & 2) != 0;
     public bool Persisted => (Flags & 4) != 0;
     public bool InvalidBinding => (Flags & 8) != 0;
@@ -87,13 +89,13 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
             throw new InvalidDataException(L.T("パドルのY軸出力にはファームウェア0.20.2以降が必要です。デバイスを更新してください。", "Paddle Y-axis output requires firmware 0.20.2 or later. Update the device first."));
     }
     public bool SelectionUnsaved => (Flags & 16) != 0;
-    public string ProtocolLabel => InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", 16 => "Switch 2 USB", 32 => "DUALSHOCK 3 USB", _ => "HID" };
+    public string ProtocolLabel => LowSpeedInput ? L.T("Low Speed HID（ボタン専用）", "Low Speed HID (buttons only)") : InputProtocol switch { 2 => "XInput (Xbox 360)", 3 => "HID / XInput", 4 => "Switch USB", 8 => "MS-GIPUSB", 16 => "Switch 2 USB", 32 => "DUALSHOCK 3 USB", _ => "HID" };
     internal static Capabilities Read(byte[] b)
     {
         if (!b.AsSpan(0, 4).SequenceEqual("UPG1"u8) || Wire.U16(b, 4) != 1 || Wire.U16(b, 6) != DeviceProfile.ByteCount || b[8] != DeviceProfile.SlotCount || (Wire.U32(b, 44) & (4096 | 16777216 | 33554432)) != (4096 | 16777216 | 33554432))
             throw new InvalidDataException(L.T("このデバイスは未対応の設定形式です。GUI付属のControllerBridge.uf2へ更新してください。", "This device uses an unsupported settings format. Update it with the included ControllerBridge.uf2."));
         return new(b[9], Wire.U16(b, 10), Wire.U16(b, 12), Wire.U16(b, 14), Wire.U16(b, 16), Wire.U16(b, 18),
-            Wire.U32(b, 20), Wire.U32(b, 24), Wire.U32(b, 28), Wire.U32(b, 32), b[36], b[37], b[38], Wire.U32(b, 44), b[50], b[51], Wire.U32(b, 52));
+            Wire.U32(b, 20), Wire.U32(b, 24), Wire.U32(b, 28), Wire.U32(b, 32), b[36], b[37], b[38], Wire.U32(b, 44), b[50], b[51], Wire.U32(b, 52), b[39]);
     }
 }
 
@@ -108,6 +110,12 @@ public sealed class InputField
     public bool Gyroscope => Motion && Usage == 4;
     public bool Accelerometer => Motion && Usage <= 3;
     public bool Pressure => DualShock3 && UsagePage == 9 && Usage is >= 5 and <= 16 && Bits == 8 && Minimum == 0 && Maximum == 255;
+    // Only the recognized PS4 control prefix gives these usages a fixed role.
+    // Other reports and ordinary HID Rx/Ry axes keep their own semantics.
+    private bool Ps4Axis => Ps4Compatible && ReportId == 1 && (Flags & 2) != 0 &&
+        UsagePage == 1 && Bits == 8 && Minimum == 0 && Maximum == 255 && (HidFlags & 7) == 2;
+    internal bool Ps4Stick => Ps4Axis && (Usage, BitOffset) is (0x30, 0) or (0x31, 8) or (0x32, 16) or (0x35, 24);
+    internal bool MinimumNeutral => Pressure || Ps4Axis && (Usage, BitOffset) is (0x33, 56) or (0x34, 64);
     public ushort Index { get; init; }
     public byte Interface { get; init; }
     public byte ReportId { get; init; }

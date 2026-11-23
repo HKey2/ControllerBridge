@@ -37,7 +37,13 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.31.0 (firmware 0.31.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.32.0 (firmware 0.32.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.32.0 — OLED display:** Adds a 64×32 OLED status display on GP6/GP7. Shared settings now offers OFF, profile name with measured output polling interval and slot index, a wrapped 30-character name with S/X mode, Detail A with controller VID/PID, IN/OUT polling intervals and input bytes per second, Detail B with hexadecimal gamepad output in a common XInput-format view, or Detail C with signed X/Y mouse output counts per second, the input-rate limit from the current polling interval (R), and actual received reports per second (S). The display defaults to OFF; firmware updates preserve an existing saved display type. Display updates follow the active profile and actual output mode. See [OLED setup and limitations](docs/oled-display.md).
+
+**0.32.0 — USB Low Speed:** Adds USB Low Speed button and D-pad input on boards with R13 removed. Low Speed input uses a dedicated button/D-pad path; analog stick, gyro, rumble and mouse output are unavailable on that connection. Rapid fire, toggle and button shift remain available. Stored profiles are retained. See [Low Speed hardware requirements](docs/compatibility.md#low-speed-and-the-unmodified-board).
+
+In the common PS4 input format, released L2/R2 values use zero as neutral. If a stick or trigger is held when button assignment starts, release it before performing the intended gesture. If an earlier incorrect assignment leaves a direction active at rest, clear and relearn that direction with the updated configurator, then save the profile. Existing saved assignments are not changed automatically.
 
 **0.31.0:** Adds common wired PS4-compatible USB input, intended especially for reusing PS4-compatible arcade sticks on Switch. Matching is based on the report format rather than the manufacturer or model ID; devices with a different format remain subject to ordinary HID support. Install the bundled firmware, then unplug and reconnect the controller at USB-A; press HOME after recognition. Use **Add controller** to create a PS4-mode profile. Existing Xbox-mode profiles remain saved and are not converted automatically. Buttons, the D-pad, both sticks and analog triggers are available; this version does not add gyro, rumble, touch gestures or audio support for these controllers. Large HID layouts retain their first 64 scalar input fields per interface; later fields are ignored without preventing connection. Existing slots and settings are retained.
 
@@ -121,7 +127,7 @@ Only one configurator instance can run. Close other bridge configuration tools w
 
 At startup and during background discovery, the tool checks firmware before reading settings. A factory-state RP2350-USB-A exposing Pico SDK USB (`2E8A:0009`), a board in RP2350 BOOT mode (`2E8A:000F`), or a detected bridge with no readable version shows **Device unsupported** and automatically opens the firmware installation guide. A readable different version opens the update guide. With no recognized board, the status is **Device not connected** and no guide opens. Cancelling the wait or declining the final confirmation keeps the unsupported status visible without repeating the guide during that connection; an observed disconnection rearms guidance for the next attachment. Background retries preserve drafts and do not repeatedly disable or repaint the editor. **Firmware update** remains available for manual installation or USB identities outside these recognized cases.
 
-New input detection never opens a registration confirmation or writes settings. Selection happens once per attachment, so later manual browsing is preserved. Unsaved edits and modal operations defer the move. A full bank shows a nonmodal no-empty-slot message only when no matching profile exists. Slots with unsaved profiles or pending deletions are protected. Registration since 0.19.0 verifies the original input connection and empty destination at both transfer start and commit; install the matching bundled firmware to use this protection.
+New input detection never opens a registration confirmation or writes settings. Selection happens once per attachment, so later manual browsing is preserved. Modal windows and ongoing operations defer the move. Pending edits are retained when an empty slot is selected. A full bank shows a nonmodal no-empty-slot message only when no matching profile exists. If settings or deletions are pending, **Add controller** asks to save before continuing. **Yes** saves all slot changes and opens registration; **No** cancels the operation and retains the edits. Registration since 0.19.0 verifies the original input connection and empty destination at both transfer start and commit; install the matching bundled firmware to use this protection.
 
 This release adds hold-to-shift button mappings. Existing 0.16.0–0.19.0 settings migrate to the new format with shift disabled, preserving the main mappings, axes, IDs, shortcuts, output settings and LED colors. Back up all slots before updating if you may need to return to older firmware: old firmware cannot read the new format. Pre-0.16.0 records remain unsupported and start with 16 unused slots. See [button shift](docs/button-shift.md).
 
@@ -132,13 +138,13 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Duplicate profile** copies into the closest unused slot below the selection and appends an available `[2]`, `[3]`, etc. to its stored name. Save the new slot to persist it.
 - **Delete profile** clears the selected slot when you save it.
 - **LED RGB settings**, below Delete profile, selects the default dim blue (0, 0, 1) or exact R/G/B values from 0 to 255. Save the slot to apply it. Black (0, 0, 0) turns the ready LED off; status notifications still take priority. A six-digit RGB code field below the spinners accepts web colors with or without a leading # and stays synchronized with the channels. The preview uses a fixed display-only gamma of 4.0; saved RGB values remain exact.
-- Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
+- Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Pending settings prompt you to save and continue. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
 - **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 5. Version-2/3 backups and individual exports are converted; version 2 has no shifted mappings. Version 1 remains unsupported.
 - **Button shift…**, in the mapping editor, learns one to three physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
 - **Shared settings** saves common thresholds, timings, sensitivity, inertia tuning and S/X host mode. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.
 
-Selecting an output tab edits the profile. Choose **Save settings to device** to persist it. A single click in the list opens a profile for editing. Double-click another saved profile for the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. Profiles with unsaved edits or for another controller cannot be activated this way.
+Selecting an output tab edits the profile. Choose **Save settings to device** to persist it. A single click in the list opens a profile for editing. Double-click another saved profile for the connected controller to activate it and move the **Connected** marker. **Use this profile** performs the same action. Pending settings prompt you to save and continue. Profiles for another controller cannot be activated this way.
 
 | Output tab | Behavior |
 |---|---|
@@ -156,7 +162,7 @@ Internal input processing refers to the bridge's work between receiving input an
 
 Start with the [user guide](docs/configurator-guide.md). The [documentation index](docs/README.md) also links the current storage/protocol reference, GPIO porting instructions, LED behavior, compatibility limits, and verification results.
 
-The standard input path supports one directly connected Full Speed device, four HID interfaces, eight IN endpoints, 64-byte input packets, and 256 observed fields. Hubs, Bluetooth, Low Speed/High Speed, HID array inputs, and arbitrary vendor initialization are outside the supported scope.
+The standard input path supports one directly connected Full Speed device, four HID interfaces, eight IN endpoints, 64-byte input packets, and 256 observed fields. A separate Low Speed input path for R13-removed boards handles HID button and D-pad inputs in packets up to 8 bytes. Supported Low Speed controllers include the retro freak standard controller and the retro-bit GENERATIONS bundled controller; both require a registered profile. See the [hardware requirements and input limits](docs/compatibility.md#low-speed-and-the-unmodified-board). Hubs, Bluetooth, High Speed, HID array inputs, and arbitrary vendor initialization are outside the supported scope. Low Speed remains unavailable on the original board with R13 fitted.
 
 EGRET controls, X68000 Z JOYCARD controls, and wired M30 Switch-compatible input have been tested. Cyber Stick input has been observed, but game-specific analog play remains unverified. The Xbox 360-format backend is implemented without physical-input verification. Combined output can depend on the game's player assignment. **Combat School movement speed remains unresolved.** See [compatibility and limits](docs/compatibility.md).
 
@@ -193,13 +199,13 @@ Allocation figures for the current firmware, calculated from its binary and link
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 184,708; persistent storage 49,152 | 1,863,292 |
-| SRAM, 532,480 bytes | Static data 165,652; two stacks 8,192 | 358,636 |
+| Flash, 2,097,152 bytes | Code/initial values 201,716; persistent storage 49,152 | 1,846,284 |
+| SRAM, 532,480 bytes | Static data 167,020; two stacks 8,192 | 357,268 |
 | One bank copy, 16,384 bytes | Payload 14,164 + header 16 | 2,204 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
-| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode records 180 | 3,852 |
+| Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode/display records 196 | 3,836 |
 
-Static SRAM consists of vector table 272, initialized data 43,608, and BSS 121,772 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 369,664 bytes.
+Static SRAM consists of vector table 272, initialized data 44,632, and BSS 122,116 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 403,456 bytes.
 
 ## Repository contents and license
 

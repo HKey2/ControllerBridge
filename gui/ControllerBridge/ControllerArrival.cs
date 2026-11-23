@@ -23,7 +23,7 @@ internal sealed class ControllerArrivalTracker
         InputConnection current = InputConnection.From(caps);
         if (handled == current) return -1;
         if (hasProfile) { handled = current; return -1; }
-        // Keep the arrival pending while an editor is open, drafts exist, the
+        // Keep the arrival pending while a modal editor is open, the
         // snapshot is stale, or no usable slot is available.
         if (!allowed || emptySlot < 0) return -1;
         handled = current;

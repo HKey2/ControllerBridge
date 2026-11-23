@@ -46,10 +46,11 @@ target_link_libraries(controller_bridge PUBLIC controller_usb controller_device 
 target_compile_options(controller_bridge PRIVATE -Wall -Wextra -Werror)
 
 add_executable(ControllerBridge apps/egret_switch/main.c apps/egret_switch/egret_switch_profile.c
-    apps/egret_switch/status_led.c apps/egret_switch/switch_output.c apps/egret_switch/xinput_feedback.c)
+    apps/egret_switch/status_led.c apps/egret_switch/status_oled.c apps/egret_switch/oled_text.c apps/egret_switch/oled_output.c
+    apps/egret_switch/switch_output.c apps/egret_switch/xinput_feedback.c)
 target_include_directories(ControllerBridge PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 pico_generate_pio_header(ControllerBridge ${CMAKE_CURRENT_LIST_DIR}/apps/egret_switch/status_led.pio)
-target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore pico_unique_id hardware_watchdog hardware_pio)
+target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore pico_unique_id hardware_watchdog hardware_pio hardware_i2c)
 target_compile_options(ControllerBridge PRIVATE -Wall -Wextra -Werror)
 target_compile_definitions(ControllerBridge PRIVATE PICO_STACK_SIZE=4096 PICO_CORE1_STACK_SIZE=4096)
 pico_enable_stdio_usb(ControllerBridge 0)

@@ -65,7 +65,12 @@ bool ud_secondary_cancel_repeat(void);
 // Atomically reject a mouse packet prepared for a superseded SET_PROTOCOL.
 uint8_t ud_mouse_protocol(bool secondary);
 bool ud_mouse_send(bool secondary,bool report_protocol,const uint8_t *data,uint16_t length,uint32_t cookie,uint32_t *armed_us);
+// Core 0 only: copy the current input-report cache, up to capacity bytes.
+// Zero while unavailable or in mouse-only mode. USB IRQs only read this cache.
+uint8_t ud_input_snapshot(uint8_t *data,uint8_t capacity);
 void ud_statistics_get(ud_statistics *out);
+// Changes on init/reset/suspend/disconnect, never on individual USB polls.
+uint32_t ud_bus_generation(void);
 // Disable USB callbacks and remove the pull-up. A later ud_init reconnects.
 void ud_disconnect(void);
 bool ud_auxiliary_send(const uint8_t *data, uint16_t length);

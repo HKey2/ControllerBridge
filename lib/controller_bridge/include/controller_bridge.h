@@ -106,6 +106,8 @@ void ub_direction_sent(ub_direction_pulse *pulse,uint8_t edge,uint32_t cookie);
 // Return an edge only on its first successful completion. Failed transfers can
 // be retried; stale completions after reset never start a hold timer.
 uint8_t ub_direction_complete(ub_direction_pulse *pulse,uint8_t edge,uint32_t cookie,uint32_t now,bool success);
+// Core 0: changes on every Flash write, including profile and measurement saves.
+uint32_t ub_store_write_generation(void);
 bool ub_store_load(unsigned slot, void *data, uint32_t bytes);
 bool ub_store_load_legacy_bank(unsigned copy, void *data, uint32_t bytes);
 bool ub_store_save(unsigned slot, const void *data, uint32_t bytes, bool host_running);

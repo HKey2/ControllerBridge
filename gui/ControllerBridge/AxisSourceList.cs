@@ -59,7 +59,7 @@ internal sealed class AxisSourceList : TableLayoutPanel
                 AxisSelection.Matches(tile.Field, selection.Halves[0]), AxisSelection.Matches(tile.Field, selection.Halves[1]));
     }
     internal void RefreshValue(InputField field) => tiles.FirstOrDefault(t => ReferenceEquals(t.Field, field))?.RefreshValue();
-    internal static int Midpoint(InputField field) => field.Pressure ? field.Minimum : field.Minimum < 0 && field.Maximum > 0 ? 0 :
+    internal static int Midpoint(InputField field) => field.MinimumNeutral ? field.Minimum : field.Minimum < 0 && field.Maximum > 0 ? 0 :
         (int)(field.Minimum + ((long)field.Maximum - field.Minimum + 1) / 2);
     internal static double Position(InputField field, int value)
     {
