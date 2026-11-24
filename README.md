@@ -20,6 +20,7 @@
 - Customizable RGB LED colors for each profile.
 - Standalone operation after setup—no PC required during play.
 - Profile backup and restore.
+- In Shared settings, use the bottom-left **Save** button to save the displayed settings to a JSON file, and **Restore** to load them into the editor. Choose **Save to device** to apply them. Host mode and display type are included.
 
 ## Notice
 We have removed the feature—introduced in v0.23.0—that swapped the A/B and X/Y button labels when in "X Mode."
@@ -37,7 +38,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.32.0 (firmware 0.32.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.32.0 - GUI r2 (firmware 0.32.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
 **0.32.0 — OLED display:** Adds a 64×32 OLED status display on GP6/GP7. Shared settings now offers OFF, profile name with measured output polling interval and slot index, a wrapped 30-character name with S/X mode, Detail A with controller VID/PID, IN/OUT polling intervals and input bytes per second, Detail B with hexadecimal gamepad output in a common XInput-format view, or Detail C with signed X/Y mouse output counts per second, the input-rate limit from the current polling interval (R), and actual received reports per second (S). The display defaults to OFF; firmware updates preserve an existing saved display type. Display updates follow the active profile and actual output mode. See [OLED setup and limitations](docs/oled-display.md).
 
@@ -139,7 +140,7 @@ The board stores **16 slots**, including multiple settings for one controller. E
 - **Delete profile** clears the selected slot when you save it.
 - **LED RGB settings**, below Delete profile, selects the default dim blue (0, 0, 1) or exact R/G/B values from 0 to 255. Save the slot to apply it. Black (0, 0, 0) turns the ready LED off; status notifications still take priority. A six-digit RGB code field below the spinners accepts web colors with or without a leading # and stays synchronized with the channels. The preview uses a fixed display-only gamma of 4.0; saved RGB values remain exact.
 - Drag a profile, or use `Alt+Up` / `Alt+Down`, to reorder saved slots. Pending settings prompt you to save and continue. Completed moves save immediately and carry IDs, shortcuts, and selections with them.
-- **Back up all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 5. Version-2/3 backups and individual exports are converted; version 2 has no shifted mappings. Version 1 remains unsupported.
+- **Save all slots** and **Restore all slots** handle the whole bank in one JSON file. Current backups use `ControllerBridge.Slots`, JSON version 5. Version-2/3 backups and individual exports are converted; version 2 has no shifted mappings. Version 1 remains unsupported.
 - **Button shift…**, in the mapping editor, learns one to three physical keys. Holding all keys activates a button-only shifted page; unchanged outputs inherit the main mapping. Choose **Apply to draft**, then save the slot. All four axes stay common. See the [shift guide](docs/button-shift.md) for consumption, remapping and shortcut rules.
 - **Shared settings** saves common thresholds, timings, sensitivity, inertia tuning and S/X host mode. **Conversion mapping** edits targets, modes, rotation steps and inertia enable in the selected profile draft. See [settings](docs/configurator-guide.md#conversion-mapping-and-shared-settings).
 - **Profile switching...** configures a roughly one-second BOOT hold or a controller shortcut. The selected profile is retained across reconnections.

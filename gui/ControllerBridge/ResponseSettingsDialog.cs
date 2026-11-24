@@ -8,7 +8,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         holdThreshold = Number(1, 127), inertiaThreshold = Number(1, 65535), inertiaDecay = Number(0, .99m),
         inertiaInterval = Number(1, 1000), rollingGain = Number(.1m, 10m);
     private readonly Label status = Ui.Label("", 9);
-    private readonly Button save, cancel;
+    private readonly Button save, cancel, saveFile, restoreFile;
     private readonly TableLayoutPanel values;
     private bool saving;
     private readonly ComboBox displayType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
@@ -25,14 +25,15 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist, bool supportsRumble = false)
     {
         original = Result = current; this.persist = persist;
-        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 930));
-        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 4 };
-        root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.Percent, 100));
+        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 890));
+        TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 3 };
+        root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
-        Label hint = Ui.Label(L.T("全プロファイル共通です。変換先・モード・回転刻みは、各プロファイルの「方向変換の割り当て」で設定します。",
-            "Shared by all profiles. Set targets, modes and rotation steps in each profile's Conversion mapping."), 9);
-        hint.MaximumSize = new(560, 0); hint.ForeColor = Ui.Muted; root.Controls.Add(hint, 0, 0);
-        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty, Padding = new(0, 10, 0, 0) };
+        saveFile = Ui.Button(L.T("保存", "Save"), (_, _) => SaveFile());
+        restoreFile = Ui.Button(L.T("復帰", "Restore"), (_, _) => RestoreFile());
+        saveFile.AccessibleDescription = L.T("画面の共通設定をファイルに保存", "Save the displayed shared settings to a file");
+        restoreFile.AccessibleDescription = L.T("ファイルから共通設定を編集画面に復帰", "Restore shared settings from a file into the editor");
+        values = new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 5, Margin = Padding.Empty, Padding = Padding.Empty };
         values.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 5; i++) values.RowStyles.Add(new(SizeType.AutoSize));
         TableLayoutPanel Group(string title, int row)
@@ -106,11 +107,18 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             status.Visible = true;
             status.Text = L.T("旧設定が編集範囲を超えているため、表示値を編集範囲へ収めています。デバイスへの変更は保存時に行います。", "Older values exceed the editing range. Displayed values are clamped; the device changes only when you save.");
         }
-        root.Controls.Add(values, 0, 1); root.Controls.Add(status, 0, 2);
-        FlowLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        root.Controls.Add(values, 0, 0); root.Controls.Add(status, 0, 1);
+        TableLayoutPanel footer = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 5, RowCount = 1, Margin = Padding.Empty };
+        footer.ColumnStyles.Add(new(SizeType.AutoSize)); footer.ColumnStyles.Add(new(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new(SizeType.AutoSize)); footer.ColumnStyles.Add(new(SizeType.AutoSize));
+        footer.RowStyles.Add(new(SizeType.AutoSize));
         save = Ui.Button(L.T("デバイスに保存", "Save to device"), async (_, _) => await SaveSettings(), true);
         cancel = Ui.Button(L.T("キャンセル", "Cancel"), (_, _) => { DialogResult = DialogResult.Cancel; Close(); });
-        footer.Controls.Add(save); footer.Controls.Add(cancel); root.Controls.Add(footer, 0, 3); AcceptButton = save; CancelButton = cancel;
+        foreach (Button button in new[] { saveFile, restoreFile, cancel, save }) button.Dock = DockStyle.Fill;
+        footer.Controls.Add(saveFile, 0, 0); footer.Controls.Add(restoreFile, 1, 0);
+        footer.Controls.Add(cancel, 3, 0); footer.Controls.Add(save, 4, 0);
+        root.Controls.Add(footer, 0, 2); AcceptButton = save; CancelButton = cancel;
         editors = [threshold, hold, wait, holdThreshold, inertiaThreshold, inertiaDecay, inertiaInterval, rollingGain];
         initialValues = editors.Select(control => control.Value).ToArray();
         foreach (NumericUpDown control in editors)
@@ -123,6 +131,53 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton(); hostAuto.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
         FormClosing += (_, e) => { if (saving) e.Cancel = true; }; Controls.Add(root); Ui.ThemeInputs(this);
+    }
+    private MouseUdlrSettings ReadEditors()
+    {
+        ValidateChildren();
+        return original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
+            Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value,
+            InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
+            Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), DisplayType = SelectedDisplayType,
+            HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
+    }
+    private void SaveFile()
+    {
+        if (saving) return;
+        using SaveFileDialog dialog = new() { Filter = SharedSettingsFile.Filter, DefaultExt = "json", AddExtension = true,
+            OverwritePrompt = true, Title = L.T("共通設定を保存", "Save shared settings"),
+            FileName = $"ControllerBridge-shared-{DateTime.Now:yyyyMMdd-HHmmss}.json" };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            SharedSettingsFile.Save(dialog.FileName, ReadEditors());
+            status.Text = L.T("画面の共通設定をファイルに保存しました。", "Saved the displayed shared settings to a file.");
+            status.Visible = true;
+        }
+        catch (Exception ex) { Ui.Error(this, ex); }
+    }
+    private void RestoreFile()
+    {
+        if (saving) return;
+        using OpenFileDialog dialog = new() { Filter = SharedSettingsFile.Filter, Title = L.T("共通設定を復帰", "Restore shared settings") };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            // Validate the complete file before changing any editor. Hidden legacy
+            // conversion fields come from this device, never from a settings file.
+            MouseUdlrSettings loaded = SharedSettingsFile.Load(dialog.FileName, original, hostPro.Enabled);
+            threshold.Value = loaded.Threshold; hold.Value = loaded.HoldMs; wait.Value = loaded.WaitMs;
+            holdThreshold.Value = loaded.TrackballHoldThreshold; inertiaThreshold.Value = loaded.InertiaThreshold;
+            inertiaDecay.Value = loaded.InertiaDecayPercent / 100m; inertiaInterval.Value = loaded.InertiaIntervalMs;
+            rollingGain.Value = loaded.RollingGain10 / 10m;
+            hostS.Checked = loaded.HostMode == 0; hostX.Checked = loaded.HostMode == 1;
+            hostAuto.Checked = loaded.HostMode == 2; hostPro.Checked = loaded.HostMode == 3;
+            displayType.SelectedItem = displayType.Items.Cast<DisplayTypes.Choice>().Single(item => item.Id == loaded.DisplayType);
+            UpdateSaveButton();
+            status.Text = L.T("共通設定を画面に復帰しました。「デバイスに保存」で反映します。", "Restored shared settings into the editor. Choose “Save to device” to apply them.");
+            status.Visible = true;
+        }
+        catch (Exception ex) { Ui.Error(this, ex); }
     }
     private bool HasChanges()
     {
@@ -146,16 +201,14 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         bool close = false;
         try
         {
-            MouseUdlrSettings next = original with { Threshold = (uint)threshold.Value, HoldMs = (uint)hold.Value, WaitMs = (uint)wait.Value,
-                Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value, InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
-                Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), DisplayType = SelectedDisplayType, HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
-            saving = true; values.Enabled = save.Enabled = cancel.Enabled = false;
+            MouseUdlrSettings next = ReadEditors();
+            saving = true; values.Enabled = save.Enabled = cancel.Enabled = saveFile.Enabled = restoreFile.Enabled = false;
             MouseUdlrSettings actual = await persist(original, next);
             if (actual != next) throw new IOException(L.T("保存結果が一致しません。", "Saved values do not match."));
             Result = actual; Saved = close = true;
         }
         catch (Exception ex) { status.Text = ex.Message; status.Visible = true; }
-        finally { saving = false; values.Enabled = cancel.Enabled = true; UpdateSaveButton(); }
+        finally { saving = false; values.Enabled = cancel.Enabled = saveFile.Enabled = restoreFile.Enabled = true; UpdateSaveButton(); }
         if (close) { DialogResult = DialogResult.OK; Close(); }
     }
 }

@@ -7,9 +7,9 @@ internal sealed record ConnectionStatus(ConnectionKind Kind, string DeviceKey = 
     internal string NoticeKey => $"{Kind}:{DeviceKey}:{Version}";
     internal string Summary => Kind switch
     {
-        ConnectionKind.DifferentFirmware => L.F("デバイス 接続済み • ファームウェア v{0} • 更新が必要です", "Device connected • Firmware v{0} • Update required", Version!),
-        ConnectionKind.UnknownFirmware => L.T("デバイス 未対応 • ファームウェアの書き込みが必要です", "Device unsupported • Firmware installation required"),
-        _ => L.T("デバイス 未接続 • USB-CでPCに接続してください。", "Device not connected • Connect USB-C to this PC.")
+        ConnectionKind.DifferentFirmware => L.F("デバイス 接続済み\nファームウェア v{0}\n更新が必要です", "Device connected\nFirmware v{0}\nUpdate required", Version!),
+        ConnectionKind.UnknownFirmware => L.T("デバイス 未対応\nファームウェアの書き込みが必要です", "Device unsupported\nFirmware installation required"),
+        _ => L.T("デバイス 未接続\nUSB-CでPCに接続してください。", "Device not connected\nConnect USB-C to this PC.")
     };
     internal string Guidance(string bundled) => Kind switch
     {

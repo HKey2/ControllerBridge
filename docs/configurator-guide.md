@@ -99,7 +99,7 @@ The 16 slots form one saved settings set. A profile is one part of that set. **S
 
 ## Backup and restore
 
-- **Back up all slots** saves all 16 persisted slots, their order, IDs, shortcuts, and selections to one JSON file.
+- **Save all slots** saves all 16 persisted slots, their order, IDs, shortcuts, and selections to one JSON file.
 - **Restore all slots** validates the file, asks for confirmation, replaces the bank, and reads it back for verification.
 
 Per-profile output modes, button behavior, shift settings, and LED colors are included. Common diagnostic settings and saved measurements are separate. Save or discard drafts before either operation.

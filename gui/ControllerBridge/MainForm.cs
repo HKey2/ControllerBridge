@@ -37,13 +37,13 @@ internal sealed partial class MainForm : Form
     private readonly CheckBox invertY = new() { Text = L.T("Y方向を反転", "Invert Y"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly BufferedTableLayoutPanel pointingTuning;
     private readonly ComboBox paddleAxis = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 88, Anchor = AnchorStyles.Left, AccessibleName = L.T("パドルの出力軸", "Paddle output axis") };
-    private readonly CheckBox trackballKeys = new DarkCheckBox() { Text = L.T("↑↓←→に変換", "Convert to ↑↓←→"), AutoSize = true, Anchor = AnchorStyles.Left };
-    private readonly CheckBox paddleKeys = new DarkCheckBox() { Text = L.T("変換を有効", "Enable conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox trackballKeys = new DarkCheckBox() { Text = L.T("方向変換を有効", "Enable direction conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox paddleKeys = new DarkCheckBox() { Text = L.T("方向変換を有効", "Enable direction conversion"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertPaddle = new() { Text = L.T("回転方向を反転", "Reverse rotation"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton mouseButtons = new() { Text = L.T("マウス扱い", "Mouse"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly RadioButton gamepadButtons = new() { Text = L.T("コントローラー扱い", "Controller"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly FlowLayoutPanel buttonBehavior = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = Padding.Empty };
-    private readonly Label connection = Ui.Label(L.T("デバイスのUSB-CをPCへ接続してください。", "Connect the bridge's USB-C port to this PC."), 10);
+    private readonly ConnectionStatusPanel connection = new() { Text = L.T("デバイスのUSB-CをPCへ接続してください。", "Connect the bridge's USB-C port to this PC.") };
     private string connectionDetail = "";
     private readonly Label live = Ui.Label(L.T("入力: —", "Input: —"), 9);
     private readonly Label identity = Ui.Label("", 9);
@@ -98,7 +98,7 @@ internal sealed partial class MainForm : Form
         files.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) files.RowStyles.Add(new(SizeType.AutoSize));
         files.Controls.Add(Ui.Label(L.T("保存／復帰", "Backup / Restore"), 12, true), 0, 0);
-        backup = Ui.Button(L.T("全スロットをバックアップ", "Back up all slots"), async (_, _) => await BackupAll());
+        backup = Ui.Button(L.T("全スロットを保存", "Save all slots"), async (_, _) => await BackupAll());
         restore = Ui.Button(L.T("全スロットを復帰", "Restore all slots"), async (_, _) => await RestoreAll());
         backup.Dock = restore.Dock = DockStyle.Fill; files.Controls.Add(backup, 0, 1); files.Controls.Add(restore, 0, 2); left.Controls.Add(files, 0, 1);
 
@@ -256,10 +256,13 @@ internal sealed partial class MainForm : Form
     }
     private static void SetText(Control control, string value) { if (control.Text != value) control.Text = value; }
     private void SetTip(Control control, string value) { if (tips.GetToolTip(control) != value) tips.SetToolTip(control, value); }
-    private void SetConnectionDetail(string value) { connectionDetail = value; SetTip(connection, value); }
+    private void SetConnectionDetail(string value)
+    {
+        connectionDetail = value; SetTip(connection, value);
+    }
     private void SizeSlotRows()
     {
-        using Graphics g = slots.CreateGraphics(); using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f);
+        using Graphics g = slots.CreateGraphics(); using Font small = new(Font.FontFamily, Font.SizeInPoints * .9f + 2, FontStyle.Bold);
         slots.ItemHeight = Math.Max(LogicalToDeviceUnits(58), TextRenderer.MeasureText(g, "Agあ", Font).Height + TextRenderer.MeasureText(g, "Agあ", small).Height + LogicalToDeviceUnits(16));
         slots.EnsureVisible(selected);
     }
@@ -287,8 +290,25 @@ internal sealed partial class MainForm : Form
         Rectangle second = new(e.Bounds.X + pad, first.Bottom + LogicalToDeviceUnits(3), textWidth, e.Bounds.Bottom - first.Bottom - LogicalToDeviceUnits(7));
         string title = $"{e.Index + 1:00}  {ProfileSlots.Name(profiles, e.Index)}" + (dirty[e.Index] ? " *" : "");
         TextRenderer.DrawText(e.Graphics, title, titleFont, first, p.Enabled ? Ui.Ink : Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-        string sub = p.Enabled ? $"{p.Vid:X4}:{p.Pid:X4}" + (connected ? L.T("   接続中", "   Connected") : "") : "";
-        TextRenderer.DrawText(e.Graphics, sub, small, second, Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        string sub = p.Enabled ? $"{p.Vid:X4}:{p.Pid:X4}" : "";
+        TextRenderer.DrawText(e.Graphics, sub, small, second, Ui.Muted, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter);
+        if (connected)
+        {
+            using Font connectedFont = new(small.FontFamily, small.SizeInPoints + 2, FontStyle.Bold);
+            int idWidth = TextRenderer.MeasureText(e.Graphics, sub, small).Width;
+            const TextFormatFlags connectionFlags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            string connectionText = L.T("接続中", "Connected");
+            int textWidthConnected = TextRenderer.MeasureText(e.Graphics, connectionText, connectedFont, Size.Empty, connectionFlags).Width;
+            int lineWidth = Math.Max(1, TextRenderer.MeasureText(e.Graphics, "接続中", connectedFont, Size.Empty, connectionFlags).Width / 2);
+            int start = second.Left + idWidth + LogicalToDeviceUnits(8), gap = LogicalToDeviceUnits(6);
+            int lineY = second.Top + second.Height / 2;
+            using Pen connectionLine = new(Ui.Muted, LogicalToDeviceUnits(1));
+            e.Graphics.DrawLine(connectionLine, start, lineY, start + lineWidth, lineY);
+            Rectangle connectionArea = new(start + lineWidth + gap, second.Top, textWidthConnected, second.Height);
+            TextRenderer.DrawText(e.Graphics, connectionText, connectedFont, connectionArea, Ui.Muted, connectionFlags);
+            int trailing = connectionArea.Right + gap;
+            e.Graphics.DrawLine(connectionLine, trailing, lineY, trailing + lineWidth, lineY);
+        }
         if (connected)
         {
             int inset = LogicalToDeviceUnits(2);
@@ -376,7 +396,7 @@ internal sealed partial class MainForm : Form
         trackballKeys.Enabled = enabled && !working && conversionAvailable && trackballOn.Checked;
         paddleKeys.Enabled = enabled && !working && conversionAvailable && paddleOn.Checked;
         paddleAxis.Enabled = enabled && !working && !SelectedButtonsOnly && paddleOn.Checked;
-        paddleKeys.Text = L.T("変換を有効", "Enable conversion");
+        paddleKeys.Text = L.T("方向変換を有効", "Enable direction conversion");
         mouseButtons.Enabled = gamepadButtons.Enabled = enabled && !working && (caps?.SupportsProfileOutput == true);
         useProfile.Enabled = CanUseSelectedProfile;
     }
@@ -502,10 +522,10 @@ internal sealed partial class MainForm : Form
     private void UpdateConnection()
     {
         if (caps is null) return;
-        string connectionText = caps.Connected ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel} {caps.FieldCount}項目", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4}  •  {caps.ProtocolLabel}, {caps.FieldCount} fields") :
-            caps.Vid != 0 ? L.T($"デバイス 接続済み  •  入力 {caps.Vid:X4}:{caps.Pid:X4} を検出", $"Device connected  •  Input {caps.Vid:X4}:{caps.Pid:X4} detected") :
-            L.T("デバイス 接続済み  •  入力コントローラーをUSB-Aへ接続してください。", "Device connected  •  Connect an input controller to USB-A.");
-        connectionText += L.T("  •  出力 ", "  •  Output ") + OutputPresentation.ModeLabel;
+        string connectionText = caps.Connected ? L.T($"デバイス 接続済み\n入力 {caps.Vid:X4}:{caps.Pid:X4}\n{caps.ProtocolLabel} {caps.FieldCount}項目", $"Device connected\nInput {caps.Vid:X4}:{caps.Pid:X4}\n{caps.ProtocolLabel}, {caps.FieldCount} fields") :
+            caps.Vid != 0 ? L.T($"デバイス 接続済み\n入力 {caps.Vid:X4}:{caps.Pid:X4} を検出", $"Device connected\nInput {caps.Vid:X4}:{caps.Pid:X4} detected") :
+            L.T("デバイス 接続済み\n入力コントローラーをUSB-Aへ接続してください。", "Device connected\nConnect an input controller to USB-A.");
+        connectionText += L.T("\n出力 ", "\nOutput ") + OutputPresentation.ModeLabel;
         string stateText = !caps.Connected ? WaitingState(caps) : caps.InvalidBinding ? L.T("入力形式が保存済みの割り当てと一致しません。再登録してください。", "The input layout does not match the saved mapping. Register the controller again.") :
             caps.ActiveSlot < profiles.Length ? L.T($"スロット {caps.ActiveSlot + 1} を使用中", $"Slot {caps.ActiveSlot + 1} is active") :
             L.T("このコントローラーに一致するプロファイルがありません。未使用スロットから追加してください。", "This controller has no matching profile. Use an empty slot to add it.");
@@ -841,12 +861,12 @@ internal sealed partial class MainForm : Form
     private async Task BackupAll()
     {
         if (!GetSaveState().CanTransfer || bridge is null) return;
-        if (!await SaveBeforeAction(L.T("全スロットをバックアップ", "Back up all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
+        if (!await SaveBeforeAction(L.T("全スロットを保存", "Save all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
         using SaveFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), FileName = $"ControllerBridge-slots-{DateTime.Now:yyyyMMdd-HHmmss}.json", OverwritePrompt = true };
         tips.Hide(backup);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         working = true; UpdateEnabled(); await WaitForPoll();
-        try { SlotBackup.Save(dialog.FileName, await ReadCurrentBank()); SetText(saved, L.T("全16スロットと切替設定をバックアップしました。", "Backed up all 16 slots and profile switching settings.")); }
+        try { SlotBackup.Save(dialog.FileName, await ReadCurrentBank()); SetText(saved, L.T("全16スロットと切替設定をファイルに保存しました。", "Saved all 16 slots and profile switching settings to a file.")); }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
