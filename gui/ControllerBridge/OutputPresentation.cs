@@ -1,7 +1,7 @@
 namespace ControllerBridge;
 
-// Output names identify saved assignments and stay fixed in every host mode.
-// Mode changes must never rename, reorder or rewrite saved or unsaved mappings.
+// Canonical output names identify fixed assignment IDs. The user-selected
+// profile label set changes presentation only, independently of the host mode.
 internal static class OutputPresentation
 {
     internal static uint HostMode { get; set; }

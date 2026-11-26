@@ -115,6 +115,8 @@ internal sealed partial class MappingEditor : UserControl
     private readonly Label detail;
     private readonly Button clear;
     private readonly Button rapid, toggle;
+    private readonly ComboBox? labelSystem;
+    private bool refreshingLabels;
     private readonly ToolTip tips = new() { AutoPopDelay = 15000 };
     private ButtonLearner? learner;
     private int selected = -1;
@@ -150,10 +152,32 @@ internal sealed partial class MappingEditor : UserControl
         TableLayoutPanel heading = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1 };
         heading.ColumnStyles.Add(new(SizeType.Percent, 100)); heading.ColumnStyles.Add(new(SizeType.AutoSize));
         outputHeading = Ui.Label(mouseMode ? L.T("1  マウスの出力ボタンを選択", "1  Select a mouse output button") : L.T("1. コンソール側の対応ボタンを選択", "1. Select the corresponding console button"), 12, true);
-        heading.Controls.Add(outputHeading, 0, 0);
+        if (!mouseMode && !shiftPage)
+        {
+            TableLayoutPanel headingText = new() { Dock = DockStyle.Fill, AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            headingText.ColumnStyles.Add(new(SizeType.Percent, 100));
+            headingText.RowStyles.Add(new(SizeType.AutoSize)); headingText.RowStyles.Add(new(SizeType.AutoSize));
+            Label labelHint = Ui.Label(L.T("中央のリストで各コンソール向けにボタン表記変更", "Change console button labels in the center list"), 10);
+            labelHint.ForeColor = Ui.Muted;
+            void AlignHint()
+            {
+                if (!outputHeading.IsHandleCreated || !labelHint.IsHandleCreated) return;
+                using Graphics graphics = outputHeading.CreateGraphics();
+                int prefixWidth = TextRenderer.MeasureText(graphics, "1. ", outputHeading.Font, Size.Empty,
+                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
+                labelHint.Margin = new(outputHeading.Margin.Left + prefixWidth, 0, outputHeading.Margin.Right, 3);
+            }
+            labelHint.HandleCreated += (_, _) => AlignHint();
+            outputHeading.FontChanged += (_, _) => AlignHint();
+            outputHeading.DpiChangedAfterParent += (_, _) => AlignHint();
+            headingText.Controls.Add(outputHeading, 0, 0); headingText.Controls.Add(labelHint, 0, 1);
+            heading.Controls.Add(headingText, 0, 0);
+        }
+        else heading.Controls.Add(outputHeading, 0, 0);
         rapid = Ui.Button(L.T("連射設定…", "Rapid fire…"), (_, _) => EditRapidFire());
         toggle = Ui.Button(L.T("トグル設定…", "Toggle…"), (_, _) => EditToggle());
-        shift = Ui.Button(L.T("シフト設定…", "Button shift…"), (_, _) => EditShift()); shift.Visible = !shiftPage;
+        shift = Ui.Button(L.T("シフト設定…", "Button shift…"), (_, _) => EditShift()); shift.Visible = !shiftPage; ((DarkButton)shift).LeftStripeColor = Ui.ShiftOutline;
         FlowLayoutPanel actions = new() { AutoSize = true, Anchor = AnchorStyles.Right, WrapContents = false };
         actions.Controls.Add(rapid); actions.Controls.Add(toggle); actions.Controls.Add(shift); heading.Controls.Add(actions, 1, 0); root.Controls.Add(heading, 0, 0);
         rapid.Visible = toggle.Visible = !mouseMode;
@@ -171,16 +195,27 @@ internal sealed partial class MappingEditor : UserControl
         // Equal fixed cell dimensions keep buttons square instead of stretching
         // with the window. WinForms scales both dimensions with the monitor DPI.
         buttonGrid = grid;
-        for (int c = 0; c < grid.ColumnCount; c++) grid.ColumnStyles.Add(new(SizeType.Absolute, mouseMode ? 170 : 56));
-        for (int r = 0; r < grid.RowCount; r++) grid.RowStyles.Add(new(SizeType.Absolute, mouseMode ? 72 : 56));
+        for (int c = 0; c < grid.ColumnCount; c++) grid.ColumnStyles.Add(!mouseMode && c == 5 ? new(SizeType.AutoSize) : new(SizeType.Absolute, mouseMode ? 170 : c == 7 ? 16 : 56));
+        for (int r = 0; r < grid.RowCount; r++) grid.RowStyles.Add(!mouseMode && r == 2 ? new(SizeType.AutoSize) : new(SizeType.Absolute, mouseMode ? 72 : 56));
         for (int row = 0; row < grid.RowCount; row++)
         for (int column = 0; column < grid.ColumnCount; column++)
         {
             int i = layout[row, column]; if (i < 0) continue;
-            Button b = Ui.Button(""); b.AutoSize = false; b.Dock = DockStyle.Fill; b.MinimumSize = Size.Empty;
-            b.Padding = new(2); b.Font = new Font(i == 12 ? "Segoe UI Symbol" : L.FontFamily, i == 12 ? 16 : i is 10 or 11 or 13 ? 9 : 11, FontStyle.Bold);
+            Button b = Ui.Button(""); b.AutoSize = false; b.MinimumSize = Size.Empty; b.Margin = Padding.Empty;
+            ((DarkButton)b).MappingFrame = true;
+            ((DarkButton)b).FitLabelText = !mouseMode && i is 8 or 9;
+            if (mouseMode) b.Dock = DockStyle.Fill;
+            else { b.Size = new(56, 56); b.Anchor = row == 2 ? AnchorStyles.Bottom : AnchorStyles.None; }
+            b.Padding = new(2); b.Font = new Font(L.FontFamily, 10, FontStyle.Bold);
             b.Click += (_, _) => SelectButton(i);
             buttons[i] = b; grid.Controls.Add(b, column, row);
+        }
+        if (!mouseMode)
+        {
+            labelSystem = new ButtonNameComboBox { Anchor = AnchorStyles.None, Margin = new(12, 4, 12, 4),
+                AccessibleName = L.T("ボタン表記", "Button labels") };
+            labelSystem.SelectedIndexChanged += (_, _) => ChangeLabelSystem();
+            grid.Controls.Add(labelSystem, 4, 2); grid.SetColumnSpan(labelSystem, 4);
         }
         root.Controls.Add(grid, 0, 1);
         TableLayoutPanel guide = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 2, Padding = new(6), BackColor = Ui.Selected };
@@ -240,6 +275,13 @@ internal sealed partial class MappingEditor : UserControl
         if (mouseMode) SetNavigationMode(false);
         ResumeLayout(true);
     }
+    private void ChangeLabelSystem()
+    {
+        if (refreshingLabels || !profile.Enabled || shiftPage || labelSystem?.SelectedItem is not ButtonLabels.SystemChoice choice || profile.ButtonLabelSystem == choice.Id) return;
+        AbortLearning(); profile.ButtonLabelSystem = choice.Id; UpdateButtons();
+        if (selected >= 0) { instruction.Text = TargetName(selected) + " ← " + Binding(selected); detail.Visible = true; }
+        Modified?.Invoke(this, EventArgs.Empty);
+    }
     public void SetNavigationMode(bool enabled)
     {
         if (!mouseMode) return;
@@ -268,10 +310,10 @@ internal sealed partial class MappingEditor : UserControl
     }
     public async void SelectButton(int index)
     {
-        if (index == 13 && OutputPresentation.XInput) return;
+        if (index is < 0 or >= 18) return;
         int request = ++learningRequest; selected = index; learner = null; UpdateButtons();
         if (!profile.Enabled) { instruction.Text = L.T("先に「コントローラーを追加」を選んでください。", "Choose “Add controller” first."); return; }
-        if (!canLearn) { instruction.Text = L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."); detail.Text = Binding(index).ToString(); return; }
+        if (!canLearn) { instruction.Text = L.T("このプロファイルのコントローラーを接続してください。", "Connect the controller for this profile."); detail.Text = TargetName(index) + " ← " + Binding(index); detail.Visible = true; return; }
         instruction.Text = L.T("現在の入力状態を確認しています…", "Checking the current input state…");
         if (PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
         if (request != learningRequest || IsDisposed) return;
@@ -387,27 +429,30 @@ internal sealed partial class MappingEditor : UserControl
         } finally { shiftDialog = null; }
     }
     private string TargetName(int index) => mouseMode ? index switch
-        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => DeviceProfile.Targets[12], _ => DeviceProfile.Targets[index] } : DeviceProfile.Targets[index];
+        { 1 => L.T("左ボタン", "Left button"), 2 => L.T("右ボタン", "Right button"), 8 => "SELECT / −", 9 => "START / ＋", 12 => profile.TargetName(12), _ => profile.TargetName(index) } : profile.TargetName(index);
+    internal void RefreshPresentation() => UpdateButtons();
     private void UpdateButtons()
     {
-        if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{DeviceProfile.Targets[1]}・{DeviceProfile.Targets[2]}と割り当てを共有します。\n「設定をデバイスに保存」で反映されます。",
-            $"Mouse buttons share the gamepad {DeviceProfile.Targets[1]} / {DeviceProfile.Targets[2]} mappings.\nChoose “Save settings to device” to apply your changes.");
+        if (labelSystem is not null) { refreshingLabels = true; labelSystem.SelectedItem = ButtonLabels.Find(profile.ButtonLabelSystem); labelSystem.Enabled = profile.Enabled && !shiftPage; refreshingLabels = false; }
+        if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{profile.TargetName(1)}・{profile.TargetName(2)}と割り当てを共有します。\n「設定をデバイスに保存」で反映されます。",
+            $"Mouse buttons share the gamepad {profile.TargetName(1)} / {profile.TargetName(2)} mappings.\nChoose “Save settings to device” to apply your changes.");
         for (int i = 0; i < 18; i++)
         {
             if (buttons[i] is null) continue;
             bool set = Binding(i).Mode != 0;
-            buttons[i].Enabled = i != 13 || !OutputPresentation.XInput;
-            buttons[i].Text = mouseMode ? TargetName(i) + (i is 1 or 2 ? L.T($"\n{DeviceProfile.Targets[i]}と共通", $"\nShared with {DeviceProfile.Targets[i]}") : "") : i switch { 10 => L.T("L\n押込", "L\nstick"), 11 => L.T("R\n押込", "R\nstick"), 12 => "⌂", 13 => L.T("撮影", "CAP"), _ => DeviceProfile.Targets[i] };
+            buttons[i].Enabled = true;
+            buttons[i].Text = mouseMode ? TargetName(i) + (i is 1 or 2 ? L.T($"\n{profile.TargetName(i)}と共通", $"\nShared with {profile.TargetName(i)}") : "") : ButtonLabels.Caption(profile.ButtonLabelSystem, i);
             bool shiftedOverride = shiftPage && (profile.Shift.Overrides & (1u << i)) != 0;
-            bool registeredShift = shiftedOverride && set;
-            if (registeredShift) buttons[i].Text += " *";
+            bool registeredShift = (profile.Shift.Overrides & (1u << i)) != 0 && profile.Shift.Buttons[i].Mode != 0;
             buttons[i].AccessibleName = TargetName(i) + L.T(" 出力ボタン", " output button");
-            buttons[i].AccessibleDescription = (set ? L.T("割り当て済み: ", "Assigned: ") : "") + Binding(i);
+            buttons[i].AccessibleDescription = (set ? L.T("割り当て済み: ", "Assigned: ") : L.T("未割り当て: ", "Unassigned: ")) + Binding(i);
             // A no-output override must still suppress inheritance, but it is not a registered input.
-            string shiftStatus = !shiftPage ? "" : !shiftedOverride ? L.T("（表から継承）", " (inherited)") :
+            string shiftStatus = !shiftPage ? (registeredShift ? L.T("\nシフト割り当て: ", "\nShift mapping: ") + profile.Shift.Buttons[i] : "") : !shiftedOverride ? L.T("（表から継承）", " (inherited)") :
                 registeredShift ? L.T("（裏ボタン登録あり）", " (registered shifted mapping)") : L.T("（裏ボタン登録なし）", " (no registered shifted mapping)");
             tips.SetToolTip(buttons[i], TargetName(i) + " ← " + Binding(i) + shiftStatus);
             Ui.ButtonColors(buttons[i], i == selected, set);
+            ((DarkButton)buttons[i]).ShiftAssigned = registeredShift;
+            if (registeredShift) buttons[i].AccessibleDescription += L.T("。シフト割り当て: ", ". Shift mapping: ") + profile.Shift.Buttons[i];
             buttons[i].Invalidate();
         }
         clear.Enabled = selected >= 0 && profile.Enabled;

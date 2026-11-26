@@ -73,6 +73,19 @@ bool ub_store_load_legacy_bank(unsigned copy,void *data,uint32_t bytes) {
     if(h->magic!=STORE_MAGIC || h->version!=STORE_VERSION || h->length!=bytes || h->crc!=crc32((const uint8_t *)(h+1),bytes))return false;
     memcpy(data,h+1,bytes);return true;
 }
+static bool flash_operation(uint32_t offset,const uint8_t *page,bool host_running) {
+    if(host_running && !uc_host_pause(1000))return false;
+    uint32_t irq=save_and_disable_interrupts();
+    if(page)flash_range_program(offset,page,FLASH_PAGE_SIZE);
+    else flash_range_erase(offset,FLASH_SECTOR_SIZE);
+    restore_interrupts(irq);
+    if(host_running)uc_host_resume();
+    return true;
+}
+static bool erased_page(const uint8_t *page) {
+    for(unsigned i=0;i<FLASH_PAGE_SIZE;++i)if(page[i]!=0xff)return false;
+    return true;
+}
 static bool save(unsigned slot,const void *data,uint32_t bytes,bool host_running,const direction_records *direction) {
     if(!store_slot_valid(slot) || bytes>store_size(slot)-sizeof(store_header) ||
        (uintptr_t)&__flash_binary_end>XIP_BASE+STORE_BASE)return false;
@@ -80,16 +93,21 @@ static bool save(unsigned slot,const void *data,uint32_t bytes,bool host_running
     store_header h={STORE_MAGIC,STORE_VERSION,bytes,crc32(data,bytes)};
     memcpy(write_buffer,&h,sizeof(h)); memcpy(write_buffer+sizeof(h),data,bytes);
     if(direction)memcpy(write_buffer+DIRECTION_OFFSET,direction,sizeof(*direction));
-    if(host_running && !uc_host_pause(1000))return false;
-    ++write_generation; // Polling averages must discard this IRQ-masked window.
-    uint32_t irq=save_and_disable_interrupts();
-    uint32_t offset=store_offset(slot);
-    uint32_t size=store_size(slot);
-    flash_range_erase(offset,size);
-    flash_range_program(offset,write_buffer,size);
-    restore_interrupts(irq);
-    if(host_running)uc_host_resume();
-    return memcmp((const void *)(XIP_BASE+offset),write_buffer,store_size(slot))==0;
+    uint32_t offset=store_offset(slot),size=store_size(slot);
+    const uint8_t *stored=(const uint8_t *)(XIP_BASE+offset);
+    if(memcmp(stored,write_buffer,size)==0)return true;
+    ++write_generation; // Polling averages must discard these IRQ-masked windows.
+    for(uint32_t sector=0;sector<size;sector+=FLASH_SECTOR_SIZE) {
+        if(memcmp(stored+sector,write_buffer+sector,FLASH_SECTOR_SIZE)==0)continue;
+        // Restore XIP, native USB IRQs and host endpoint service after each
+        // sector erase / page program, rather than stopping both cores for a bank.
+        if(!flash_operation(offset+sector,NULL,host_running))return false;
+        for(uint32_t page=sector;page<sector+FLASH_SECTOR_SIZE;page+=FLASH_PAGE_SIZE) {
+            if(erased_page(write_buffer+page))continue;
+            if(!flash_operation(offset+page,write_buffer+page,host_running))return false;
+        }
+    }
+    return memcmp(stored,write_buffer,size)==0;
 }
 
 bool ub_store_save(unsigned slot,const void *data,uint32_t bytes,bool host_running) {

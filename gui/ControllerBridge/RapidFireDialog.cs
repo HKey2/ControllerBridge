@@ -35,10 +35,10 @@ internal sealed partial class RapidFireDialog : Form
             for (int row = 0; row < indices.Length; row++)
             {
                 int index = indices[row]; DigitalBinding binding = profile.Buttons[index];
-                Label label = Ui.Label(DeviceProfile.Targets[index], 10); label.Anchor = AnchorStyles.Left;
-                CheckBox check = new() { Text = "ON", AutoSize = true, Checked = binding.RapidHz != 0, Enabled = binding.Mode != 0, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = DeviceProfile.Targets[index] + L.T(" 連射 ON/OFF", " rapid fire ON/OFF") };
+                Label label = Ui.Label(profile.TargetName(index), 10); label.Anchor = AnchorStyles.Left;
+                CheckBox check = new() { Text = "ON", AutoSize = true, Checked = binding.RapidHz != 0, Enabled = binding.Mode != 0, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = profile.TargetName(index) + L.T(" 連射 ON/OFF", " rapid fire ON/OFF") };
                 NumericUpDown rate = new() { Minimum = DigitalBinding.RapidMinHz, Maximum = DigitalBinding.RapidMaxHz, Value = binding.RapidHz == 0 ? DigitalBinding.RapidDefaultHz : binding.RapidHz,
-                    Width = 68, Enabled = check.Checked && check.Enabled, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = DeviceProfile.Targets[index] + L.T(" 連射 回/秒", " rapid fire cycles/s") };
+                    Width = 68, Enabled = check.Checked && check.Enabled, Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = profile.TargetName(index) + L.T(" 連射 回/秒", " rapid fire cycles/s") };
                 check.CheckedChanged += (_, _) => rate.Enabled = check.Checked && check.Enabled;
                 enabled[index] = check; rates[index] = rate;
                 table.Controls.Add(label, 0, row + 2); table.Controls.Add(check, 1, row + 2); table.Controls.Add(rate, 2, row + 2);

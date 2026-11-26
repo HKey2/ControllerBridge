@@ -22,9 +22,8 @@ internal static class FirmwareDataMigration
         {
             byte[] before = await command(20, null);
             if (!SavedBank(before, out ushort profileBytes, out uint generation)) return false;
-            if (profileBytes == DeviceProfile.ByteCount) return false;
-            uint bankBytes = profileBytes == 488 ? 8148u : profileBytes == 856 ? 14036u : 13908u;
-            uint version = profileBytes == 488 ? 5u : profileBytes == 856 ? 10u : (Wire.U32(before, 44) & 1073741824u) != 0 ? 9u : (Wire.U32(before, 44) & 16777216) != 0 ? 8u : 6u;
+            uint bankBytes = profileBytes == 864 ? (uint)SlotBank.ByteCount : profileBytes == 488 ? 8148u : profileBytes == 856 ? 14036u : 13908u;
+            uint version = profileBytes == 864 ? 11u : profileBytes == 488 ? 5u : profileBytes == 856 ? 10u : (Wire.U32(before, 44) & 1073741824u) != 0 ? 9u : (Wire.U32(before, 44) & 16777216) != 0 ? 8u : 6u;
             byte[] info = await command(40, null);
             if (info.Length != 56 || !info.AsSpan(0, 4).SequenceEqual("UPB1"u8) ||
                 Wire.U32(info, 4) != bankBytes || Wire.U32(info, 8) != generation) return false;

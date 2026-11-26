@@ -18,7 +18,8 @@ bool up_registry_load(up_bank *bank,const udk_settings *defaults) {
     // Current copies win. Otherwise expand the newest valid previous bank.
     bool migrated=false;
     for(unsigned slot=4;slot<=5;++slot) {
-        bool valid=ub_store_load(slot,&scratch,UP_V10_BANK_BYTES) && up_bank_upgrade_v10(&scratch);
+        bool valid=ub_store_load(slot,&scratch,sizeof(scratch)) && up_bank_upgrade_v11(&scratch);
+        if(!valid)valid=ub_store_load(slot,&scratch,UP_V10_BANK_BYTES) && up_bank_upgrade_v10(&scratch);
         if(!valid)valid=ub_store_load(slot,&scratch,UP_PREVIOUS_BANK_BYTES) &&
             (up_bank_upgrade_v9(&scratch) || up_bank_upgrade_v8(&scratch) || up_bank_upgrade_v6(&scratch,defaults));
         if(valid &&

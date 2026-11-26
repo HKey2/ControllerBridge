@@ -48,7 +48,7 @@ internal sealed class ConversionSettingsDialog : Form
         string[] labels = ["↑", "↓", "←", "→", L.T("負方向", "Negative direction"), L.T("正方向", "Positive direction")];
         for (int i = 0; i < targets.Length; i++)
         {
-            targets[i].Items.AddRange(DeviceProfile.Targets.Cast<object>().ToArray());
+            targets[i].Items.AddRange(Enumerable.Range(0, 18).Select(i => (object)profile.TargetName(i)).ToArray());
             targets[i].SelectedIndex = (i < 4 ? Result.TrackballTargets[i] : Result.PaddleTargets[i - 4]) - 1;
             Row(i < 4 ? ball : paddle, labels[i], targets[i]);
         }

@@ -58,30 +58,43 @@ static atomic_uint request_dump;
 static atomic_uint request_interval; // bit 8 marks a pending request
 static atomic_uint request_statistics;
 static uint8_t interval_override;
-static atomic_uint pause_requested, pause_acknowledged;
+enum { HOST_RUNNING, HOST_PAUSE_REQUESTED, HOST_FLASH_ACTIVE, HOST_FLASH_RELEASED };
+static atomic_uint pause_state;
 
 static void __attribute__((noinline)) __not_in_flash_func(pause_point)(void) {
-    if (!atomic_load_explicit(&pause_requested,memory_order_acquire)) return;
-    atomic_store_explicit(&pause_acknowledged,1,memory_order_release);
-    while (atomic_load_explicit(&pause_requested,memory_order_acquire)) __asm volatile("nop");
+    if(atomic_load_explicit(&pause_state,memory_order_acquire)!=HOST_PAUSE_REQUESTED)return;
+    // Preparation requires XIP. Complete it before acknowledging.
+    ut_flash_prepare();
+    unsigned expected=HOST_PAUSE_REQUESTED;
+    if(!atomic_compare_exchange_strong_explicit(&pause_state,&expected,HOST_FLASH_ACTIVE,
+            memory_order_acq_rel,memory_order_acquire))return;
+    // Only this loop and its SRAM-only callees may execute with XIP disabled.
+    while(atomic_load_explicit(&pause_state,memory_order_acquire)==HOST_FLASH_ACTIVE)ut_flash_pump();
+    // RELEASED means the writer has restored XIP and its native USB interrupts.
     ut_display_invalidate();
-    atomic_store_explicit(&pause_acknowledged,0,memory_order_release);
+    ut_flash_resume();
+    atomic_store_explicit(&pause_state,HOST_RUNNING,memory_order_release);
 }
 bool uc_host_pause(uint32_t timeout_ms) {
     if(!ucf_quiesce(timeout_ms*1000))return false;
-    atomic_store_explicit(&pause_requested,1,memory_order_release);
+    unsigned expected=HOST_RUNNING;
+    if(!atomic_compare_exchange_strong_explicit(&pause_state,&expected,HOST_PAUSE_REQUESTED,
+            memory_order_acq_rel,memory_order_acquire))return false;
     uint32_t start=time_us_32();
-    while (!atomic_load_explicit(&pause_acknowledged,memory_order_acquire)) {
-        if ((uint32_t)(time_us_32()-start)>timeout_ms*1000) {
-            atomic_store_explicit(&pause_requested,0,memory_order_release);
-            return false;
+    while(atomic_load_explicit(&pause_state,memory_order_acquire)!=HOST_FLASH_ACTIVE) {
+        if((uint32_t)(time_us_32()-start)>timeout_ms*1000) {
+            expected=HOST_PAUSE_REQUESTED;
+            // Cancellation and acknowledgement compete for the same state.
+            // An acknowledgement that wins is safe, even at the deadline.
+            return !atomic_compare_exchange_strong_explicit(&pause_state,&expected,HOST_RUNNING,
+                       memory_order_acq_rel,memory_order_acquire) && expected==HOST_FLASH_ACTIVE;
         }
     }
     return true;
 }
 void uc_host_resume(void) {
-    atomic_store_explicit(&pause_requested,0,memory_order_release);
-    while (atomic_load_explicit(&pause_acknowledged,memory_order_acquire)) tight_loop_contents();
+    atomic_store_explicit(&pause_state,HOST_FLASH_RELEASED,memory_order_release);
+    while(atomic_load_explicit(&pause_state,memory_order_acquire)!=HOST_RUNNING)tight_loop_contents();
 }
 
 static uint16_t le16(const uint8_t *b) { return b[0] | ((uint16_t)b[1] << 8); }

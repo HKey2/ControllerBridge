@@ -86,13 +86,13 @@ internal sealed partial class RegistrationWizard : Form
         else
         {
             review.Items.Clear();
-            for (int i = 0; i < 18; i++) review.Items.Add(new ListViewItem([DeviceProfile.Targets[i], profile.Buttons[i].ToString()]));
+            for (int i = 0; i < 18; i++) review.Items.Add(new ListViewItem([profile.TargetName(i), profile.Buttons[i].ToString()]));
             for (int i = 0; i < 4; i++) review.Items.Add(new ListViewItem([DeviceProfile.AxisNames[i], AxisDirections.Describe(i, profile.Axes[i])]));
             if (profile.Shift.Keys.Count != 0)
             {
                 review.Items.Add(new ListViewItem([L.T("シフトキー（AND）", "Shift keys (AND)"), string.Join(" + ", profile.Shift.Keys.Select(k => ShiftSettings.DescribeKey(k, fields)))]));
                 for (int i = 0; i < 18; i++) if ((profile.Shift.Overrides & (1u << i)) != 0)
-                    review.Items.Add(new ListViewItem([L.T("裏：", "Shift: ") + DeviceProfile.Targets[i], profile.Shift.Buttons[i].ToString()]));
+                    review.Items.Add(new ListViewItem([L.T("裏：", "Shift: ") + profile.TargetName(i), profile.Shift.Buttons[i].ToString()]));
             }
             hint.Text = L.T($"「{profile.Name}」をデバイスのスロット {(int)Tag! + 1} に保存します。保存完了後、使用するPC・ゲーム機へUSB-Cを接続してください。", $"Save “{profile.Name}” to device slot {(int)Tag! + 1}. After saving, connect USB-C to your PC or console to use it.");
         }

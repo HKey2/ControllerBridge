@@ -15,7 +15,8 @@
 #define UP_PREVIOUS_PROFILE_BYTES 848
 #define UP_PREVIOUS_BANK_BYTES 13908
 #define UP_SHIFT_KEYS 3
-#define UP_PROFILE_VERSION 11u
+#define UP_PROFILE_VERSION 12u
+#define UP_BUTTON_LABEL_COUNT 14u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
 #define UP_BANK_MAGIC 0x31425055u
@@ -113,7 +114,8 @@ typedef struct {
 typedef struct {
     uint8_t minimum_percent,maximum_percent,curve;
     // Zero maximum encodes the default 100%. Old banks expand with zero bytes.
-    uint8_t reserved[5];
+    // Byte 851 is presentation metadata only; never used by the input/output path.
+    uint8_t button_labels,reserved[4];
 } up_analog_levels;
 static inline unsigned up_analog_maximum(const up_analog_levels *levels) {
     return levels->maximum_percent?levels->maximum_percent:100u;
@@ -185,6 +187,7 @@ _Static_assert(sizeof(up_conversion)==16,"conversion wire ABI");
 _Static_assert(offsetof(up_profile,shift.conversion)==544,"conversion offset");
 _Static_assert(offsetof(up_profile,shift.digital)==560,"shifted bindings offset");
 _Static_assert(sizeof(up_analog_levels)==8,"analog levels wire ABI");
+_Static_assert(offsetof(up_profile,analog_levels.button_labels)==851,"button label metadata offset");
 _Static_assert(offsetof(up_profile,analog_levels)==848,"existing profile prefix is unchanged");
 _Static_assert(sizeof(up_paddle_analog)==8,"paddle analog wire ABI");
 _Static_assert(offsetof(up_profile,paddle_analog)==856,"v10 profile prefix is unchanged");
@@ -231,6 +234,7 @@ bool up_registry_load(up_bank *bank,const udk_settings *defaults);
 bool up_bank_upgrade_v8(up_bank *bank);
 bool up_bank_upgrade_v9(up_bank *bank);
 bool up_bank_upgrade_v10(up_bank *bank);
+bool up_bank_upgrade_v11(up_bank *bank);
 bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
 void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
 void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);

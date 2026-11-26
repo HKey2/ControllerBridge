@@ -129,6 +129,24 @@ void __not_in_flash_func(ut_pump)(void) {
     if (elapsed > metrics.max_frame_us) metrics.max_frame_us = elapsed;
 }
 
+extern void uc_pio_flash_prepare(void);
+extern void uc_pio_flash_frame(void);
+void ut_flash_prepare(void) { uc_pio_flash_prepare(); }
+void __not_in_flash_func(ut_flash_pump)(void) {
+    uint32_t now=time_us_32();
+    if((int32_t)(now-next_frame)<0)return;
+    uint32_t delay=now-next_frame;
+    next_frame+=1000;
+    if(delay>=1000)next_frame=now+1000;
+    uc_pio_flash_frame();
+}
+void ut_flash_resume(void) {
+    // Give queued endpoints a real frame between Flash operations. Merely
+    // returning to the host loop can miss every frame during page programming.
+    while((int32_t)(time_us_32()-next_frame)<0)tight_loop_contents();
+    ut_pump();
+}
+
 void ut_delay_ms(uint32_t ms) {
     uint32_t start = time_us_32();
     while ((uint32_t)(time_us_32() - start) < ms * 1000) ut_pump();

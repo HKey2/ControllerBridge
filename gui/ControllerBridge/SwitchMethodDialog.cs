@@ -13,7 +13,7 @@ internal sealed class SwitchMethodDialog : Form
         if ((mask & 0x14000) == 0x14000 || (mask & 0x28000) == 0x28000)
             throw new InvalidDataException(L.T("上下または左右を同時に選ぶことはできません。", "Up and down, or left and right, cannot be selected together."));
     }
-    public SwitchMethodDialog(IReadOnlyList<DeviceProfile> group, uint current, bool immediate)
+    public SwitchMethodDialog(IReadOnlyList<DeviceProfile> group, uint current, bool immediate, byte labelSystem = 1)
     {
         using IDisposable formLayout = Ui.Form(this, L.T("プロファイルの切替方法", "Profile switching method"), new(760, 650)); MaximizeBox = false;
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(20), ColumnCount = 1, RowCount = 6 };
@@ -36,8 +36,8 @@ internal sealed class SwitchMethodDialog : Form
             int index = order[position]; bool assigned = group.All(p => p.Buttons[index].Mode != 0);
             CheckBox check = new() { AutoSize = true,
                 Margin = new(0, 5, 5, 5), Checked = (current & (1u << index)) != 0, Enabled = assigned,
-                AccessibleName = DeviceProfile.Targets[index] + L.T(" ホットキー", " shortcut"), Tag = assigned };
-            Label label = Ui.Label(DeviceProfile.Targets[index] + (assigned ? "" : L.T("（未割当）", " (unassigned)")), 10);
+                AccessibleName = ButtonLabels.Describe(labelSystem, index) + L.T(" ホットキー", " shortcut"), Tag = assigned };
+            Label label = Ui.Label(ButtonLabels.Describe(labelSystem, index) + (assigned ? "" : L.T("（未割当）", " (unassigned)")), 10);
             label.ForeColor = assigned ? Ui.Ink : Ui.Muted;
             FlowLayoutPanel item = new() { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new(8, 7, 8, 7) };
             item.Controls.Add(check); item.Controls.Add(label);

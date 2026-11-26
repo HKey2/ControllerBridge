@@ -40,7 +40,7 @@ internal sealed partial class ShiftDialog : Form
         remove = Ui.Button(L.T("選択キーを削除", "Remove selected"), (_, _) => { StopLearning(); int i = keys.SelectedIndex; if (i >= 0) draft.Shift.Keys.RemoveAt(i); RefreshKeys(); });
         actions.Controls.Add(add); actions.Controls.Add(remove); row.Controls.Add(actions, 1, 0); root.Controls.Add(row, 0, 1);
         status.Dock = DockStyle.Fill; status.ForeColor = Ui.Muted; root.Controls.Add(status, 0, 2);
-        Label heading = Ui.Label(L.T("裏ページのボタン割り当て（* は裏ボタン登録あり）", "Shifted button mappings (* indicates a registered shifted mapping)"), 13, true); heading.Padding = new(0, 10, 0, 0); root.Controls.Add(heading, 0, 3);
+        Label heading = Ui.Label(L.T("裏ページのボタン割り当て（紫枠は裏ボタン登録あり）", "Shifted button mappings (purple outline: registered shifted mapping)"), 13, true); heading.Padding = new(0, 10, 0, 0); root.Controls.Add(heading, 0, 3);
         editor.Bind(draft, fields, canLearn, rapid, toggle); editor.ReleaseTogglesAsync = release;
         editor.PrepareLearningAsync = async () => { StopLearning(); RefreshKeys(); return prepare is null || await prepare(); };
         root.Controls.Add(editor, 0, 4);

@@ -24,6 +24,8 @@ internal static class Ui
     public static readonly Color AccentHover = Color.FromArgb(0x0f, 0x6c, 0xbd); // brand[80]
     public static readonly Color AccentPressed = Color.FromArgb(0x0c, 0x3b, 0x5e); // brand[40]
     public static readonly Color Selected = Color.FromArgb(0x08, 0x23, 0x38); // brandBackground2 = brand[20]
+    public const int ColorBarWidth = 5;
+    public static readonly Color ShiftOutline = Color.FromArgb(0xa7, 0x75, 0xcc);
     public static readonly Color Focus = Color.FromArgb(0x47, 0x9e, 0xf5); // brandStroke1 = brand[100]
 
     public static Button Button(string text, EventHandler? click = null, bool primary = false)
@@ -155,10 +157,42 @@ internal static class Ui
 // Keep the standard enabled painting/input/accessibility; paint only disabled state.
 internal class DarkButton : Button
 {
-    protected virtual TextFormatFlags LabelFlags => TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
+    protected virtual TextFormatFlags LabelFlags => TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | (FitLabelText ? TextFormatFlags.NoPadding : 0);
     public DarkButton() => SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Assigned { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool MappingFrame { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool ShiftAssigned { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Color LeftStripeColor { get; set; } = Color.Empty;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool FitLabelText { get; set; }
+    private (string? Text, Font? Font, Size Size, float Dpi) fittedKey;
+    private Font? fittedFont;
+    private Font LabelFont(Graphics graphics, Size area)
+    {
+        if (!FitLabelText || Text.Length == 0) return Font;
+        var key = (Text, Font, area, graphics.DpiX);
+        if (key == fittedKey) return fittedFont ?? Font;
+        fittedKey = key;
+        fittedFont?.Dispose(); fittedFont = null;
+        // Measure the same text we draw so long names remain whole inside the frame.
+        for (float points = Font.SizeInPoints; points >= 5; points -= .25f)
+        {
+            Font candidate = new(Font.FontFamily, points, Font.Style, GraphicsUnit.Point);
+            Size measured = TextRenderer.MeasureText(graphics, Text, candidate, area, LabelFlags);
+            if (measured.Width <= area.Width && measured.Height <= area.Height) { fittedFont = candidate; break; }
+            candidate.Dispose();
+        }
+        return fittedFont ?? Font;
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { fittedFont?.Dispose(); fittedFont = null; }
+        base.Dispose(disposing);
+    }
     private bool hovered, pressed;
     protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hovered = true; Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hovered = pressed = false; Invalidate(); }
@@ -170,24 +204,42 @@ internal class DarkButton : Button
     {
         base.OnPaint(e);
         Color face = !Enabled ? Ui.Input : pressed ? FlatAppearance.MouseDownBackColor : hovered ? FlatAppearance.MouseOverBackColor : BackColor;
-        Rectangle bounds = new(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
+        int inset = MappingFrame ? LogicalToDeviceUnits(4) : 0;
+        Rectangle faceBounds = Rectangle.Inflate(ClientRectangle, -inset, -inset);
+        if (faceBounds.Width <= 0 || faceBounds.Height <= 0) return;
+        if (inset != 0) { using SolidBrush surround = new(Parent?.BackColor ?? Ui.Surface); e.Graphics.FillRectangle(surround, ClientRectangle); }
+        Rectangle bounds = new(faceBounds.X, faceBounds.Y, faceBounds.Width - 1, faceBounds.Height - 1);
         using System.Drawing.Drawing2D.LinearGradientBrush background = new(bounds, ControlPaint.Light(face, .14f), ControlPaint.Dark(face, .1f), 90);
         e.Graphics.FillRectangle(background, bounds);
         using Pen border = new(Enabled ? FlatAppearance.BorderColor : Color.FromArgb(66, 66, 66)); e.Graphics.DrawRectangle(border, bounds);
         using Pen light = new(pressed ? ControlPaint.Dark(face) : ControlPaint.Light(face, .35f));
         using Pen shadow = new(pressed ? ControlPaint.Light(face, .2f) : Color.FromArgb(18, 18, 18));
-        e.Graphics.DrawLine(light, 1, 1, Width - 2, 1); e.Graphics.DrawLine(light, 1, 1, 1, Height - 2);
-        e.Graphics.DrawLine(shadow, 1, Height - 2, Width - 2, Height - 2); e.Graphics.DrawLine(shadow, Width - 2, 1, Width - 2, Height - 2);
-        Rectangle text = Rectangle.FromLTRB(Padding.Left, Padding.Top, Width - Padding.Right, Height - Padding.Bottom);
+        e.Graphics.DrawLine(light, bounds.Left + 1, bounds.Top + 1, bounds.Right - 1, bounds.Top + 1); e.Graphics.DrawLine(light, bounds.Left + 1, bounds.Top + 1, bounds.Left + 1, bounds.Bottom - 1);
+        e.Graphics.DrawLine(shadow, bounds.Left + 1, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1); e.Graphics.DrawLine(shadow, bounds.Right - 1, bounds.Top + 1, bounds.Right - 1, bounds.Bottom - 1);
+        int frameWidth = LogicalToDeviceUnits(3);
+        if (Assigned) PaintFrame(e.Graphics, faceBounds, Ui.Focus, frameWidth);
+        if (MappingFrame && ShiftAssigned) PaintFrame(e.Graphics, ClientRectangle, Ui.ShiftOutline, frameWidth);
+        Rectangle text = Rectangle.FromLTRB(faceBounds.Left + Padding.Left, faceBounds.Top + Padding.Top, faceBounds.Right - Padding.Right, faceBounds.Bottom - Padding.Bottom);
+        if (FitLabelText) text = Rectangle.Inflate(faceBounds, -LogicalToDeviceUnits(4), -LogicalToDeviceUnits(4));
         if (pressed) text.Offset(1, 1);
-        TextRenderer.DrawText(e.Graphics, Text, Font, text, Enabled ? ForeColor : Color.FromArgb(0xad, 0xad, 0xad),
+        TextRenderer.DrawText(e.Graphics, Text, LabelFont(e.Graphics, text.Size), text, Enabled ? ForeColor : Color.FromArgb(0xad, 0xad, 0xad),
             LabelFlags);
-        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5), Ui.Ink, face);
-        if (Assigned)
+        if (!LeftStripeColor.IsEmpty)
         {
-            int size = LogicalToDeviceUnits(4), inset = LogicalToDeviceUnits(5);
-            using SolidBrush brush = new(Ui.Ink); e.Graphics.FillEllipse(brush, Width - inset - size, inset, size, size);
+            using SolidBrush stripe = new(LeftStripeColor);
+            int stripeInset = LogicalToDeviceUnits(6);
+            e.Graphics.FillRectangle(stripe, faceBounds.Left + stripeInset, faceBounds.Top + stripeInset,
+                LogicalToDeviceUnits(Ui.ColorBarWidth), Math.Max(0, faceBounds.Height - 2 * stripeInset));
         }
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(bounds, -5, -5), Ui.Ink, face);
+    }
+    private static void PaintFrame(Graphics graphics, Rectangle bounds, Color color, int width)
+    {
+        using SolidBrush brush = new(color);
+        graphics.FillRectangle(brush, bounds.Left, bounds.Top, bounds.Width, width);
+        graphics.FillRectangle(brush, bounds.Left, bounds.Bottom - width, bounds.Width, width);
+        graphics.FillRectangle(brush, bounds.Left, bounds.Top + width, width, Math.Max(0, bounds.Height - 2 * width));
+        graphics.FillRectangle(brush, bounds.Right - width, bounds.Top + width, width, Math.Max(0, bounds.Height - 2 * width));
     }
 }
 

@@ -35,9 +35,9 @@ internal sealed class ToggleSettingsDialog : Form
             for (int row = 0; row < sections[group].Indices.Length; row++)
             {
                 int index = sections[group].Indices[row]; DigitalBinding binding = profile.Buttons[index];
-                Label label = Ui.Label(DeviceProfile.Targets[index], 10); label.Anchor = AnchorStyles.Left;
+                Label label = Ui.Label(profile.TargetName(index), 10); label.Anchor = AnchorStyles.Left;
                 CheckBox check = new() { Text = "ON", AutoSize = true, Checked = binding.Toggle, Enabled = binding.Mode != 0,
-                    Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = DeviceProfile.Targets[index] + L.T(" トグル ON/OFF", " toggle ON/OFF") };
+                    Anchor = AnchorStyles.Left, Margin = new(4, 5, 4, 5), AccessibleName = profile.TargetName(index) + L.T(" トグル ON/OFF", " toggle ON/OFF") };
                 enabled[index] = check; table.Controls.Add(label, 0, row + 2); table.Controls.Add(check, 1, row + 2);
             }
             scroll.Controls.Add(table); groups.Controls.Add(scroll, group, 0);

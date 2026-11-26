@@ -25,7 +25,7 @@
 ## Notice
 We have removed the feature—introduced in v0.23.0—that swapped the A/B and X/Y button labels when in "X Mode."
 This change was made because the previous implementation caused button labels to be swapped even when using a profile configured for the Nintendo Switch, leading to a discrepancy between the on-screen labels and the actual buttons used during gameplay.
-Moving forward, the internal button IDs will always be mapped to the standard Nintendo Switch button layout.
+Internal button IDs and positions remain fixed, and the output mode does not choose the displayed names. From v0.33.0, the system list in the button layout lets you select display names manually.
 We apologize for any confusion this may have caused.
 
 ## Overview
@@ -38,7 +38,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.32.0 - GUI r2 (firmware 0.32.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.33.0 (firmware 0.33.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.33.0 — Button labels:** Choose Switch, Xbox 360, DS3, PS4, or a POLYMEGA system from the system list in the center of the button layout. Use **Save settings to device** to store the choice with each profile. Unnamed buttons remain available for assignment and clearing. A thick blue outline marks a main mapping; an outer purple outline marks an explicit shifted mapping. Labels do not change button positions, mappings, or actual output. Existing settings are preserved and initially use Switch labels. Install the bundled firmware before use. See [button labels and assignment indicators](docs/button-labels.md).
 
 **0.32.0 — OLED display:** Adds a 64×32 OLED status display on GP6/GP7. Shared settings now offers OFF, profile name with measured output polling interval and slot index, a wrapped 30-character name with S/X mode, Detail A with controller VID/PID, IN/OUT polling intervals and input bytes per second, Detail B with hexadecimal gamepad output in a common XInput-format view, or Detail C with signed X/Y mouse output counts per second, the input-rate limit from the current polling interval (R), and actual received reports per second (S). The display defaults to OFF; firmware updates preserve an existing saved display type. Display updates follow the active profile and actual output mode. See [OLED setup and limitations](docs/oled-display.md).
 
@@ -200,13 +202,13 @@ Allocation figures for the current firmware, calculated from its binary and link
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 201,716; persistent storage 49,152 | 1,846,284 |
-| SRAM, 532,480 bytes | Static data 167,020; two stacks 8,192 | 357,268 |
+| Flash, 2,097,152 bytes | Code/initial values 202,564; persistent storage 49,152 | 1,845,436 |
+| SRAM, 532,480 bytes | Static data 167,216; two stacks 8,192 | 357,072 |
 | One bank copy, 16,384 bytes | Payload 14,164 + header 16 | 2,204 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode/display records 196 | 3,836 |
 
-Static SRAM consists of vector table 272, initialized data 44,632, and BSS 122,116 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 403,456 bytes.
+Static SRAM consists of vector table 272, initialized data 44,832, and BSS 122,112 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 405,504 bytes.
 
 ## Repository contents and license
 

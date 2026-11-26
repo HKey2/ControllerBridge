@@ -216,7 +216,7 @@ internal sealed partial class MainForm : Form
         name.TextChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].Name = name.Text; MarkDirty(); };
         rumbleOn.CheckedChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].RumbleEnabled = rumbleOn.Checked; MarkDirty(); };
         interval.ValueChanged += (_, _) => { if (loading) return; profiles[selected].InputInterval = (byte)interval.Value; MarkDirty(); };
-        foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) { mapping.Modified += (_, _) => MarkDirty(); mapping.PrepareLearningAsync = PrepareLearning; }
+        foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) { mapping.Modified += (_, _) => { MarkDirty(); foreach (MappingEditor other in new[] { editor, mouseEditor, combinedEditor }) other.RefreshPresentation(); }; mapping.PrepareLearningAsync = PrepareLearning; }
         outputTabs.Selecting += (_, e) =>
         {
             if (syncingOutput || loading) return;
@@ -276,7 +276,7 @@ internal sealed partial class MainForm : Form
         DeviceProfile p = profiles[e.Index]; bool connected = p.Enabled && ConnectedSlot == e.Index;
         if (p.Enabled)
         {
-            int rgb = p.LedRgb, inset = LogicalToDeviceUnits(6), width = LogicalToDeviceUnits(5);
+            int rgb = p.LedRgb, inset = LogicalToDeviceUnits(6), width = LogicalToDeviceUnits(Ui.ColorBarWidth);
             Rectangle chip = new(e.Bounds.Right - inset - width, e.Bounds.Top + inset, width, e.Bounds.Height - 2 * inset);
             slotLedChips[e.Index].Draw(e.Graphics, chip, LedPreview.Color((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb), face,
                 LogicalToDeviceUnits(2), LogicalToDeviceUnits(4), e.Bounds);
@@ -717,7 +717,7 @@ internal sealed partial class MainForm : Form
         {
             uint current = await bridge.ReadSwitchKeysAsync(selected);
             DeviceProfile[] group = persistedProfiles.Where(p => p.SameController(persistedProfiles[selected])).ToArray();
-            using SwitchMethodDialog dialog = new(group, current, caps!.SupportsImmediateSwitch);
+            using SwitchMethodDialog dialog = new(group, current, caps!.SupportsImmediateSwitch, profiles[selected].ButtonLabelSystem);
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             bankGeneration = observedBankGeneration = await bridge.SaveSwitchKeysAsync(selected, dialog.SwitchKeys, bankGeneration);
             await RefreshDevice(); SetText(saved, L.T("同じコントローラーの切替方法を保存しました。", "Saved the switching method for this controller's profiles."));

@@ -13,6 +13,10 @@ void ut_display_invalidate(void);
 void ut_display_publish(bool connected,uint32_t interval_ms);
 void ut_init(uint8_t dp_pin,bool sense_speed);
 void ut_pump(void);
+// Core 1 Flash handshake: prepare/resume require XIP; pump is SRAM-only.
+void ut_flash_prepare(void);
+void ut_flash_pump(void);
+void ut_flash_resume(void);
 // Connection-time selection, followed by a dedicated direct-root input path.
 bool ut_low_speed(void);
 bool ut_lowspeed_begin(void);

@@ -7,6 +7,7 @@ void up_profile_clear(up_profile *p) {
     memset(p,0,sizeof(*p));p->version=UP_PROFILE_VERSION;
     p->shift.conversion=(up_conversion)UP_DEFAULT_CONVERSION;
     p->paddle_analog=(up_paddle_analog)UP_DEFAULT_PADDLE_ANALOG;
+    p->analog_levels.button_labels=1;
     p->mouse=(up_mouse_options){.flags=UP_MOUSE_TRACKBALL|UP_MOUSE_PADDLE,.trackball_gain10=160,.paddle_gain10=10};
 }
 void up_bank_clear(up_bank *b) {
@@ -112,6 +113,7 @@ static bool profile_valid(const up_profile *p,unsigned version) {
     const up_analog_levels *levels=&p->analog_levels;
     if(levels->minimum_percent>=up_analog_maximum(levels) || up_analog_maximum(levels)>100u ||
        !up_analog_curve_valid(levels->curve))return false;
+    if(version<12?levels->button_labels!=0:levels->button_labels>=UP_BUTTON_LABEL_COUNT)return false;
     for(unsigned i=0;i<sizeof(levels->reserved);++i)if(levels->reserved[i])return false;
     if(version<10 && (levels->minimum_percent || levels->maximum_percent || levels->curve))return false;
     if(version>=11) {
@@ -291,8 +293,8 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
     return false;
 }
 static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *defaults) {
-    unsigned stride=version==5?UP_LEGACY_PROFILE_BYTES:version==10?UP_V10_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
-    unsigned bytes=version==5?UP_LEGACY_BANK_BYTES:version==10?UP_V10_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
+    unsigned stride=version==11?UP_PROFILE_BYTES:version==5?UP_LEGACY_PROFILE_BYTES:version==10?UP_V10_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
+    unsigned bytes=version==11?sizeof(*b):version==5?UP_LEGACY_BANK_BYTES:version==10?UP_V10_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
     if(b->magic!=UP_BANK_MAGIC || b->version!=version || b->bytes!=bytes ||
        (version<=6 && (!defaults || !udk_settings_valid(defaults))))return false;
     uint8_t *raw=(uint8_t *)b;
@@ -312,12 +314,14 @@ static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *default
             if(p->shift.count>UP_SHIFT_KEYS)p->shift.count=UP_SHIFT_KEYS;
             up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);
         }
-        p->paddle_analog=(up_paddle_analog)UP_LEGACY_PADDLE_ANALOG;
+        if(version<11)p->paddle_analog=(up_paddle_analog)UP_LEGACY_PADDLE_ANALOG;
+        p->analog_levels.button_labels=1;
         p->version=UP_PROFILE_VERSION;
     }
     memcpy(b->profile_ids,tail,sizeof(tail));b->version=UP_PROFILE_VERSION;b->bytes=sizeof(*b);
     return up_bank_valid(b);
 }
+bool up_bank_upgrade_v11(up_bank *b) { return upgrade_bank(b,11,NULL); }
 bool up_bank_upgrade_v10(up_bank *b) { return upgrade_bank(b,10,NULL); }
 bool up_bank_upgrade_v9(up_bank *b) { return upgrade_bank(b,9,NULL); }
 bool up_bank_upgrade_v8(up_bank *b) { return upgrade_bank(b,8,NULL); }
