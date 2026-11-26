@@ -38,7 +38,9 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.33.0 (firmware 0.33.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.33.0 - GUI r2 (firmware 0.33.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.33.0 GUI r2:** Fixed HOME/Guide registration for controllers that report this button with multiple bits. Releasing the button is no longer registered as a press. If HOME was already assigned in reverse, select HOME, press and release the input button, then choose **Save settings to device** to replace that assignment. Existing saved mappings are retained until you register and save them again. Firmware 0.33.0 is unchanged.
 
 **0.33.0 — Button labels:** Choose Switch, Xbox 360, DS3, PS4, or a POLYMEGA system from the system list in the center of the button layout. Use **Save settings to device** to store the choice with each profile. Unnamed buttons remain available for assignment and clearing. A thick blue outline marks a main mapping; an outer purple outline marks an explicit shifted mapping. Labels do not change button positions, mappings, or actual output. Existing settings are preserved and initially use Switch labels. Install the bundled firmware before use. See [button labels and assignment indicators](docs/button-labels.md).
 

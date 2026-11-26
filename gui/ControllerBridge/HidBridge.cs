@@ -115,7 +115,11 @@ public sealed class InputField
     private bool Ps4Axis => Ps4Compatible && ReportId == 1 && (Flags & 2) != 0 &&
         UsagePage == 1 && Bits == 8 && Minimum == 0 && Maximum == 255 && (HidFlags & 7) == 2;
     internal bool Ps4Stick => Ps4Axis && (Usage, BitOffset) is (0x30, 0) or (0x31, 8) or (0x32, 16) or (0x35, 24);
-    internal bool MinimumNeutral => Pressure || Ps4Axis && (Usage, BitOffset) is (0x33, 56) or (0x34, 64);
+    // Absolute Button-page values keep zero as release even when the report
+    // uses multiple bits (for example Xbox HOME with a logical range of 0..3).
+    internal bool MinimumNeutral => Pressure ||
+        UsagePage == 9 && Minimum == 0 && (HidFlags & 7) == 2 ||
+        Ps4Axis && (Usage, BitOffset) is (0x33, 56) or (0x34, 64);
     public ushort Index { get; init; }
     public byte Interface { get; init; }
     public byte ReportId { get; init; }
