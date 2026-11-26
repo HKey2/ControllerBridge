@@ -10,6 +10,7 @@
 #include "xinput_portal.h"
 #include "host_output.h"
 #include "switch_output.h"
+#include "gamecube_output.h"
 #include "xinput_feedback.h"
 #include "switch_protocols.h"
 #include "controller_feedback.h"
@@ -96,7 +97,7 @@ static uint32_t profile_switches,selection_save_at,selection_save_failures,selec
 static bool measuring(void) { return phase==MEASURE_RUNNING || phase==MEASURE_STOPPING; }
 static bool mouse_mode(void) { return (active_output_options&UM_MOUSE)!=0; }
 static uint8_t effective_host_selection(uint8_t options) {
-    return direction_settings.host_mode==UH_SWITCH_PRO && (options&UM_MOUSE)?UH_SWITCH:direction_settings.host_mode;
+    return (direction_settings.host_mode==UH_SWITCH_PRO || direction_settings.host_mode==UH_GAMECUBE) && (options&UM_MOUSE)?UH_SWITCH:direction_settings.host_mode;
 }
 static bool combined_mode(void) { return (active_output_options&UM_COMBINED)!=0; }
 static bool mouse_output_ready(void) { return combined_mode()?ud_secondary_ready():ud_ready(); }
@@ -220,7 +221,8 @@ static void process_standard_ack(void) {
         process_mouse_ack(ack_cookie,ack_time,ack_success);return;
     }
     if(pro_reply_flight && !ack_cookie) {
-        spo_reply_complete(ack_success);pro_reply_flight=false;return;
+        if(active_host_mode==UH_GAMECUBE)gco_reply_complete(ack_success);else spo_reply_complete(ack_success);
+        pro_reply_flight=false;return;
     }
     if(!flight_valid || flight.sequence!=ack_cookie)return;
     uint8_t direction_edge=ub_direction_complete(&direction_pulse,flight.direction_key,flight.sequence,ack_time,ack_success);
@@ -308,6 +310,16 @@ static void schedule_standard_output(void) {
             return;
         }
     }
+    if(active_host_mode==UH_GAMECUBE) {
+        if(pro_reply_flight)return;
+        unsigned reply_length;const uint8_t *reply=gco_reply(&reply_length);
+        if(reply || !gco_polling()) {
+            if(flight_valid) { if(!ud_cancel_repeat())return;flight_valid=false; }
+            uint32_t armed;
+            if(reply && ud_send(reply,reply_length,0,&armed)) { gco_reply_started();pro_reply_flight=true; }
+            return;
+        }
+    }
     if(active_host_mode==UH_XINPUT && !xw_report_due(&xinput_clock,time_us_32()))return;
     bool from_queue=ub_queue_depth(&outgoing)!=0;
     ub_frame next;
@@ -351,9 +363,10 @@ static void schedule_standard_output(void) {
     if(flight.direction_key)flight.sequence=++input_sequence;
     uint32_t armed;
     uint8_t encoded[64];
-    const uint8_t *wire=(const uint8_t *)&flight.report;unsigned length=sizeof(flight.report);
+    const uint8_t *wire=(const uint8_t *)&flight.report;unsigned length=SW_REPORT_BYTES;
     if(active_host_mode==UH_XINPUT) { xw_encode(&flight.report,encoded);wire=encoded;length=XW_REPORT_BYTES; }
-    else if(active_host_mode==UH_SWITCH_PRO) { sp_encode(SP_PRO1,&flight.report,encoded,time_us_32());wire=encoded;length=64; }
+    else if(active_host_mode==UH_SWITCH_PRO) { spo_encode(&flight.report,encoded,time_us_32());wire=encoded;length=64; }
+    else if(active_host_mode==UH_GAMECUBE) { gc_encode(&flight.report,encoded);wire=encoded;length=GC_REPORT_BYTES; }
     bool sent=ud_send(wire,length,flight.sequence,&armed);
     if(sent) {
         flight_analog_epoch=analog_epoch;flight_analog_plan=analog_plan;
@@ -584,7 +597,7 @@ static void handle_standard_input(const uc_event *e) {
         }
         memset(last_raw,0,sizeof(last_raw));memcpy(last_raw,e->data,e->length<4?e->length:4);
         if(in_window(frame.received_us))ub_hist_add(&measurement.mapping,time_us_32()-frame.received_us);
-        bool changed=!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8) || outgoing.latest.hold_directions!=frame.hold_directions;
+        bool changed=!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,sizeof(frame.report)) || outgoing.latest.hold_directions!=frame.hold_directions;
         if(combined_mode()&&measuring())measurement.dual.pad_seen|=frame.report.buttons0|((uint32_t)frame.report.buttons1<<8);
         if(changed && measuring())measurement.counts.input_changes++;
         if(active_gyro_axes)ub_queue_push_gyro(&outgoing,&frame,active_gyro_axes);else ub_queue_push(&outgoing,&frame);
@@ -608,7 +621,7 @@ static void handle_button_input(const uc_event *e) {
     // must never receive a gamepad packet while the new output is prepared.
     if(mouse_mode())return;
     if(in_window(e->time_us))ub_hist_add(&measurement.mapping,time_us_32()-e->time_us);
-    if(measuring() && (!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,8)))++measurement.counts.input_changes;
+    if(measuring() && (!outgoing.have_latest || memcmp(&outgoing.latest.report,&frame.report,sizeof(frame.report))))++measurement.counts.input_changes;
     ub_queue_push(&outgoing,&frame);
 }
 static void handle_host_event(const uc_event *e) {
@@ -838,7 +851,8 @@ static void start_usb_output(uint8_t options) {
     active_output_options=options;active_host_mode=host_output.active;
     pro_reply_flight=pro_input_changed=false;active_pro_profile_crc=pro_current_crc=upr_profile_crc();active_gyro_axes=upr_gyro_axes();
     ucf_calibration_cancel();
-    if(active_host_mode==UH_SWITCH_PRO)spo_init();
+    if(active_host_mode==UH_GAMECUBE) { gco_init();ucf_select(false); }
+    else if(active_host_mode==UH_SWITCH_PRO)spo_init();
     else if(active_host_mode==UH_XINPUT)xfo_init();
     else ucf_select(false);
     xinput_clock=(xw_clock){.requested_interval=upr_input_interval(),
@@ -902,6 +916,19 @@ static void start_usb_output(uint8_t options) {
         uint8_t initial_pro[64];sp_encode(SP_PRO1,&initial,initial_pro,time_us_32());output.initial_input=initial_pro;
         ud_init(&output);return;
     }
+    if(active_host_mode==UH_GAMECUBE) {
+        gc_descriptors(&output);
+        memcpy(output_configuration,output.configuration,41);
+        memcpy(output_configuration+41,um_configuration_descriptor+34,25);
+        output_configuration[2]=66;output_configuration[4]=2;output_configuration[61]=0x83;
+        output_configuration[33]=output_configuration[40]=active_output_interval=config.output_interval_ms?config.output_interval_ms:1;
+        output.configuration=output_configuration;output.configuration_length=66;
+        output.configuration_report=um_feature_descriptor;output.configuration_report_length=sizeof(um_feature_descriptor);
+        output.configuration_interface=1;output.configuration_endpoint=3;
+        output.try_output=gco_receive;output.bus_event=gco_bus_event;
+        uint8_t initial_gc[GC_REPORT_BYTES];gc_encode(&initial,initial_gc);output.initial_input=initial_gc;
+        ud_init(&output);return;
+    }
     if(active_host_mode==UH_XINPUT && (!mouse_mode() || combined_mode())) {
         bool combined=combined_mode();
         memcpy(output_configuration,combined?xw_combined_configuration_descriptor:xw_configuration_descriptor,
@@ -957,7 +984,8 @@ static void output_change_task(uint32_t now) {
 static void process_button_ack(void) {
     if(!atomic_exchange_explicit(&ack_pending,false,memory_order_acquire))return;
     if(pro_reply_flight && !ack_cookie) {
-        spo_reply_complete(ack_success);pro_reply_flight=false;return;
+        if(active_host_mode==UH_GAMECUBE)gco_reply_complete(ack_success);else spo_reply_complete(ack_success);
+        pro_reply_flight=false;return;
     }
     if(!flight_valid || flight.sequence!=ack_cookie)return;
     if(ack_success) {
@@ -992,6 +1020,16 @@ static void schedule_button_output(void) {
             return;
         }
     }
+    if(active_host_mode==UH_GAMECUBE) {
+        if(pro_reply_flight)return;
+        unsigned reply_length;const uint8_t *reply=gco_reply(&reply_length);
+        if(reply || !gco_polling()) {
+            if(flight_valid) { if(!ud_cancel_repeat())return;flight_valid=false; }
+            uint32_t armed;
+            if(reply && ud_send(reply,reply_length,0,&armed)) { gco_reply_started();pro_reply_flight=true; }
+            return;
+        }
+    }
     if(active_host_mode==UH_XINPUT && !xw_report_due(&xinput_clock,time_us_32()))return;
     bool from_queue=ub_queue_depth(&outgoing)!=0;ub_frame next;
     if(from_queue)next=outgoing.pending[outgoing.read];
@@ -1001,16 +1039,17 @@ static void schedule_button_output(void) {
         next.transition=false;
     }
     if(flight_valid) {
-        if(!flight.transition && (from_queue || memcmp(&flight.report,&next.report,8))) {
+        if(!flight.transition && (from_queue || memcmp(&flight.report,&next.report,sizeof(next.report)))) {
             if(!ud_cancel_repeat())return;
             if(measuring())++measurement.counts.repeats_replaced;
             flight_valid=false;
         } else return;
     }
     flight=next;uint32_t armed;uint8_t encoded[64];
-    const uint8_t *wire=(const uint8_t *)&flight.report;unsigned length=sizeof(flight.report);
+    const uint8_t *wire=(const uint8_t *)&flight.report;unsigned length=SW_REPORT_BYTES;
     if(active_host_mode==UH_XINPUT) { xw_encode(&flight.report,encoded);wire=encoded;length=XW_REPORT_BYTES; }
-    else if(active_host_mode==UH_SWITCH_PRO) { sp_encode(SP_PRO1,&flight.report,encoded,time_us_32());wire=encoded;length=64; }
+    else if(active_host_mode==UH_SWITCH_PRO) { spo_encode(&flight.report,encoded,time_us_32());wire=encoded;length=64; }
+    else if(active_host_mode==UH_GAMECUBE) { gc_encode(&flight.report,encoded);wire=encoded;length=GC_REPORT_BYTES; }
     if(ud_send(wire,length,flight.sequence,&armed)) {
         flight_analog_epoch=0;memset(&flight_analog_plan,0,sizeof(flight_analog_plan));
         if(active_host_mode==UH_XINPUT)xw_report_sent(&xinput_clock,armed);
@@ -1044,7 +1083,7 @@ static void __not_in_flash_func(standard_input_tasks)(void) {
                     if(!(active_output_options&UM_GAMEPAD_BUTTONS))sw_navigation(&frame.report,&frame.report);
                     if(measuring()) {
                         measurement.dual.pad_seen|=frame.report.buttons0|((uint32_t)frame.report.buttons1<<8);
-                        if(!outgoing.have_latest||memcmp(&outgoing.latest.report,&frame.report,8))measurement.counts.input_changes++;
+                        if(!outgoing.have_latest||memcmp(&outgoing.latest.report,&frame.report,sizeof(frame.report)))measurement.counts.input_changes++;
                     }
                 }
                 if(active_gyro_axes)ub_queue_push_gyro(&outgoing,&frame,active_gyro_axes);else ub_queue_push(&outgoing,&frame);
@@ -1056,6 +1095,8 @@ static void __not_in_flash_func(standard_input_tasks)(void) {
             spo_service(&current,upr_rumble_enabled() && input_ready && ud_ready() && !output_change_requested && !reboot_at &&
                 !pro_input_changed && active_pro_profile_crc==pro_current_crc);
             ud_output_service();
+        } else if(active_host_mode==UH_GAMECUBE) {
+            gco_service();ud_output_service();
         } else if(active_host_mode==UH_XINPUT) {
             if(upr_rumble_enabled() || xfo_pending())xfo_service(upr_rumble_enabled() && !mouse_mode() &&
                 input_ready && ud_ready() && !output_change_requested && !reboot_at);
@@ -1073,7 +1114,8 @@ static void __not_in_flash_func(button_input_tasks)(void) {
     if(active_host_mode==UH_SWITCH_PRO) {
         sw_report current;if(outgoing.have_latest)current=outgoing.latest.report;else sw_neutral(&current);
         spo_service(&current,false);ud_output_service();
-    } else if(active_host_mode==UH_XINPUT)ud_output_service();
+    } else if(active_host_mode==UH_GAMECUBE) { gco_service();ud_output_service(); }
+    else if(active_host_mode==UH_XINPUT)ud_output_service();
 }
 int __not_in_flash_func(main)(void) {
     set_sys_clock_khz(120000,true);
@@ -1125,7 +1167,7 @@ int __not_in_flash_func(main)(void) {
         now=time_us_32();
         if(!reboot_at) { host_auto_task(now);output_change_task(now); }
         status_led_task(now,input_ready,ud_ready(),upr_led_rgb());
-        if(oled_work)oled_work=status_oled_task(now,active_host_mode==UH_XINPUT?'X':'S',
+        if(oled_work)oled_work=status_oled_task(now,active_host_mode==UH_XINPUT?'X':active_host_mode==UH_GAMECUBE?'G':'S',
             upr_active_slot(),upr_bank_generation(),upr_profile_name());
         if(boot_capture_ms && input_ready && ud_ready() && !output_change_requested) {
             if(!ready_since)ready_since=now;

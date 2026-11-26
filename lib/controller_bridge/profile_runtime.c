@@ -1,6 +1,8 @@
 #include "profile_runtime.h"
+#include "host_output.h"
 #include "controller_feedback.h"
 #include "input_protocol.h"
+#include "native_motion.h"
 #include "controller_mouse.h"
 #include <string.h>
 #define FIELD_COUNT (UC_MAX_INTERFACES*UC_HID_MAX_FIELDS)
@@ -15,6 +17,8 @@ typedef struct { uint16_t index,flags; int32_t value; uint32_t time; } field_cha
 _Static_assert(sizeof(field_change)==12,"event wire ABI");
 static up_bank bank;
 static up_mapper mapper;
+static unm_state native_motion;
+static bool native_motion_enabled;
 static up_release_guard switch_guard;
 static observed_field fields[FIELD_COUNT];
 static field_change changes[CHANGE_COUNT];
@@ -98,6 +102,10 @@ static bool profile_exists(const up_profile *p) {
     for(unsigned i=0;i<p->shift.count;++i)if(!digital_exists(&p->shift.keys[i]))return false;
     for(unsigned i=0;i<UP_DIGITAL_COUNT;++i)if((p->shift.overrides&(1u<<i)) && !digital_exists(&p->shift.digital[i]))return false;
     if(low_speed)return true;
+    if(direction_settings.host_mode==UH_GAMECUBE && !up_profile_output_options(p))for(unsigned i=0;i<2;++i) {
+        const up_analog_half *a=&p->gc_triggers[i];
+        if(a->bits && !source_exists(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags))return false;
+    }
     for(unsigned i=0;i<UP_AXIS_COUNT;++i) {
         unsigned mode=(p->axis_modes>>(2*i))&3;
         if(mode==UP_AXIS_ANALOG) {
@@ -134,6 +142,14 @@ static void seed_buttons(void) {
 static void select_button_path(void) {
     effective_output=low_speed?0:up_profile_output_options(mapper.profile);
     rumble_enabled=!low_speed && mapper.profile && (mapper.profile->flags&(UP_ENABLED|UP_RUMBLE))==(UP_ENABLED|UP_RUMBLE);
+    up_mapper_gamecube(&mapper,!low_speed && !effective_output && direction_settings.host_mode==UH_GAMECUBE);
+    native_motion_enabled=!low_speed && !effective_output && direction_settings.host_mode==UH_SWITCH_PRO && mapper.profile &&
+        (mapper.profile->flags&(UP_ENABLED|UP_NATIVE_MOTION))==(UP_ENABLED|UP_NATIVE_MOTION) &&
+        (input_protocol==UC_PROTOCOL_SWITCH_PRO || input_protocol==UC_PROTOCOL_SWITCH2 ||
+         (input_protocol==UC_PROTOCOL_DUALSHOCK3 && motion_path));
+    unm_restart(&native_motion);
+    native_motion.ds3_axis=mapper.profile?mapper.profile->analog_levels.native_gyro_axis:0;
+    if(native_motion_enabled)mapper.gyro_axes=0;
     if(low_speed)up_mapper_buttons_only(&mapper);
 }
 static void refresh_conversion(void) {
@@ -160,7 +176,7 @@ static void select_profile(void) {
     refresh_conversion();
     refresh_group();
     up_mapper_attach(&mapper,active>=0?&bank.profiles[active]:NULL);
-    seed_buttons();select_button_path();
+    select_button_path();seed_buttons();if(low_speed)up_mapper_buttons_only(&mapper);
     uc_request_poll_interval(active>=0?bank.profiles[active].input_interval_ms:0);
 }
 static uint8_t mouse_sources(void) { return (mouse_x>=0 && mouse_y>=0?1:0)|(mouse_wheel>=0?2:0); }
@@ -183,7 +199,8 @@ void upr_direction_accumulators(int32_t tenths[3]) {
 unsigned upr_direction_threshold(void) { return direction_settings.threshold; }
 bool upr_set_direction_settings(const udk_settings *settings) {
     if(!udk_settings_valid(settings))return false;
-    direction_settings=*settings;refresh_conversion();direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};analog_reset();return true;
+    bool host_changed=direction_settings.host_mode!=settings->host_mode;
+    direction_settings=*settings;if(host_changed)select_profile();refresh_conversion();direction_state=(um_key_state){0};rolling_state.moving=false;hold_state=(um_hold_state){0};analog_reset();return true;
 }
 static bool rolling_enabled(void) {
     return upr_ready() && mouse_wheel>=0 && direction_settings.paddle_mode==UDK_ROLLING_MODE &&
@@ -342,6 +359,7 @@ bool upr_mouse_delta(const uc_event *e,int32_t *x,int32_t *y) {
     return true;
 }
 void upr_init(const udk_settings *common) {
+    unm_init(&native_motion);
     memset(pointing_intervals,0,sizeof(pointing_intervals));
     rolling_state=(um_rolling_state){0};rolling_idle_us=20000u;hold_state=(um_hold_state){0};analog_reset();hold_idle_us=20000u;
     direction_settings=*common;
@@ -383,7 +401,7 @@ bool upr_switch_released(void) { return !switch_guard.held; }
 static void activate(unsigned slot) {
     upr_mouse_reset();
     active=(int)slot;binding_error=false;refresh_conversion();up_mapper_attach(&mapper,&bank.profiles[slot]);
-    seed_buttons();select_button_path();
+    select_button_path();seed_buttons();if(low_speed)up_mapper_buttons_only(&mapper);
     refresh_group();
     uc_request_poll_interval(bank.profiles[slot].input_interval_ms);
 }
@@ -421,13 +439,17 @@ bool upr_event(const uc_event *e) {
             device_descriptor_size=configuration_descriptor_size=0;
             memset(pointing_intervals,0,sizeof(pointing_intervals));
             input_protocol=0;memset(&last_input,0,sizeof(last_input));
-            input_initialization=0;motion_path=0;
+            input_initialization=0;motion_path=0;native_motion_enabled=false;unm_init(&native_motion);
             memset(fields,0,sizeof(fields));up_mapper_attach(&mapper,NULL);return true;
         }
         if(e->code==UC_INPUT_SPEED)low_speed=e->sequence==1;
         if(e->code==UC_DEVICE_FOUND) { vid=(uint16_t)(e->sequence>>16);pid=(uint16_t)e->sequence; }
         if(e->code==UC_INPUT_INIT)input_initialization=e->sequence;
-        if(e->code==UC_MOTION_CALIBRATION)motion_path=(uint8_t)e->sequence;
+        if(e->code==UC_MOTION_CALIBRATION) {
+            motion_path=(uint8_t)e->sequence;
+            unm_calibrate(&native_motion,UC_PROTOCOL_DUALSHOCK3,e->data,e->length);
+        }
+        if(e->code==UC_NATIVE_MOTION_CALIBRATION)unm_calibrate(&native_motion,(uint8_t)e->sequence,e->data,e->length);
         if(e->code==UC_INPUT_PROTOCOL) {
             input_protocol=(uint8_t)e->sequence;
             // A synthetic schema alone cannot distinguish Xbox-compatible pads.
@@ -532,12 +554,17 @@ uint32_t upr_device_ids(void) { return connected?((uint32_t)vid<<16)|pid:0; }
 uint8_t upr_gyro_axes(void) { return mapper.gyro_axes; }
 bool upr_low_speed(void) { return low_speed; }
 bool upr_rumble_enabled(void) { return rumble_enabled; }
+bool upr_native_motion_enabled(void) { return native_motion_enabled; }
+void upr_native_motion_encode(uint8_t out[36],uint32_t now,uint8_t gyro_range,uint8_t accel_range) {
+    unm_encode(&native_motion,out,now,gyro_range,accel_range);
+}
 bool upr_apply_buttons(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
     if(!up_mapper_apply_buttons(&mapper,e->interface_number,e->data,e->length,out))return false;
     up_mapper_tick(&mapper,now,output_ready,out);return true;
 }
 bool upr_apply(const uc_event *e,uint32_t now,bool output_ready,sw_report *out) {
     bool motion=false;
+    if(native_motion_enabled)motion=unm_input(&native_motion,input_protocol,e->data,e->length,e->time_us,ucf_learning_allowed(e->time_us));
     if(mapper.gyro_axes) {
         ucf_calibration_held(up_mapper_recenter_held(&mapper,e->interface_number,e->data,e->length));
         motion=up_mapper_motion(&mapper,e->interface_number,e->data,e->length,e->time_us,ucf_learning_allowed(e->time_us));
@@ -557,7 +584,7 @@ bool upr_command(uint8_t cmd,const uint8_t arg[56],uint8_t reply[56],uint8_t *st
         put16(reply+14,pid);put16(reply+16,revision);
         put16(reply+18,(connected?1:0)|(partial?2:0)|(persisted?4:0)|(binding_error?8:0)|(selection_unsaved?16:0)|UPR_CAP_BUTTON_TOGGLE|UPR_CAP_EXTENDED_CURVES|UPR_CAP_VIRTUAL_POINT|UPR_CAP_PADDLE_ANALOG|UPR_CAP_SHARED_ANALOG_STICK|UPR_CAP_INTEGER_VIRTUAL_POINT|UPR_CAP_NORMALIZED_PADDLE|UPR_CAP_LOW_SPEED_CURVE|UPR_CAP_PS4_INPUT_DIRECTIONS|UPR_CAP_GENERIC_PS4|(ps4_input?UPR_STATUS_PS4_INPUT:0));
         put32(reply+20,connection_generation);put32(reply+24,~descriptor_crc);put32(reply+28,bank.generation);put32(reply+32,head);
-        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=(uint8_t)((motion_path&0x3fu)|UPR_INPUT_SPEED_SUPPORTED|(low_speed?UPR_INPUT_LOW_SPEED:0u));
+        reply[36]=active<0?0:bank.profiles[active].input_interval_ms;reply[37]=host_status;reply[38]=input_protocol;reply[39]=(uint8_t)((motion_path&0x1fu)|UPR_INPUT_NATIVE_MOTION|UPR_INPUT_SPEED_SUPPORTED|(low_speed?UPR_INPUT_LOW_SPEED:0u));
         put32(reply+40,input_initialization);
         put32(reply+44,95|512|UPR_FEATURE_BANK_TRANSFER|UPR_FEATURE_PROFILE_OUTPUT|UPR_FEATURE_GUARDED_REGISTRATION|UPR_FEATURE_BUTTON_SHIFT|UPR_FEATURE_PADDLE_AXIS|UPR_FEATURE_GAIN256|UPR_FEATURE_DIRECTION_KEYS|UPR_FEATURE_DIRECTION_SETTINGS|UPR_FEATURE_DIRECTION_TARGETS|UPR_FEATURE_DIRECTION_SOURCES|UPR_FEATURE_VIRTUAL_ROLLING|UPR_FEATURE_TRACKBALL_HOLD|UPR_FEATURE_ROLLING_STEP|UPR_FEATURE_PROFILE_CONVERSION|UPR_FEATURE_PSEUDO_INERTIA|UPR_FEATURE_ANALOG_PAIR|UPR_FEATURE_GYRO_STEERING|UPR_FEATURE_GYRO_DRIFT_PROTECTION|UPR_FEATURE_INPUT_DIRECTIONS|UPR_FEATURE_RUMBLE|UPR_FEATURE_ANALOG_ANGLE);reply[48]=UP_RAPID_MIN_HZ;reply[49]=UP_RAPID_MAX_HZ;
         reply[50]=(uint8_t)upr_profile_number();reply[51]=(uint8_t)upr_group_count();

@@ -7,7 +7,9 @@ enum {
     SW_MINUS=1u<<8, SW_PLUS=1u<<9, SW_L3=1u<<10, SW_R3=1u<<11,
     SW_HOME=1u<<12, SW_CAPTURE=1u<<13
 };
-typedef struct { uint8_t buttons0, buttons1, hat, lx, ly, rx, ry, pad; } sw_report;
+// The first eight bytes retain the Switch HID wire layout.
+#define SW_REPORT_BYTES 8u
+typedef struct { uint8_t buttons0, buttons1, hat, lx, ly, rx, ry, pad, gc_l, gc_r; } sw_report;
 extern const uint8_t sw_device_descriptor[18];
 extern const uint8_t sw_configuration_descriptor[34];
 extern const uint8_t sw_report_descriptor[102];

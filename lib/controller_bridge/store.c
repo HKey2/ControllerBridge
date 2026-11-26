@@ -176,7 +176,7 @@ bool ub_store_load_direction_settings(udk_settings *settings) {
         inertia->crc==crc32((const uint8_t *)inertia,16) && udk_inertia_unpack(&candidate,inertia->options,inertia->interval_ms);
     if(inertia_valid)*settings=candidate;
     const rolling_setting *host=(const rolling_setting *)(inertia+1);
-    bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=3 &&
+    bool host_valid=host->magic==HOST_MODE_MAGIC && host->version==1 && host->value<=4 &&
         host->crc==crc32((const uint8_t *)host,12);
     if(host_valid)settings->host_mode=(uint8_t)host->value;
     const rolling_setting *display=host+1;

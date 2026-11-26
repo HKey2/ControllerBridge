@@ -32,13 +32,13 @@ target_compile_options(controller_usb PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_device STATIC
     lib/controller_device/native_rp2350.c lib/controller_device/switch_wired.c lib/controller_device/switch_protocols.c
-    lib/controller_device/usb_mouse.c lib/controller_device/xinput_wired.c lib/controller_device/xinput_portal.c)
+    lib/controller_device/usb_mouse.c lib/controller_device/gamecube_wired.c lib/controller_device/xinput_wired.c lib/controller_device/xinput_portal.c)
 target_include_directories(controller_device PUBLIC lib/controller_device/include)
 target_link_libraries(controller_device PUBLIC pico_stdlib PRIVATE hardware_irq hardware_resets hardware_sync)
 target_compile_options(controller_device PRIVATE -Wall -Wextra -Werror)
 
 add_library(controller_bridge STATIC lib/controller_bridge/queue.c lib/controller_bridge/store.c
-    lib/controller_bridge/gyro.c lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c
+    lib/controller_bridge/gyro.c lib/controller_bridge/native_motion.c lib/controller_bridge/profile.c lib/controller_bridge/profile_store.c lib/controller_bridge/profile_runtime.c
     lib/controller_bridge/profile_button.c lib/controller_bridge/mouse.c lib/controller_bridge/virtual_point.c
     lib/controller_bridge/paddle_point.c lib/controller_bridge/analog_response.c)
 target_include_directories(controller_bridge PUBLIC lib/controller_bridge/include)
@@ -47,7 +47,7 @@ target_compile_options(controller_bridge PRIVATE -Wall -Wextra -Werror)
 
 add_executable(ControllerBridge apps/egret_switch/main.c apps/egret_switch/egret_switch_profile.c
     apps/egret_switch/status_led.c apps/egret_switch/status_oled.c apps/egret_switch/oled_text.c apps/egret_switch/oled_output.c
-    apps/egret_switch/switch_output.c apps/egret_switch/xinput_feedback.c)
+    apps/egret_switch/switch_output.c apps/egret_switch/gamecube_output.c apps/egret_switch/xinput_feedback.c)
 target_include_directories(ControllerBridge PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 pico_generate_pio_header(ControllerBridge ${CMAKE_CURRENT_LIST_DIR}/apps/egret_switch/status_led.pio)
 target_link_libraries(ControllerBridge PRIVATE controller_bridge pico_multicore pico_unique_id hardware_watchdog hardware_pio hardware_i2c)

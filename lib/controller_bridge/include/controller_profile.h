@@ -9,13 +9,15 @@
 #define UP_PROFILE_COUNT 16
 #define UP_DIGITAL_COUNT 18
 #define UP_AXIS_COUNT 4
-#define UP_PROFILE_BYTES 864
+#define UP_PROFILE_BYTES 896
+#define UP_V12_PROFILE_BYTES 864
+#define UP_V12_BANK_BYTES 14164
 #define UP_V10_PROFILE_BYTES 856
 #define UP_V10_BANK_BYTES 14036
 #define UP_PREVIOUS_PROFILE_BYTES 848
 #define UP_PREVIOUS_BANK_BYTES 13908
 #define UP_SHIFT_KEYS 3
-#define UP_PROFILE_VERSION 12u
+#define UP_PROFILE_VERSION 13u
 #define UP_BUTTON_LABEL_COUNT 14u
 #define UP_LEGACY_PROFILE_BYTES 488
 #define UP_LEGACY_BANK_BYTES 8148
@@ -23,7 +25,7 @@
 #define UP_ID_BYTES 16
 #define UP_RAPID_MIN_HZ 1
 #define UP_RAPID_MAX_HZ 60
-enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8, UP_RUMBLE=16 };
+enum { UP_ENABLED=1, UP_MATCH_DESCRIPTOR=2, UP_MATCH_REVISION=4, UP_LED_CUSTOM=8, UP_RUMBLE=16, UP_NATIVE_MOTION=32 };
 enum { UP_SIGNED=1, UP_REPORT_ID=2, UP_INVERT=4, UP_GYRO=8, UP_BIG_ENDIAN=16, UP_SOURCE_REVERSED=32 };
 // Output binding behavior; never part of a physical input's identity.
 #define UP_TOGGLE 64u
@@ -115,7 +117,7 @@ typedef struct {
     uint8_t minimum_percent,maximum_percent,curve;
     // Zero maximum encodes the default 100%. Old banks expand with zero bytes.
     // Byte 851 is presentation metadata only; never used by the input/output path.
-    uint8_t button_labels,reserved[4];
+    uint8_t button_labels,native_gyro_axis,reserved[3]; // DS3 native gyro destination: 0 Z (legacy), 1 X, 2 Y.
 } up_analog_levels;
 static inline unsigned up_analog_maximum(const up_analog_levels *levels) {
     return levels->maximum_percent?levels->maximum_percent:100u;
@@ -140,6 +142,7 @@ typedef struct {
     up_shift shift;
     up_analog_levels analog_levels;
     up_paddle_analog paddle_analog;
+    up_analog_half gc_triggers[2]; // Independent L/R; bits=0 is unassigned.
 } up_profile;
 typedef struct {
     uint32_t magic,version,generation,bytes;
@@ -168,6 +171,7 @@ typedef struct {
     sw_report last_output;
     bool have_output;
     uint8_t gyro_axes;
+    uint8_t gc_mask,gc_values[2];
 } up_mapper;
 
 // Keep the triggering physical bindings until all are released, even if the
@@ -188,10 +192,11 @@ _Static_assert(offsetof(up_profile,shift.conversion)==544,"conversion offset");
 _Static_assert(offsetof(up_profile,shift.digital)==560,"shifted bindings offset");
 _Static_assert(sizeof(up_analog_levels)==8,"analog levels wire ABI");
 _Static_assert(offsetof(up_profile,analog_levels.button_labels)==851,"button label metadata offset");
+_Static_assert(offsetof(up_profile,analog_levels.native_gyro_axis)==852,"native gyro axis offset");
 _Static_assert(offsetof(up_profile,analog_levels)==848,"existing profile prefix is unchanged");
 _Static_assert(sizeof(up_paddle_analog)==8,"paddle analog wire ABI");
 _Static_assert(offsetof(up_profile,paddle_analog)==856,"v10 profile prefix is unchanged");
-_Static_assert(sizeof(up_bank)==14164,"16 profiles fit four flash sectors with store header");
+_Static_assert(sizeof(up_bank)==14676,"16 profiles fit four flash sectors with store header");
 
 void up_profile_clear(up_profile *profile);
 void up_bank_clear(up_bank *bank);
@@ -220,6 +225,7 @@ bool up_mapper_apply(up_mapper *mapper,uint8_t interface_number,const uint8_t *r
 // Dedicated button-only mapping; retains D-pad ranges, shift, rapid and toggle.
 // Analog/gyro outputs stay neutral. Chosen at connection, never per field.
 void up_mapper_buttons_only(up_mapper *mapper);
+void up_mapper_gamecube(up_mapper *mapper,bool enabled);
 bool up_mapper_apply_buttons(up_mapper *mapper,uint8_t interface_number,const uint8_t *report,unsigned length,sw_report *output);
 void up_mapper_report(const up_mapper *mapper,sw_report *output);
 void up_mapper_release_toggles(up_mapper *mapper);
@@ -235,6 +241,7 @@ bool up_bank_upgrade_v8(up_bank *bank);
 bool up_bank_upgrade_v9(up_bank *bank);
 bool up_bank_upgrade_v10(up_bank *bank);
 bool up_bank_upgrade_v11(up_bank *bank);
+bool up_bank_upgrade_v12(up_bank *bank);
 bool up_bank_upgrade_v6(up_bank *bank,const udk_settings *defaults);
 void up_conversion_from_legacy(up_conversion *conversion,const up_mouse_options *mouse,const udk_settings *defaults);
 void up_conversion_apply(const up_conversion *conversion,udk_settings *effective);

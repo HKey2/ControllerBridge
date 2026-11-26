@@ -200,14 +200,15 @@ public sealed class DeviceProfile
 {
     // Stored beside the profile on the board; included in JSON exports.
     public Guid ProfileId { get; set; }
-    public const int ByteCount = 864;
+    public const int ByteCount = 896;
+    public const int V12ByteCount = 864;
     public const int V10ByteCount = 856;
     public const int PreviousByteCount = 848;
     public const int LegacyByteCount = 488;
     public const int SlotCount = 16;
     public static string[] Targets => OutputPresentation.Targets;
     public static readonly string[] AxisNames = [L.T("左スティック X", "Left stick X"), L.T("左スティック Y", "Left stick Y"), L.T("右スティック X", "Right stick X"), L.T("右スティック Y", "Right stick Y")];
-    public ushort Version { get; set; } = 12;
+    public ushort Version { get; set; } = 13;
     public byte ButtonLabelSystem { get; set; } = 1;
     internal string TargetName(int index) => ButtonLabels.Describe(ButtonLabelSystem, index);
     public ConversionSettings Conversion { get; set; } = new();
@@ -232,6 +233,8 @@ public sealed class DeviceProfile
     [System.Text.Json.Serialization.JsonIgnore]
     public OutputSettings Output => new(OutputMode != 0, 1, false, false, OutputMode == 2, OutputMode == 2 && ControllerButtons);
     [System.Text.Json.Serialization.JsonIgnore]
+    public bool NativeMotionEnabled { get => (Flags & 32) != 0; set => Flags = (ushort)((Flags & ~32) | (value ? 32 : 0)); }
+    public byte NativeGyroAxis { get; set; } // 0 Z (existing/default), 1 X, 2 Y.
     public bool RumbleEnabled { get => (Flags & 16) != 0; set => Flags = (ushort)((Flags & ~16) | (value ? 16 : 0)); }
     public ushort Flags { get; set; }
     public ushort Vid { get; set; }
@@ -243,13 +246,14 @@ public sealed class DeviceProfile
     public string Name { get; set; } = "";
     public DigitalBinding[] Buttons { get; set; } = Enumerable.Range(0, 18).Select(_ => new DigitalBinding()).ToArray();
     public AxisBinding[] Axes { get; set; } = Enumerable.Range(0, 4).Select(_ => new AxisBinding()).ToArray();
+    public AnalogHalfBinding?[] GameCubeTriggers { get; set; } = new AnalogHalfBinding?[2];
     public bool Enabled => (Flags & 1) != 0;
     public bool HasRapidFire => Buttons.Any(b => b is { RapidHz: > 0 }) || Shift.Buttons.Where((b, i) => (Shift.Overrides & (1u << i)) != 0).Any(b => b.RapidHz > 0);
     [System.Text.Json.Serialization.JsonIgnore]
     public bool HasToggle => Buttons.Any(b => b is { Toggle: true }) || Shift.Buttons.Any(b => b is { Toggle: true });
     public byte[] Encode()
     {
-        if (Version != 12 || !ButtonLabels.Valid(ButtonLabelSystem) || OutputMode > 2 || Flags > 31 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
+        if (Version != 13 || NativeGyroAxis > 2 || GameCubeTriggers is null || GameCubeTriggers.Length != 2 || !ButtonLabels.Valid(ButtonLabelSystem) || OutputMode > 2 || Flags > 63 || (!CustomLed && (LedRed != 0 || LedGreen != 0 || LedBlue != 0)) || Name is null || Encoding.UTF8.GetByteCount(Name) > 47 || Name.Contains('\0') ||
             (Enabled && (Vid == 0 || string.IsNullOrWhiteSpace(Name))) || Buttons is null || Buttons.Length != 18 || Axes is null || Axes.Length != 4)
             throw new InvalidDataException(L.T("プロファイルの形式、名前（UTF-8で47バイトまで）、VIDを確認してください。", "Check the profile format, name (up to 47 UTF-8 bytes), and VID."));
         // v5 stores per-profile output in one former reserved byte, without
@@ -258,7 +262,7 @@ public sealed class DeviceProfile
         for (int axis = 0; axis < 4; axis++)
             if (Axes[axis] is { Mode: 1, Analog.Gyro: true } && (Vid != 0x054c || Pid != 0x0268 || axis is not (0 or 2)))
                 throw new InvalidDataException(L.T("DS3のジャイロはLXまたはRXに設定してください。", "Assign the DS3 gyro to LX or RX."));
-        const ushort wireVersion = 12;
+        const ushort wireVersion = 13;
         byte[] b = new byte[ByteCount]; Wire.W16(b, 0, wireVersion); Wire.W16(b, 2, Flags); Wire.W16(b, 4, Vid);
         Wire.W16(b, 6, Pid); Wire.W16(b, 8, Revision); b[10] = InputInterval; Wire.W32(b, 12, DescriptorHash);
         Encoding.UTF8.GetBytes(Name).CopyTo(b, 16);
@@ -278,7 +282,8 @@ public sealed class DeviceProfile
         (Shift ?? throw new InvalidDataException()).Write(b);
         b[493] = (byte)GyroRecenterButtons; b[494] = (byte)(GyroRecenterButtons >> 8); b[495] = (byte)(GyroRecenterButtons >> 16);
         (Conversion ?? throw new InvalidDataException()).Write(b);
-        b[851] = ButtonLabelSystem;
+        b[851] = ButtonLabelSystem; b[852] = NativeGyroAxis;
+        for (int i = 0; i < 2; i++) GameCubeTriggers[i]?.Write(b, 864 + 16 * i);
         return b;
     }
     public static DeviceProfile Decode(byte[] b, MouseUdlrSettings? legacyDefaults = null)
@@ -287,16 +292,20 @@ public sealed class DeviceProfile
         {
             byte[] expanded = new byte[ByteCount]; b.CopyTo(expanded, 0); new ConversionSettings().WritePaddle(expanded); b = expanded;
         }
-        else if (b.Length == ByteCount && Wire.U16(b, 0) is not (11 or 12))
+        else if (b.Length == V12ByteCount && Wire.U16(b, 0) is 11 or 12)
+        {
+            byte[] expanded = new byte[ByteCount]; b.CopyTo(expanded, 0); b = expanded;
+        }
+        else if (b.Length == ByteCount && Wire.U16(b, 0) != 13)
             throw new InvalidDataException("Profile length does not match its version.");
         if (b.Length == LegacyByteCount && Wire.U16(b, 0) == 5)
         {
             byte[] migrated = new byte[ByteCount]; b.CopyTo(migrated, 0); Wire.W16(migrated, 0, 6); b = migrated;
         }
         bool legacy = b.Length == ByteCount && Wire.U16(b, 0) == 6;
-        if (b.Length != ByteCount || Wire.U16(b, 0) is not (6 or 8 or 9 or 10 or 11 or 12))
+        if (b.Length != ByteCount || Wire.U16(b, 0) is not (6 or 8 or 9 or 10 or 11 or 12 or 13))
             throw new InvalidDataException(L.T("プロファイル形式・長さが不正です。", "The profile format or length is invalid."));
-        if (Wire.U16(b, 2) > (Wire.U16(b, 0) >= 9 ? 31 : 15)) throw new InvalidDataException("Unsupported profile flags.");
+        if (Wire.U16(b, 2) > (Wire.U16(b, 0) >= 13 ? 63 : Wire.U16(b, 0) >= 9 ? 31 : 15)) throw new InvalidDataException("Unsupported profile flags.");
         int end = Array.IndexOf(b, (byte)0, 16, 48);
         if (end < 16) throw new InvalidDataException(L.T("プロファイル名が不正です。", "The profile name is invalid."));
         DeviceProfile p = new() { Version = Wire.U16(b, 0), Flags = Wire.U16(b, 2), Vid = Wire.U16(b, 4), Pid = Wire.U16(b, 6),
@@ -317,7 +326,10 @@ public sealed class DeviceProfile
         p.GyroRecenterButtons = (uint)(b[493] | b[494] << 8 | b[495] << 16);
         p.Conversion = legacy ? ConversionSettings.FromLegacy(p.Mouse, legacyDefaults ?? MouseUdlrSettings.Defaults) : ConversionSettings.Read(b);
         p.ButtonLabelSystem = Wire.U16(b, 0) >= 12 ? b[851] : (byte)1;
-        p.Version = 12; p.LegacyConversionApplied = legacy;
+        p.NativeGyroAxis = Wire.U16(b, 0) >= 13 ? b[852] : (byte)0;
+        if (p.Version >= 13) for (int i = 0; i < 2; i++)
+            if (b[868 + i * 16] != 0) p.GameCubeTriggers[i] = AnalogHalfBinding.Read(b, 864 + i * 16);
+        p.Version = 13; p.LegacyConversionApplied = legacy;
         _ = p.Encode(); return p;
     }
     public DeviceProfile Clone() { DeviceProfile p = Decode(Encode()); p.ProfileId = ProfileId; p.LegacyConversionApplied = LegacyConversionApplied; return p; }
@@ -332,7 +344,7 @@ public sealed class DeviceProfile
 internal sealed class ProfileFile
 {
     public string Format { get; set; } = "ControllerBridge.Profile";
-    public int Version { get; set; } = 9;
+    public int Version { get; set; } = 10;
     public DeviceProfile Profile { get; set; } = new();
     public static void Save(string path, DeviceProfile p)
     {
@@ -350,7 +362,8 @@ internal sealed class ProfileFile
     {
         if (new FileInfo(path).Length > 256 * 1024) throw new InvalidDataException(L.T("プロファイルファイルが大きすぎます。", "The profile file is too large."));
         ProfileFile f = JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(path)) ?? throw new InvalidDataException(L.T("JSON形式が不正です。", "The JSON format is invalid."));
-        if (f.Format != "ControllerBridge.Profile" || f.Version is not (2 or 3 or 5 or 6 or 7 or 8 or 9) || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
+        if (f.Format != "ControllerBridge.Profile" || f.Version is not (2 or 3 or 5 or 6 or 7 or 8 or 9 or 10) || f.Profile is null) throw new InvalidDataException(L.T("未対応のプロファイル形式です。", "This profile format is not supported."));
+        if (f.Version < 10 && (f.Profile.GameCubeTriggers is null || f.Profile.GameCubeTriggers.Length != 2 || f.Profile.GameCubeTriggers.Any(t => t is not null))) throw new InvalidDataException("Legacy profiles cannot contain GameCube trigger settings.");
         if (f.Version < 9 && f.Profile.ButtonLabelSystem != 1) throw new InvalidDataException("Legacy profiles cannot contain button label settings.");
         if (f.Version < 8 && f.Profile.Conversion.HasPaddleAnalogSettings)
             throw new InvalidDataException("Legacy profiles cannot contain Paddle analog settings.");
@@ -372,10 +385,10 @@ internal sealed class ProfileFile
                 if (f.Profile.Shift.Keys.Take(i).Any(k => ShiftSettings.SameSource(k, f.Profile.Shift.Keys[i]))) throw new InvalidDataException("Duplicate shift key.");
             f.Profile.Shift.Keys = f.Profile.Shift.Keys.Take(3).ToList();
             f.Profile.Conversion = ConversionSettings.FromLegacy(f.Profile.Mouse, legacyDefaults ?? MouseUdlrSettings.Defaults);
-            f.Profile.Version = 12; f.Profile.LegacyConversionApplied = true;
+            f.Profile.Version = 13; f.Profile.LegacyConversionApplied = true;
         }
-        else if ((f.Version == 5 && f.Profile.Version == 8) || (f.Version == 6 && f.Profile.Version == 9) || (f.Version == 7 && f.Profile.Version == 10) || (f.Version == 8 && f.Profile.Version == 11)) f.Profile.Version = 12;
-        else if (f.Version != 9 || f.Profile.Version != 12) throw new InvalidDataException("Unsupported profile version.");
+        else if ((f.Version == 5 && f.Profile.Version == 8) || (f.Version == 6 && f.Profile.Version == 9) || (f.Version == 7 && f.Profile.Version == 10) || (f.Version == 8 && f.Profile.Version == 11) || (f.Version == 9 && f.Profile.Version == 12)) f.Profile.Version = 13;
+        else if (f.Version != 10 || f.Profile.Version != 13) throw new InvalidDataException("Unsupported profile version.");
         return f.Profile.Clone();
     }
 }

@@ -16,11 +16,11 @@ internal sealed class AxisSourceList : TableLayoutPanel
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
         SizeChanged += (_, _) => ArrangeTiles();
     }
-    internal void SetInputs(IEnumerable<InputField> fields, Func<InputField, string> label, int axis = 0)
+    internal void SetInputs(IEnumerable<InputField> fields, Func<InputField, string> label, int axis = 0, bool unipolar = false)
     {
         foreach (InputField f in fields)
         {
-            SourceTile tile = new(f, label(f), tips, axis); tiles.Add(tile);
+            SourceTile tile = new(f, label(f), tips, axis, unipolar); tiles.Add(tile);
             tile.Choose += part => Choose?.Invoke(f, part);
         }
         ArrangeTiles();
@@ -58,6 +58,7 @@ internal sealed class AxisSourceList : TableLayoutPanel
             tile.ShowSelection(AxisSelection.Matches(tile.Field, selection.Whole),
                 AxisSelection.Matches(tile.Field, selection.Halves[0]), AxisSelection.Matches(tile.Field, selection.Halves[1]));
     }
+    internal void ShowSingleSelection(AnalogHalfBinding? binding) { foreach (SourceTile tile in tiles) tile.ShowSelection(AxisSelection.Matches(tile.Field, binding), false, false); }
     internal void RefreshValue(InputField field) => tiles.FirstOrDefault(t => ReferenceEquals(t.Field, field))?.RefreshValue();
     internal static int Midpoint(InputField field) => field.MinimumNeutral ? field.Minimum : field.Minimum < 0 && field.Maximum > 0 ? 0 :
         (int)(field.Minimum + ((long)field.Maximum - field.Minimum + 1) / 2);
@@ -76,7 +77,7 @@ internal sealed class AxisSourceList : TableLayoutPanel
         private readonly Button positive, negative;
         private readonly int axis;
         internal event Action<int>? Choose;
-        internal SourceTile(InputField field, string label, ToolTip tips, int axis)
+        internal SourceTile(InputField field, string label, ToolTip tips, int axis, bool unipolar)
         {
             this.axis = axis; Field = field; Dock = DockStyle.Fill; Margin = new(4, 2, 4, 2); ColumnCount = 2; RowCount = 2;
             ColumnStyles.Add(new(SizeType.Percent, 60)); ColumnStyles.Add(new(SizeType.Percent, 40));
@@ -86,6 +87,7 @@ internal sealed class AxisSourceList : TableLayoutPanel
             positive = Part(AxisDirections.Label(axis, 1), 1); negative = Part(AxisDirections.Label(axis, 0), 0);
             positive.Enabled = negative.Enabled = !field.Gyroscope;
             Controls.Add(whole, 0, 0); SetRowSpan(whole, 2); Controls.Add(positive, 1, 0); Controls.Add(negative, 1, 1);
+            if (unipolar) { positive.Visible = negative.Visible = false; SetColumnSpan(whole, 2); }
             string origin = $"IF{field.Interface} / ID{field.ReportId} / bit{field.BitOffset}";
             tips.SetToolTip(whole, label + L.T("：全体に割り当て。同じ場所をもう一度押すと解除。", ": assign the whole axis. Press again to clear.") + "\n" + origin);
             tips.SetToolTip(positive, label + "：" + AxisDirections.Label(axis, 1) + L.T("に割り当て・解除。", " — assign or clear."));

@@ -48,7 +48,7 @@ static bool digital_valid(const up_digital *d,bool allow_rapid) {
 }
 static bool profile_valid(const up_profile *p,unsigned version) {
     bool legacy=version==6;
-    if(p->version!=version || (p->flags&~(version>=9?31u:15u)) || !memchr(p->name,0,sizeof(p->name)))return false;
+    if(p->version!=version || (p->flags&~(version>=13?63u:version>=9?31u:15u)) || !memchr(p->name,0,sizeof(p->name)))return false;
     const up_mouse_options *m=&p->mouse;
     unsigned gain=up_mouse_trackball_gain10(m);
     if(gain<10 || gain>2560u || m->paddle_gain10<10 || m->paddle_gain10>100)return false;
@@ -86,6 +86,13 @@ static bool profile_valid(const up_profile *p,unsigned version) {
             }
         } else return false;
     }
+    if(version>=13)for(unsigned i=0;i<2;++i) {
+        const up_analog_half *a=&p->gc_triggers[i];
+        if(!a->bits)continue;
+        if((a->flags&~(unsigned)UP_SOURCE_FLAGS) || !source_valid(a->report_id,a->bit_offset,a->bits,a->flags) ||
+           a->neutral==a->maximum || a->deadzone_percent>50 ||
+           !number_fits(a->neutral,a->bits,a->flags) || !number_fits(a->maximum,a->bits,a->flags))return false;
+    }
     const up_shift *s=&p->shift;
     if(s->count>(legacy?4u:UP_SHIFT_KEYS) || (s->overrides&~0x3ffffu) || (up_profile_recenter_keys(p)&~0x1ffffu) || (legacy && up_profile_recenter_keys(p)))return false;
     const up_digital *keys=(const up_digital *)((const uint8_t *)p+496);
@@ -114,6 +121,7 @@ static bool profile_valid(const up_profile *p,unsigned version) {
     if(levels->minimum_percent>=up_analog_maximum(levels) || up_analog_maximum(levels)>100u ||
        !up_analog_curve_valid(levels->curve))return false;
     if(version<12?levels->button_labels!=0:levels->button_labels>=UP_BUTTON_LABEL_COUNT)return false;
+    if(version<13?levels->native_gyro_axis!=0:levels->native_gyro_axis>2)return false;
     for(unsigned i=0;i<sizeof(levels->reserved);++i)if(levels->reserved[i])return false;
     if(version<10 && (levels->minimum_percent || levels->maximum_percent || levels->curve))return false;
     if(version>=11) {
@@ -293,8 +301,8 @@ bool up_profile_shift_conflicts(const up_profile *p,uint32_t keys) {
     return false;
 }
 static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *defaults) {
-    unsigned stride=version==11?UP_PROFILE_BYTES:version==5?UP_LEGACY_PROFILE_BYTES:version==10?UP_V10_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
-    unsigned bytes=version==11?sizeof(*b):version==5?UP_LEGACY_BANK_BYTES:version==10?UP_V10_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
+    unsigned stride=version>=11?UP_V12_PROFILE_BYTES:version==5?UP_LEGACY_PROFILE_BYTES:version==10?UP_V10_PROFILE_BYTES:UP_PREVIOUS_PROFILE_BYTES;
+    unsigned bytes=version>=11?UP_V12_BANK_BYTES:version==5?UP_LEGACY_BANK_BYTES:version==10?UP_V10_BANK_BYTES:UP_PREVIOUS_BANK_BYTES;
     if(b->magic!=UP_BANK_MAGIC || b->version!=version || b->bytes!=bytes ||
        (version<=6 && (!defaults || !udk_settings_valid(defaults))))return false;
     uint8_t *raw=(uint8_t *)b;
@@ -315,12 +323,13 @@ static bool upgrade_bank(up_bank *b,unsigned version,const udk_settings *default
             up_conversion_from_legacy(&p->shift.conversion,&p->mouse,defaults);
         }
         if(version<11)p->paddle_analog=(up_paddle_analog)UP_LEGACY_PADDLE_ANALOG;
-        p->analog_levels.button_labels=1;
+        if(version<12)p->analog_levels.button_labels=1;
         p->version=UP_PROFILE_VERSION;
     }
     memcpy(b->profile_ids,tail,sizeof(tail));b->version=UP_PROFILE_VERSION;b->bytes=sizeof(*b);
     return up_bank_valid(b);
 }
+bool up_bank_upgrade_v12(up_bank *b) { return upgrade_bank(b,12,NULL); }
 bool up_bank_upgrade_v11(up_bank *b) { return upgrade_bank(b,11,NULL); }
 bool up_bank_upgrade_v10(up_bank *b) { return upgrade_bank(b,10,NULL); }
 bool up_bank_upgrade_v9(up_bank *b) { return upgrade_bank(b,9,NULL); }
@@ -386,6 +395,7 @@ static void UC_RAM_FUNC(report_buttons)(const up_mapper *m,uint32_t buttons,sw_r
     int x=(int)((buttons>>15)&1)-(int)((buttons>>17)&1),y=(int)((buttons>>16)&1)-(int)((buttons>>14)&1);
     static const uint8_t hats[3][3]={{7,0,1},{6,15,2},{5,4,3}};
     r->hat=hats[y+1][x+1];r->lx=m->axes[0];r->ly=m->axes[1];r->rx=m->axes[2];r->ry=m->axes[3];
+    r->gc_l=m->gc_values[0];r->gc_r=m->gc_values[1];
 }
 static uint32_t toggle_buttons(const up_mapper *m,uint32_t physical) {
     return (physical&~m->toggle_configured)|(m->toggle_latched&~m->toggle_suppressed);
@@ -523,7 +533,13 @@ static void UC_RAM_FUNC(resolve_button_shift)(up_mapper *m) {
     }
     if(m->toggle_any)resolve_toggles(m,layer_changed,blocked,overrides_held);
 }
+void up_mapper_gamecube(up_mapper *m,bool enabled) {
+    m->gc_mask=0;m->gc_values[0]=m->gc_values[1]=0;m->have_output=false;
+    if(enabled && m->profile)for(unsigned i=0;i<2;++i)
+        if(m->profile->gc_triggers[i].bits)m->gc_mask|=(uint8_t)(1u<<i);
+}
 void up_mapper_buttons_only(up_mapper *m) {
+    up_mapper_gamecube(m,false);
     m->gyro_axes=0;
     memset(m->axes,128,sizeof(m->axes));memset(m->raw_axes,128,sizeof(m->raw_axes));
     memset(m->pairs,0,sizeof(m->pairs));memset(m->analog_halves,0,sizeof(m->analog_halves));
@@ -558,6 +574,11 @@ void up_mapper_seed(up_mapper *m,uint8_t iface,uint8_t id,uint16_t offset,uint8_
             if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && a->flags==flags)
                 m->analog_halves[i][j]=analog_half_value(a,value);
         }
+    }
+    if(m->gc_mask)for(unsigned i=0;i<2;++i)if(m->gc_mask&(1u<<i)) {
+        const up_analog_half *a=&p->gc_triggers[i];
+        if(a->interface_number==iface && a->report_id==id && a->bit_offset==offset && a->bits==bits && a->flags==flags)
+            m->gc_values[i]=(uint8_t)(analog_half_value(a,value)/257u);
     }
     resolve_shift(m);
     if(m->toggle_any) {
@@ -601,6 +622,12 @@ bool UC_RAM_FUNC(up_mapper_apply)(up_mapper *m,uint8_t iface,const uint8_t *raw,
             if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
                 m->analog_halves[i][j]=analog_half_value(a,value);touched=true;
             }
+        }
+    }
+    if(m->gc_mask)for(unsigned i=0;i<2;++i)if(m->gc_mask&(1u<<i)) {
+        const up_analog_half *a=&p->gc_triggers[i];int32_t value;
+        if(read_source(a->interface_number,a->report_id,a->bit_offset,a->bits,a->flags,iface,raw,n,&value)) {
+            m->gc_values[i]=(uint8_t)(analog_half_value(a,value)/257u);touched=true;
         }
     }
     resolve_shift(m);

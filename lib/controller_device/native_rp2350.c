@@ -26,7 +26,7 @@ static ud_statistics stat;
 static volatile uint32_t bus_generation;
 uint32_t ud_bus_generation(void) { return bus_generation; }
 static control_state control;
-static uint8_t control_data[512], last_input[64];
+static uint8_t control_data[512], last_input[64],last_input_length;
 static uint16_t control_length, control_offset, control_expected;
 static bool control_zlp, control_stall_zlp, feature_out;
 static volatile bool output_pending,control_pending;
@@ -398,7 +398,7 @@ static void setup_received(void) {
             stall_control();return;
         }
         if (s.kind==0xa1 && s.request==1 && (report_id==0 || report_id==last_input[0])) {
-            if (report_type==1 && s.index==0) { control_send(last_input,opt.input_length,s.length); return; }
+            if (report_type==1 && s.index==0) { control_send(last_input,last_input_length,s.length); return; }
             if (report_type==3 && feature_interface && opt.get_feature && report_id==0) {
                 uint16_t n=opt.get_feature(control_data,64,opt.context);
                 control_send(control_data,n,s.length); return;
@@ -561,6 +561,7 @@ void ud_init(const ud_options *options) {
     ++bus_generation;opt=*options; memset(&stat,0,sizeof(stat)); memset(last_input,0,sizeof(last_input));
     memset(secondary_last,0,sizeof(secondary_last));
     if(opt.secondary_initial_input && opt.secondary_input_length<=64)memcpy(secondary_last,opt.secondary_initial_input,opt.secondary_input_length);
+    last_input_length=opt.input_length;
     if(opt.initial_input && opt.input_length<=64)memcpy(last_input,opt.initial_input,opt.input_length);
     reset_block(RESETS_RESET_USBCTRL_BITS); unreset_block_wait(RESETS_RESET_USBCTRL_BITS);
     memset(usb_dpram,0,sizeof(*usb_dpram));
@@ -577,8 +578,8 @@ bool ud_ready(void) { return stat.configured && !stat.suspended && !halted; }
 bool ud_busy(void) { return in_busy; }
 bool ud_send(const uint8_t *data, uint16_t length, uint32_t cookie, uint32_t *armed_us) {
     uint32_t irq=save_and_disable_interrupts();
-    if (!ud_ready() || in_busy || length>64 || length!=opt.input_length) { restore_interrupts(irq); return false; }
-    memcpy(last_input,data,length); dpram_write(usb_dpram->epx_data,data,length);
+    if (!ud_ready() || in_busy || !length || length>64 || (opt.variable_input_length?length>opt.input_length:length!=opt.input_length)) { restore_interrupts(irq); return false; }
+    memcpy(last_input,data,length);last_input_length=(uint8_t)length; dpram_write(usb_dpram->epx_data,data,length);
     if(opt.relative_mouse && length>1)memset(last_input+1,0,length-1);
     in_cookie=cookie; in_busy=true;
     arm_buffer(&usb_dpram->ep_buf_ctrl[1].in,length|USB_BUF_CTRL_FULL|USB_BUF_CTRL_LAST|(ep1_pid?USB_BUF_CTRL_DATA1_PID:0));
@@ -621,7 +622,7 @@ bool ud_secondary_cancel_repeat(void) {
 }
 uint8_t ud_input_snapshot(uint8_t *data,uint8_t capacity) {
     if(!ud_ready() || opt.relative_mouse)return 0;
-    uint8_t length=opt.input_length<capacity?opt.input_length:capacity;
+    uint8_t length=last_input_length<capacity?last_input_length:capacity;
     memcpy(data,last_input,length);return length;
 }
 void ud_statistics_get(ud_statistics *out) {

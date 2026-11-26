@@ -1,5 +1,6 @@
 #include "switch_output.h"
 #include "switch_protocols.h"
+#include "profile_runtime.h"
 #include "controller_feedback.h"
 #include "switch_rumble.h"
 #include "pico/stdlib.h"
@@ -20,7 +21,7 @@ static sr_state source;
 static void effect_stop(void) { ucf_select(false);selected=false;resync=true;feedback_epoch=ucf_epoch(); }
 void spo_stop(void) { effect_stop(); }
 void spo_init(void) {
-    memset(&protocol,0,sizeof(protocol));protocol.mode=0x30;
+    memset(&protocol,0,sizeof(protocol));protocol.mode=0x30;protocol.gyro_range=3;
     sr_reset(&source);reply_read=reply_write=0;
     atomic_store_explicit(&rx_head,0,memory_order_relaxed);atomic_store_explicit(&rx_tail,0,memory_order_relaxed);
     current_epoch=atomic_fetch_add_explicit(&bus_epoch,1,memory_order_acq_rel)+1;
@@ -60,7 +61,7 @@ void spo_service(const sw_report *input,bool allowed) {
         current_epoch=epoch;unsigned events=atomic_exchange_explicit(&bus_events,0,memory_order_acq_rel);
         effect_stop();reply_read=reply_write=0;
         if(events&((1u<<UD_BUS_RESET)|(1u<<UD_BUS_DISCONNECT))) {
-            memset(&protocol,0,sizeof(protocol));protocol.mode=0x30;sr_reset(&source);
+            memset(&protocol,0,sizeof(protocol));protocol.mode=0x30;protocol.gyro_range=3;sr_reset(&source);
         }
     }
     uint32_t stop=atomic_load_explicit(&stop_serial,memory_order_acquire);
@@ -91,6 +92,11 @@ void spo_service(const sw_report *input,bool allowed) {
     if(older_stop)protocol.rumble_enabled=false;
     if(off)effect_stop();
     atomic_store_explicit(&rx_tail,(read+1)%RX_COUNT,memory_order_release);
+}
+void spo_encode(const sw_report *input,uint8_t output[64],uint32_t now) {
+    sp_encode(SP_PRO1,input,output,now);
+    if(protocol.imu_enabled && upr_native_motion_enabled())
+        upr_native_motion_encode(output+13,now,protocol.gyro_range,protocol.accel_range);
 }
 const uint8_t *spo_reply(void) {
     return current_epoch!=atomic_load_explicit(&bus_epoch,memory_order_acquire) || reply_read==reply_write?NULL:replies[reply_read];

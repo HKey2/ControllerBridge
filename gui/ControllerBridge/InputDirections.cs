@@ -32,6 +32,7 @@ internal static class InputDirections
             if (!Legacy(a.Interface, a.ReportId, a.BitOffset, a.Bits, a.Flags)) return;
             a.Neutral = 255 - a.Neutral; a.Maximum = 255 - a.Maximum; a.Flags |= Reversed;
         }
+        foreach (AnalogHalfBinding? trigger in p.GameCubeTriggers) if (trigger is not null) Half(trigger);
         foreach (DigitalBinding b in p.Buttons.Concat(p.Shift.Keys).Concat(p.Shift.Buttons)) Digital(b);
         foreach (AxisBinding axis in p.Axes)
         {
@@ -49,6 +50,7 @@ internal static class InputDirections
         }
     }
     internal static bool UsesNormalizedInput(DeviceProfile p) =>
+        p.GameCubeTriggers.Any(t => t is not null && (t.Flags & Reversed) != 0) ||
         p.Buttons.Concat(p.Shift.Keys).Concat(p.Shift.Buttons).Any(b => b.Mode != 0 && (b.Flags & Reversed) != 0) ||
         p.Axes.Any(a => a.Mode switch
         {

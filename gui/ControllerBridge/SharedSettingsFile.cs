@@ -25,7 +25,7 @@ internal static class SharedSettingsFile
         MouseUdlrSettings.ValidateEdit(settings.Threshold, settings.HoldMs, settings.WaitMs);
         MouseUdlrSettings.ValidateInertia(settings.InertiaThreshold, settings.InertiaDecayPercent, settings.InertiaIntervalMs);
         if (settings.TrackballHoldThreshold is < 1 or > 127 || settings.RollingGain10 is < 1 or > 100 ||
-            settings.HostMode > 3 || !DisplayTypes.IsSupported(settings.DisplayType))
+            settings.HostMode > 4 || !DisplayTypes.IsSupported(settings.DisplayType))
             throw Invalid();
     }
     private static InvalidDataException Invalid() => new(L.T("共通設定ファイルの形式または値が不正です。", "The shared settings file has an invalid format or value."));

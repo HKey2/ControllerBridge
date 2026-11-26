@@ -13,6 +13,7 @@ typedef struct {
     uint16_t device_length, configuration_length, report_length;
     const char *manufacturer, *product, *serial;
     uint8_t input_length;
+    bool variable_input_length; // Custom protocols may send shorter command replies.
     uint32_t short_string_stall_mask; // Reference quirks: selected strings STALL instead of a terminating ZLP.
     bool relative_mouse; // GET_REPORT returns buttons with zero relative movement.
     const uint8_t *configuration_report; // Optional Feature-only HID interface 1, IN2 stays NAK.

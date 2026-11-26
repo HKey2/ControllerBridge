@@ -10,6 +10,7 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
     byte ProfileNumber = 0, byte ProfileCount = 0, uint SwitchKeys = 0, byte InputTraits = 0)
 {
     public bool Connected => (Flags & 1) != 0;
+    public bool SupportsNativeMotion => (InputTraits & 32) != 0;
     public bool SupportsUsbSpeedRouting => (InputTraits & 64) != 0;
     public bool LowSpeedInput => Connected && SupportsUsbSpeedRouting && (InputTraits & 128) != 0;
     public bool Partial => (Flags & 2) != 0;
@@ -69,6 +70,8 @@ public sealed record Capabilities(byte ActiveSlot, ushort FieldCount, ushort Vid
             throw new InvalidDataException(L.T("この反応曲線を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving this response curve."));
         if (profile.Conversion.RequiresAnalogAngle && !SupportsAnalogAngle)
             throw new InvalidDataException(L.T("Virtual Cursor(Analog)の設定を保存する前に、画面上部の「ファームウェア更新」で同梱ファームウェアへ更新してください。", "Before saving Virtual Cursor(Analog) settings, choose Firmware update at the top of the window to install the bundled firmware."));
+        if (profile.NativeMotionEnabled && !SupportsNativeMotion)
+            throw new InvalidDataException(L.T("ゲーム本来のジャイロ操作を保存する前に、同梱ファームウェアへ更新してください。", "Update to the bundled firmware before saving native gyro settings."));
         if (!SupportsRumble)
             throw new InvalidDataException(L.T("この版のプロファイルを保存する前に、画面上部の「ファームウェア更新」で同梱ファームウェアへ更新してください。", "Before saving profiles with this version, choose Firmware update at the top of the window to install the bundled firmware."));
         if (InputDirections.UsesNormalizedInput(profile) && !SupportsInputDirections)
@@ -223,6 +226,7 @@ internal sealed class HidBridge : IDisposable
                     string path = Marshal.PtrToStringUni(detail + 4) ?? "";
                     if (!path.Contains("vid_20d6&pid_a713", StringComparison.OrdinalIgnoreCase) &&
                         !(path.Contains("vid_057e&pid_2009", StringComparison.OrdinalIgnoreCase) && path.Contains("mi_01", StringComparison.OrdinalIgnoreCase)) &&
+                        !(path.Contains("vid_057e&pid_0337", StringComparison.OrdinalIgnoreCase) && path.Contains("mi_01", StringComparison.OrdinalIgnoreCase)) &&
                         !path.Contains("vid_cafe&pid_4004", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4005", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase) &&

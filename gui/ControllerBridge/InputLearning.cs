@@ -127,10 +127,12 @@ internal sealed partial class MappingEditor : UserControl
     private DeviceProfile profile = new();
     private List<InputField> fields = [];
     private AxisDialog? axisDialog;
+    private GameCubeTriggerDialog? triggerDialog;
+    private readonly Button[] gcTriggers = new Button[2];
     private AnalogStickWizard? stickWizard;
     private readonly Button axisWizard;
     private int learningRequest;
-    internal bool LearningActive => learner is not null || axisDialog is not null || stickWizard is not null || shiftDialog is not null;
+    internal bool LearningActive => learner is not null || triggerDialog is not null || axisDialog is not null || stickWizard is not null || shiftDialog is not null;
     public event EventHandler? Modified;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<Task<bool>>? PrepareLearningAsync { get; set; }
@@ -232,26 +234,30 @@ internal sealed partial class MappingEditor : UserControl
         mappingActions.Controls.Add(clear); mappingActions.Controls.Add(inherit);
         guide.Controls.Add(mappingActions, 1, 0); guide.SetRowSpan(mappingActions, 2); root.Controls.Add(guide, 0, 2);
         RaisedTableLayoutPanel axisGroup = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1, RowCount = 2, Padding = new(6, 4, 6, 4), Margin = new(0, 6, 0, 4) };
-        axisGroup.ColumnStyles.Add(new(SizeType.Percent, 100));
-        axisGroup.RowStyles.Add(new(SizeType.AutoSize)); axisGroup.RowStyles.Add(new(SizeType.AutoSize));
-        Label axisHeading = Ui.Label(L.T("アナログスティック", "Analog sticks"), 11, true);
-        axisHeading.Anchor = AnchorStyles.Left;
-        axisGroup.Controls.Add(axisHeading, 0, 0);
+            ColumnCount = 1, RowCount = 1, Padding = new(6, 4, 6, 4), Margin = new(0, 6, 0, 4) };
+        axisGroup.ColumnStyles.Add(new(SizeType.Percent, 100)); axisGroup.RowStyles.Add(new(SizeType.AutoSize));
         axisGroup.Visible = !mouseMode && !shiftPage; root.Controls.Add(axisGroup, 0, 3);
-        TableLayoutPanel axisRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5, RowCount = 1 };
+        TableLayoutPanel axisRow = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 5, RowCount = 2 };
+        axisRow.RowStyles.Add(new(SizeType.AutoSize)); axisRow.RowStyles.Add(new(SizeType.AutoSize));
         axisRow.ColumnStyles.Add(new(SizeType.AutoSize));
+        Label axisHeading = Ui.Label(L.T("アナログ入力", "Analog inputs"), 11, true); axisHeading.Anchor = AnchorStyles.Left;
+        axisRow.Controls.Add(axisHeading, 0, 0); axisRow.SetColumnSpan(axisHeading, 3);
         axisWizard = Ui.Button(L.T("設定ウィザード", "Setup wizard"), (_, _) => EditSticks());
-        axisWizard.Dock = DockStyle.Fill; axisRow.Controls.Add(axisWizard, 0, 0);
+        axisWizard.Dock = DockStyle.Fill; axisRow.Controls.Add(axisWizard, 0, 1);
         for (int i = 0; i < 4; i++)
         {
             axisRow.ColumnStyles.Add(new(SizeType.Percent, 25)); int axis = i;
-            Button b = Ui.Button(""); b.Dock = DockStyle.Fill; b.Click += (_, _) => EditAxis(axis); axes[i] = b; axisRow.Controls.Add(b, i + 1, 0);
+            Button b = Ui.Button(""); b.Dock = DockStyle.Fill; b.Click += (_, _) => EditAxis(axis); axes[i] = b; axisRow.Controls.Add(b, i + 1, 1);
         }
-        axisGroup.Controls.Add(axisRow, 0, 1);
+        for (int i = 0; i < 2; i++)
+        {
+            int trigger = i; Button b = gcTriggers[i] = Ui.Button("", (_, _) => EditTriggers(trigger));
+            b.Dock = DockStyle.Fill; axisRow.Controls.Add(b, i + 3, 0);
+        }
+        axisGroup.Controls.Add(axisRow, 0, 0);
         axisRow.Layout += (_, _) =>
         {
-            foreach (Button button in axisRow.Controls)
+            foreach (Button button in axisRow.Controls.OfType<Button>())
             {
                 int width = button.ClientSize.Width - button.Padding.Horizontal;
                 if (width <= 0) continue;
@@ -304,7 +310,7 @@ internal sealed partial class MappingEditor : UserControl
         learningRequest++;
         learner = null;
         if (axisDialog is not null) axisDialog.ConnectionLost();
-        stickWizard?.ConnectionLost();
+        stickWizard?.ConnectionLost(); triggerDialog?.ConnectionLost();
         shiftDialog?.ConnectionLost();
         if (reason is not null) { instruction.Text = reason; detail.Text = L.T("入力を離してから、出力ボタンを選び直してください。", "Release all inputs, then select the output button again."); }
     }
@@ -326,13 +332,13 @@ internal sealed partial class MappingEditor : UserControl
     internal void InputEventsLost(string reason)
     {
         learningRequest++; learner = null;
-        axisDialog?.InputEventsLost(); stickWizard?.InputEventsLost(); shiftDialog?.InputEventsLost(reason);
+        axisDialog?.InputEventsLost(); triggerDialog?.InputEventsLost(); stickWizard?.InputEventsLost(); shiftDialog?.InputEventsLost(reason);
         instruction.Text = reason;
         detail.Text = L.T("入力を離してから、もう一度割り当ててください。", "Release the input and start the assignment again.");
     }
     public void OnInput(InputField field, int value)
     {
-        axisDialog?.OnInput(field, value); shiftDialog?.OnInput(field, value);
+        triggerDialog?.OnInput(field, value); axisDialog?.OnInput(field, value); shiftDialog?.OnInput(field, value);
         if (learner?.Observe(field, value) is not LearnedInput learned || selected < 0) return;
         detail.Visible = true;
         learned.Binding.RapidHz = Binding(selected).RapidHz;
@@ -360,6 +366,23 @@ internal sealed partial class MappingEditor : UserControl
             if (!before.SameContent(profile)) { UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty); }
         }
         finally { stickWizard = null; }
+    }
+    private async void EditTriggers(int trigger)
+    {
+        if (!profile.Enabled || buttonsOnly) return;
+        int request = ++learningRequest; learner = null;
+        if (canLearn && PrepareLearningAsync is not null && !await PrepareLearningAsync()) return;
+        if (request != learningRequest || IsDisposed) return;
+        if (canLearn) { try { InputDirections.RequireCurrentInput(fields); } catch (InvalidDataException ex) { Ui.Error(this, ex); return; } }
+        using GameCubeTriggerDialog dialog = new(trigger, profile.Clone().GameCubeTriggers[trigger], fields, canLearn); triggerDialog = dialog;
+        try
+        {
+            if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
+            {
+                profile.GameCubeTriggers[trigger] = dialog.Result; UpdateButtons(); Modified?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        finally { triggerDialog = null; }
     }
     private async void EditAxis(int axis)
     {
@@ -433,6 +456,12 @@ internal sealed partial class MappingEditor : UserControl
     internal void RefreshPresentation() => UpdateButtons();
     private void UpdateButtons()
     {
+        for (int i = 0; i < 2; i++)
+        {
+            gcTriggers[i].Enabled = profile.Enabled && !buttonsOnly;
+            gcTriggers[i].Text = (i == 0 ? "GC L" : "GC R") + " · " + (profile.GameCubeTriggers[i] is null ? L.T("未使用", "Unused") : L.T("アナログ", "Analog"));
+            gcTriggers[i].AccessibleName = gcTriggers[i].Text;
+        }
         if (labelSystem is not null) { refreshingLabels = true; labelSystem.SelectedItem = ButtonLabels.Find(profile.ButtonLabelSystem); labelSystem.Enabled = profile.Enabled && !shiftPage; refreshingLabels = false; }
         if (mouseMode) mouseHelp.Text = L.T($"左右ボタンはゲームパッドの{profile.TargetName(1)}・{profile.TargetName(2)}と割り当てを共有します。\n「設定をデバイスに保存」で反映されます。",
             $"Mouse buttons share the gamepad {profile.TargetName(1)} / {profile.TargetName(2)} mappings.\nChoose “Save settings to device” to apply your changes.");

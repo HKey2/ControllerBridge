@@ -163,7 +163,7 @@ static bool parse_config(void) {
     status(UC_INPUT_PROTOCOL,parsed.protocols);
     return true;
 }
-static bool switch_reply(input_endpoint *ep,uint8_t report,uint8_t command) {
+static bool switch_reply(input_endpoint *ep,uint8_t report,uint8_t command,uint8_t *copy,uint16_t *size) {
     uint32_t start=time_us_32();
     while((uint32_t)(time_us_32()-start)<500000) {
         ut_pump();uint16_t actual=0;
@@ -173,13 +173,41 @@ static bool switch_reply(input_endpoint *ep,uint8_t report,uint8_t command) {
         bool matched=report==0x81 ? actual>=2 && ep->buffer[0]==report && ep->buffer[1]==command :
             actual>=15 && ep->buffer[0]==report && (ep->buffer[13]&0x80) && ep->buffer[14]==command;
         if(report==0x21 && command==3 && uc_input_packet_valid(UC_PROTOCOL_SWITCH_PRO,ep->buffer,actual))matched=true;
+        // Capture before rearming: the host controller owns ep->buffer afterwards.
+        if(matched && copy) { memcpy(copy,ep->buffer,actual);*size=actual; }
         if(!ut_submit(1,ep->descriptor[2],ep->buffer,le16(ep->descriptor+4)))return false;
         if(matched)return true;
     }
     return false;
 }
+static void motion_calibration(uint8_t protocol,const uint8_t *data,unsigned size) {
+    uc_event event={.type=UC_STATUS,.code=UC_NATIVE_MOTION_CALIBRATION,.sequence=protocol,.length=(uint16_t)size};
+    memcpy(event.data,data,size);options.event(&event,options.context);
+}
+static bool switch_sensor_command(uint8_t out,input_endpoint *ep,uint8_t *sequence,uint8_t command,
+                                  const uint8_t *data,unsigned size,uint8_t *reply,uint16_t *actual) {
+    uint8_t request[32]={1,0,0,1,0x40,0x40,0,1,0x40,0x40};
+    request[1]=(*sequence)++&15;request[10]=command;memcpy(request+11,data,size);
+    return ut_submit(1,out,request,(uint16_t)(11+size)) && ut_transfer_wait(1,out)==UT_OK &&
+        switch_reply(ep,0x21,command,reply,actual);
+}
+static void switch_sensors(uint8_t out,input_endpoint *ep,uint8_t *sequence) {
+    uint8_t request[5],reply[64];uint16_t actual;
+    // Factory calibration, followed by a valid user calibration if present.
+    const uint32_t addresses[]={0x6020,0x8026};
+    for(unsigned i=0;i<2;++i) {
+        memcpy(request,&addresses[i],4);request[4]=i?26:24;
+        if(!switch_sensor_command(out,ep,sequence,0x10,request,5,reply,&actual))continue;
+        if(actual<20u+request[4] || memcmp(reply+15,request,5))continue;
+        if(!i)motion_calibration(UC_PROTOCOL_SWITCH_PRO,reply+20,24);
+        else if(reply[20]==0xb2 && reply[21]==0xa1)motion_calibration(UC_PROTOCOL_SWITCH_PRO,reply+22,24);
+    }
+    const uint8_t settings[]={3,0,1,1},enabled=1;
+    switch_sensor_command(out,ep,sequence,0x41,settings,sizeof(settings),NULL,NULL);
+    switch_sensor_command(out,ep,sequence,0x40,&enabled,1,NULL,NULL);
+}
 static bool switch_start(hid_interface *iface,input_endpoint *ep) {
-    uint8_t out=iface->output_descriptor[2],step=0;
+    uint8_t out=iface->output_descriptor[2],step=0,sequence=1;
     ut_result result=UT_ERROR;
     if(!ut_open(1,iface->output_descriptor))return false;
     // Keep OUT open throughout initialization so USB DATA0/DATA1 toggles survive.
@@ -189,19 +217,36 @@ static bool switch_start(hid_interface *iface,input_endpoint *ep) {
         result=ut_submit(1,out,request,sizeof(request))?ut_transfer_wait(1,out):UT_ERROR;
         if(result!=UT_OK)goto done;
         // 0x04 deliberately has no reply; it keeps the controller in USB mode.
-        if(commands[i]!=4 && !switch_reply(ep,0x81,commands[i])) { result=UT_TIMEOUT;goto done; }
+        if(commands[i]!=4 && !switch_reply(ep,0x81,commands[i],NULL,NULL)) { result=UT_TIMEOUT;goto done; }
     }
     {
         step=5;
         // Report mode 0x30; both rumble channels carry their neutral encoding.
         uint8_t request[]={1,0,0,1,0x40,0x40,0,1,0x40,0x40,3,0x30};
         result=ut_submit(1,out,request,sizeof(request))?ut_transfer_wait(1,out):UT_ERROR;
-        if(result==UT_OK && !switch_reply(ep,0x21,3))result=UT_TIMEOUT;
+        if(result==UT_OK && !switch_reply(ep,0x21,3,NULL,NULL))result=UT_TIMEOUT;
     }
 done:
-    if(result==UT_OK)ucf_attach(iface->output_descriptor,1);else ut_close_endpoint(1,out);
+    if(result==UT_OK) { switch_sensors(out,ep,&sequence);ucf_attach(iface->output_descriptor,sequence); }
+    else ut_close_endpoint(1,out);
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);
     return result==UT_OK;
+}
+static void switch2_sensors(const uint8_t bulk[2][7]) {
+    uint8_t request[16]={2,0x91,0,4,0,8,0,0,12,0x7e,0,0},reply[64],calibration[24]={0};
+    // Partial reads fit one USB packet and never access pairing/private data.
+    const uint32_t address[]={0x1310c,0x13044};
+    bool complete=true;
+    for(unsigned i=0;i<2;++i) {
+        memcpy(request+12,&address[i],4);
+        if(!ut_submit(1,bulk[0][2],request,sizeof(request)) || ut_transfer_wait(1,bulk[0][2])!=UT_OK ||
+           !ut_submit(1,bulk[1][2],reply,sizeof(reply)) || ut_transfer_wait(1,bulk[1][2])!=UT_OK) { complete=false;break; }
+        uint16_t actual=0;ut_result_for(1,bulk[1][2],&actual);
+        if(actual<28 || reply[0]!=2 || reply[1]!=1 || reply[3]!=4 || reply[5]!=0x78 ||
+           reply[8]!=12 || memcmp(reply+12,request+12,4)) { complete=false;continue; }
+        memcpy(calibration+12*i,reply+16,12);
+    }
+    if(complete)motion_calibration(UC_PROTOCOL_SWITCH2,calibration,24);
 }
 static bool switch2_start(hid_interface *iface) {
     uint8_t bulk[2][7],request[28],reply[64];uint8_t step=0;
@@ -217,6 +262,7 @@ static bool switch2_start(hid_interface *iface) {
         result=ut_submit(1,bulk[1][2],reply,sizeof(reply))?ut_transfer_wait(1,bulk[1][2]):UT_ERROR;
         if(result!=UT_OK)break;
     }
+    if(result==UT_OK)switch2_sensors(bulk);
     ut_close_endpoint(1,bulk[0][2]);ut_close_endpoint(1,bulk[1][2]);
     if(result==UT_OK)ucf_attach_switch2(iface->output_descriptor);
     status(UC_INPUT_INIT,((uint32_t)step<<16)|(uint32_t)result);

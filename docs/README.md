@@ -7,6 +7,7 @@ The current configurator is **v0.33.0**; its bundled firmware is **0.33.0**. The
 | Document | Contents |
 |---|---|
 | [Sample slot configuration](../samples/README.md) | Included full-bank sample and restore instructions |
+| [GameCube output](gamecube-output.md) | Independent analog L/R setup, button mapping and game compatibility |
 | [User guide](configurator-guide.md) | Setup, profiles, mapping, calibration, output modes, Mouse UDLR settings, backup and restore |
 | [Button shift](button-shift.md) | Hold-to-shift keys, inherited and overridden buttons, rapid fire, shared axes and migration |
 | [Firmware update](firmware-update.md) | Bundled-version comparison, confirmations, automatic programming, first installation and recovery |

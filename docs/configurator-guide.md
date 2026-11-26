@@ -168,6 +168,10 @@ Steering holds while the controller is stationary; stillness alone does not retu
 
 **Accelerometers:** **Acceleration X**, **Acceleration Y** and **Acceleration Z** appear in the individual analog-axis settings. Select one manually and record its minimum, center and maximum, or use it as one side of a paired analog assignment. Their values are raw sensor readings and include gravity. They are separate from the gyro wizard and are not automatically selected by the stick wizard.
 
+### GameCube analog L/R
+
+Choose **GC analog L/R** beside the Analog sticks heading to assign independent trigger inputs without replacing LX, LY, RX or RY. See [setup and limits](gamecube-output.md).
+
 ### Individual axis settings
 
 Choose LX, LY, RX or RY to open its input assignments. There is no separate mode selector: the selected inputs determine how the axis operates. Press an assigned choice again to clear it. **With every choice cleared, Apply leaves the axis unused and centered.**
@@ -218,9 +222,9 @@ Choose **Apply to draft**, then **Save settings to device** (or complete registr
 
 See [Button shift](button-shift.md) for an example, the difference between overriding an output and moving a physical input, shared mouse buttons, rapid-fire settings, and conflicts with permanent profile shortcuts.
 
-## S / Auto / X / Pro host mode
+## S / Auto / X / Pro / GC host mode
 
-Open **Shared settings** and use the **Host mode** group, directly above **Display**. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference. **Pro** selects the original Switch Pro protocol for gamepad profiles and enables rumble forwarding when the profile also enables Rumble. Mouse layouts use S while Pro is selected. See [Pro output and rumble](#pro-output-and-rumble).
+Open **Shared settings** and use the **Host mode** group, directly above **Display**. **S** is the default and retains Switch-compatible output. **Auto** tries X first, then reconnects as S once if acceptance is not observed within five seconds; it never retries or cycles back. Use fixed S/X when a specific format is required. **X** selects wired Xbox 360 XInput for Gamepad and Mouse + Gamepad. The USB mouse-only editor continues to output a mouse and retains the selected host preference. **Pro** selects the original Switch Pro protocol for gamepad profiles and enables rumble forwarding when the profile also enables Rumble. Mouse layouts use S while Pro is selected. See [Pro output and rumble](#pro-output-and-rumble). **GC** selects GameCube adapter output with independent analog L/R for gamepad profiles. Mouse layouts use S while GC is selected. Auto does not select GC. See [GameCube output](gamecube-output.md).
 
 Choose **Save to device** to persist a change and reconnect USB. The configurator reconnects through its separate settings interface, preserving all profile drafts. Button names and their screen positions stay fixed in every mode: X at the top, Y at the left, A at the right and B at the bottom. Mapping, rapid fire, toggle, shifted mapping, direction conversion and shortcut settings use the same names. Mode changes do not rewrite assignments or drafts. The status line identifies the active output mode. HOME sends Guide in X; Capture retains its label but is unavailable in X because Xbox 360 has no counterpart. See [wire mapping, Windows behavior and Switch 2 Pro setup](xinput-output.md).
 
@@ -228,7 +232,7 @@ Choose **Save to device** to persist a change and reconnect USB. The configurato
 
 | Tab | Output |
 |---|---|
-| Gamepad | Mapped buttons, directions, and stick axes using the active S, X or Pro protocol |
+| Gamepad | Mapped buttons, directions, and stick axes using the active S, X, Pro or GC protocol |
 | USB mouse | Relative movement and buttons as a standard USB mouse |
 | Mouse + Gamepad | Separate USB mouse and gamepad interfaces, with the gamepad using the active S or X protocol |
 
@@ -387,7 +391,7 @@ Version 0.27.0 adds a fixed **Pro** mode using the original Nintendo Switch Pro 
 
 1. Connect ControllerBridge USB-C to the Windows PC and the Pro controller to its USB-A port using a data cable. Register the controller if it has no profile.
 2. Open **Shared settings**, select **Pro** under host output, and save. This reconnects the bridge's USB output.
-3. Select the Pro controller's **Gamepad** profile, enable **Rumble** (Japanese: **振動を有効にする**), and save the profile to the device.
+3. Select the Pro controller's **Gamepad** profile, enable **Rumble** (Japanese: **振動**), and save the profile to the device.
 4. Move the bridge's USB-C connection to the Switch or Switch 2 dock. Enable **Pro Controller Wired Communication** and controller vibration in the console settings. Press the Pro controller's **HOME** button if input is waiting, then use a game with vibration or **Controllers → Find Controllers**.
 
 Rumble starts only when the console sends an enabled effect. Existing and newly created profiles default to rumble off. Pro forwards rumble to first-generation Pro, Switch 2 Pro and supported wired DUALSHOCK 3 controllers. DS3 also receives XInput rumble with X output (including Auto when it selects X). S output does not forward rumble. Motor output to Xbox controllers is not supported. Pro is an explicit selection and is not part of Auto detection.
@@ -413,3 +417,7 @@ Profiles and banks use format v11 and JSON backups use v8. Published v5/v6/v8 ba
 ## PS4 console output
 
 PS4-console output and credential-file setup are not available in the current version. PS4-compatible input controllers can be used on Switch and other supported outputs without private-key files. See [device compatibility](compatibility.md) for the supported input format.
+
+## Native Pro gyro controls
+
+Select **Pro** output and enable **Gyro (Pro)** in the gamepad profile. See [supported motion sensors, DS3 steering and setup](native-motion.md). Use the separate **GC L** and **GC R** buttons under **Analog inputs** for provisional [GameCube analog L/R](gamecube-output.md).

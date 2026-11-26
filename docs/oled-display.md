@@ -17,15 +17,15 @@ Open **Shared settings → Display**, immediately below **Host mode**. Select a 
 | Type | Display |
 |---|---|
 | OFF | Default. Turns off the OLED and stops display updates and interval sampling. The startup OLED presence check still runs. |
-| Profile name + polling interval + index | The top three rows show the name; the final row shows a measured output polling interval, actual S/X mode, and slot 01–16. |
-| Maximum profile name + output mode | Wraps the name across 30 cells: 8 + 8 + 8 + 6. The final two cells always contain a space and S or X. Long words wrap to the next row. |
+| Profile name + polling interval + index | The top three rows show the name; the final row shows a measured output polling interval, actual S/X/G mode, and slot 01–16. |
+| Maximum profile name + output mode | Wraps the name across 30 cells: 8 + 8 + 8 + 6. The final two cells always contain a space and S, X or G. Long words wrap to the next row. |
 | Detail A | From top to bottom: the connected controller's 4-digit VID followed by its 4-digit PID, IN interval, OUT interval, and input payload bytes per second. |
 | Detail B | Controller VID/PID and the current gamepad output in a common XInput-format view; all four rows use hexadecimal. |
 | Detail C | Signed X/Y mouse output counts per second; R: theoretical input capacity at the current polling interval; S: actual received input reports per second. |
 
 The display has four rows of eight 8×8 character cells. Only printable ASCII characters are shown; non-ASCII characters are omitted without changing the saved profile name. With the interval/index type, whitespace separates the name into rows, each word is cut at eight characters, and words after the third row are omitted. With maximum-name display, whitespace becomes a single space, and all text wraps across the available cells.
 
-S means Switch output, including Pro. X means XInput output. These indicate the actual output format, including Auto's X/S change, rather than identifying the connected console. With no active profile, the name area stays blank and the interval/index type shows `S--` or `X--`.
+S means Switch output, including Pro. X means XInput output. G means GameCube adapter output. These indicate the actual output format, including Auto's X/S change, rather than identifying the connected console. With no active profile, the name area stays blank and the interval/index type shows `S--`, `X--` or `G--`.
 
 For `EGRET Paddle` in slot 1, with an observed 1 ms output interval:
 
@@ -84,7 +84,7 @@ Example: one XInput A button, full LT, released RT, left stick fully right/down,
 00000000
 ```
 
-The same view is used in S, X and Pro output. S/Pro values are expressed in XInput units for comparison; their actual USB packets retain their selected format. The configurator's fixed button names and the actual output mapping do not change. The current converter uses 8-bit internal stick values and digital ZL/ZR, so the 16-bit stick display does not imply native 16-bit resolution and LT/RT currently read `00` or `FF`.
+The same view is used in S, X, Pro and GC output. S/Pro values are expressed in XInput units for comparison; their actual USB packets retain their selected format. The configurator's fixed button names and the actual output mapping do not change. The current converter uses 8-bit internal stick values and digital ZL/ZR, so the 16-bit stick display does not imply native 16-bit resolution and LT/RT read `00` or `FF` in S/X/Pro. In GC mode these two fields instead show the independent analog L/R amounts from `00` to `FF`.
 
 The display samples the current report prepared for USB transmission up to 20 times per second and redraws only changed rows. A held value is useful for comparing game response; very short presses can occur between display samples. No input history or event queue is added. This view does not confirm that a game has accepted or acted on a report. With no controller, all rows show `--------`; when gamepad output is unavailable, including mouse-only profiles or USB suspension, only the controller ID remains and the other rows show `--------`.
 

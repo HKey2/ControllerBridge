@@ -60,6 +60,8 @@ Version 0.20.16 adds a shared Paddle Virtual Rolling rotation step: 5°, 10°, 1
 
 ## Output and game behavior
 
+GC mode presents one wired controller through a GameCube adapter format. Analog L/R are independent of both sticks and digital L/R. A game must support that input format; dedicated wheel recognition and game-specific pedal handling are not guaranteed. GC does not forward rumble or provide HOME/Capture. See [GameCube output](gamecube-output.md).
+
 Gamepad output retains the project's verified Switch-compatible descriptor path. Mouse-only output uses development identity `CAFE:4004`; this is not a production USB identity allocation. Combined mode exposes separate mouse and gamepad HID interfaces.
 
 Mouse Report Protocol supports signed 16-bit movement; Boot Protocol supports signed 8-bit movement. Larger movement is split while retaining residual displacement. Movement and click queues are independent, but overload is not guaranteed lossless.

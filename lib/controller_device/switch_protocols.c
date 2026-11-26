@@ -149,8 +149,8 @@ bool sp_command(sp_state *s,const uint8_t *c,unsigned n,const sw_report *input,u
     else if(sub==0x48 && n>=12 && c[11]<=1)s->rumble_enabled=c[11]!=0;
     else if(sub==0x30 && n>=12)s->player_lights=c[11];
     else if(sub==0x31) { r[13]=0xb0;r[15]=s->player_lights; }
-    else if(sub==0x40 && n>=12 && c[11]<=1) { /* No native IMU; gyro steering is mapped to sticks. */ }
-    else if(sub==0x41 && n>=15) { /* Accept sensor settings for the neutral IMU stream. */ }
+    else if(sub==0x40 && n>=12 && c[11]<=1)s->imu_enabled=c[11]!=0;
+    else if(sub==0x41 && n>=15 && c[11]<=3 && c[12]<=3) { s->gyro_range=c[11];s->accel_range=c[12]; }
     else if(sub==0x38 && n>=12) { /* HOME light is not exposed on the bridge. */ }
     else if(sub==0x10 && n>=16) {
         uint32_t address; memcpy(&address,c+11,4); unsigned length=c[15]; if(length>44)length=44;

@@ -32,7 +32,7 @@ internal sealed class AnalogPairEditor : TableLayoutPanel
             L.F("出力: {0} {1:+0.0;-0.0;0.0}%", "Output: {0} {1:+0.0;-0.0;0.0}%",
                 AxisDirections.Name(axis, difference > 0 ? 1 : 0), difference / 655.35);
     }
-    private sealed class HalfEditor : TableLayoutPanel
+    internal sealed class HalfEditor : TableLayoutPanel
     {
         private readonly string title;
         private readonly List<InputField> fields;
@@ -47,7 +47,7 @@ internal sealed class AnalogPairEditor : TableLayoutPanel
         private bool loading;
         internal event Action? Changed;
         private static NumericUpDown Number() => new() { Minimum = int.MinValue, Maximum = int.MaxValue, Width = 125, ThousandsSeparator = true };
-        internal HalfEditor(string title, List<InputField> fields, bool canLearn, Func<InputField, string> label)
+        internal HalfEditor(string title, List<InputField> fields, bool canLearn, Func<InputField, string> label, bool rangeCapture = false)
         {
             this.title = title; this.fields = fields; this.canLearn = canLearn; this.label = label;
             Dock = DockStyle.Top; AutoSize = true; AutoSizeMode = AutoSizeMode.GrowAndShrink; ColumnCount = 1; RowCount = 3; Padding = new(2, 4, 2, 4);
@@ -69,6 +69,7 @@ internal sealed class AnalogPairEditor : TableLayoutPanel
             FlowLayoutPanel tools = new() { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, WrapContents = false };
             released = Ui.Button(L.T("未押下を記録", "Record released"), (_, _) => { if (input is { Valid: true }) neutral.Value = input.Value; });
             pressed = Ui.Button(L.T("最大入力を記録", "Record full input"), (_, _) => { if (input is { Valid: true }) maximum.Value = input.Value; });
+            released.Visible = pressed.Visible = !rangeCapture;
             live.AutoSize = false; live.Size = new(115, 40); live.AutoEllipsis = true;
             tools.Controls.Add(released); tools.Controls.Add(pressed); tools.Controls.Add(live); Controls.Add(tools, 0, 2);
         }

@@ -8,7 +8,8 @@ namespace ControllerBridge;
 // editor does not change. Device generation is assigned afresh when committing.
 internal sealed class SlotBank
 {
-    public const int ByteCount = 14164;
+    public const int ByteCount = 14676;
+    public const int V12ByteCount = 14164;
     public const int V10ByteCount = 14036;
     public const int PreviousByteCount = 13908;
     public const int LegacyByteCount = 8148;
@@ -25,11 +26,11 @@ internal sealed class SlotBank
     {
         LegacyConversionApplied = data.Length >= 16 && Wire.U32(data, 4) is 5 or 6;
         uint version = data.Length >= 16 ? Wire.U32(data, 4) : 0;
-        bool previous = data.Length == PreviousByteCount && version is 6 or 8 or 9 || data.Length == V10ByteCount && version == 10;
+        bool previous = data.Length == PreviousByteCount && version is 6 or 8 or 9 || data.Length == V10ByteCount && version == 10 || data.Length == V12ByteCount && version is 11 or 12;
         bool oldest = data.Length == LegacyByteCount && version == 5;
         if ((previous || oldest) && Wire.U32(data, 0) == 0x31425055 && Wire.U32(data, 12) == data.Length)
         {
-            int stride = oldest ? DeviceProfile.LegacyByteCount : version == 10 ? DeviceProfile.V10ByteCount : DeviceProfile.PreviousByteCount;
+            int stride = oldest ? DeviceProfile.LegacyByteCount : version >= 11 ? DeviceProfile.V12ByteCount : version == 10 ? DeviceProfile.V10ByteCount : DeviceProfile.PreviousByteCount;
             byte[] migrated = new byte[ByteCount]; data.AsSpan(0, ProfilesAt).CopyTo(migrated);
             for (int i = 0; i < DeviceProfile.SlotCount; i++)
             {
@@ -40,31 +41,19 @@ internal sealed class SlotBank
                 else
                 {
                     // Preserve the exact old prefix, including unused binding bytes.
-                    data.AsSpan(at, stride).CopyTo(migrated.AsSpan(next)); Wire.W16(migrated, next, 12); migrated[next + 851] = 1;
-                    profile.Encode().AsSpan(856, 8).CopyTo(migrated.AsSpan(next + 856));
+                    data.AsSpan(at, stride).CopyTo(migrated.AsSpan(next)); Wire.W16(migrated, next, 13); if (version < 12) migrated[next + 851] = 1;
+                    if (version < 11) profile.Encode().AsSpan(856, 8).CopyTo(migrated.AsSpan(next + 856));
                 }
             }
             data.AsSpan(ProfilesAt + DeviceProfile.SlotCount * stride, 324).CopyTo(migrated.AsSpan(IdsAt));
-            Wire.W32(migrated, 4, 12); Wire.W32(migrated, 12, ByteCount); data = migrated;
+            Wire.W32(migrated, 4, 13); Wire.W32(migrated, 12, ByteCount); data = migrated;
         }
-        if (data.Length == ByteCount && Wire.U32(data, 0) == 0x31425055 && version == 11 && Wire.U32(data, 12) == ByteCount)
-        {
-            byte[] migrated = (byte[])data.Clone();
-            for (int i = 0; i < DeviceProfile.SlotCount; i++)
-            {
-                int at = ProfilesAt + i * DeviceProfile.ByteCount;
-                if (Wire.U16(data, at) != 11) throw Invalid();
-                _ = DeviceProfile.Decode(data.AsSpan(at, DeviceProfile.ByteCount).ToArray());
-                Wire.W16(migrated, at, 12); migrated[at + 851] = 1;
-            }
-            Wire.W32(migrated, 4, 12); data = migrated;
-        }
-        if (data.Length != ByteCount || Wire.U32(data, 0) != 0x31425055 || Wire.U32(data, 4) != 12 || Wire.U32(data, 12) != ByteCount)
+        if (data.Length != ByteCount || Wire.U32(data, 0) != 0x31425055 || Wire.U32(data, 4) != 13 || Wire.U32(data, 12) != ByteCount)
             throw new InvalidDataException(L.T("未対応のスロット保存形式です。", "This slot backup format is not supported."));
         bytes = (byte[])data.Clone();
         Profiles = Enumerable.Range(0, DeviceProfile.SlotCount).Select(i =>
         {
-            if (Wire.U16(bytes, ProfilesAt + i * DeviceProfile.ByteCount) != 12) throw Invalid();
+            if (Wire.U16(bytes, ProfilesAt + i * DeviceProfile.ByteCount) != 13) throw Invalid();
             DeviceProfile p = DeviceProfile.Decode(bytes.AsSpan(ProfilesAt + i * DeviceProfile.ByteCount, DeviceProfile.ByteCount).ToArray());
             p.ProfileId = new Guid(bytes.AsSpan(IdsAt + i * 16, 16)); return p;
         }).ToArray();
@@ -136,7 +125,7 @@ internal sealed class SlotBank
     internal static SlotBank FromProfiles(DeviceProfile[] profiles, uint preferred = 0, uint[]? keys = null)
     {
         if (profiles.Length != DeviceProfile.SlotCount || keys is not null && keys.Length != profiles.Length) throw new ArgumentException("slots");
-        byte[] data = new byte[ByteCount]; Wire.W32(data, 0, 0x31425055); Wire.W32(data, 4, 12); Wire.W32(data, 12, ByteCount);
+        byte[] data = new byte[ByteCount]; Wire.W32(data, 0, 0x31425055); Wire.W32(data, 4, 13); Wire.W32(data, 12, ByteCount);
         for (int i = 0; i < profiles.Length; i++)
         {
             profiles[i].Encode().CopyTo(data, ProfilesAt + i * DeviceProfile.ByteCount);
@@ -149,7 +138,7 @@ internal sealed class SlotBank
 internal sealed class SlotBackup
 {
     public string Format { get; set; } = "ControllerBridge.Slots";
-    public int Version { get; set; } = 9;
+    public int Version { get; set; } = 10;
     public DateTimeOffset CreatedUtc { get; set; }
     public string Sha256 { get; set; } = "";
     public byte[] Bank { get; set; } = [];
@@ -170,11 +159,11 @@ internal sealed class SlotBackup
     {
         if (new FileInfo(path).Length > 256 * 1024) throw new InvalidDataException(L.T("バックアップファイルが大きすぎます。", "The backup file is too large."));
         SlotBackup file = JsonSerializer.Deserialize<SlotBackup>(File.ReadAllText(path)) ?? throw new InvalidDataException(L.T("バックアップを読み込めません。", "The backup could not be read."));
-        if (file.Format != "ControllerBridge.Slots" || file.Version is not (2 or 3 or 5 or 6 or 7 or 8 or 9) || file.Bank is null || file.Bank.Length is not (SlotBank.ByteCount or SlotBank.V10ByteCount or SlotBank.PreviousByteCount or SlotBank.LegacyByteCount) ||
+        if (file.Format != "ControllerBridge.Slots" || file.Version is not (2 or 3 or 5 or 6 or 7 or 8 or 9 or 10) || file.Bank is null || file.Bank.Length is not (SlotBank.ByteCount or SlotBank.V12ByteCount or SlotBank.V10ByteCount or SlotBank.PreviousByteCount or SlotBank.LegacyByteCount) ||
             !string.Equals(file.Sha256, Convert.ToHexString(SHA256.HashData(file.Bank)), StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(L.T("バックアップの形式またはチェックサムが不正です。", "The backup format or checksum is invalid."));
         uint bankVersion = Wire.U32(file.Bank, 4);
-        if (file.Version == 9 ? bankVersion != 12 : file.Version == 8 ? bankVersion != 11 : file.Version == 7 ? bankVersion != 10 : file.Version == 6 ? bankVersion != 9 : file.Version == 5 ? bankVersion != 8 : bankVersion is not (5 or 6)) throw new InvalidDataException("Unsupported backup version.");
+        if (file.Version == 10 ? bankVersion != 13 : file.Version == 9 ? bankVersion != 12 : file.Version == 8 ? bankVersion != 11 : file.Version == 7 ? bankVersion != 10 : file.Version == 6 ? bankVersion != 9 : file.Version == 5 ? bankVersion != 8 : bankVersion is not (5 or 6)) throw new InvalidDataException("Unsupported backup version.");
         return new(file.Bank, legacyDefaults);
     }
 }

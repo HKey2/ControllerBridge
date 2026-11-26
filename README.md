@@ -38,7 +38,11 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.33.0 - GUI r2 (firmware 0.33.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.34.0 (firmware 0.34.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.34.0 — Native gyro:** In **Pro** output, enable **Gyro (Pro)** for a gamepad profile to use original Switch Pro, Switch 2 Pro or DS3 sensors with the game’s own motion controls. DS3 sends its single rotation sensor to the selected X, Y or Z gyro axis; the other two axes always remain at zero. Keep DS3 still briefly after activation. See [setup and sensor limits](docs/native-motion.md).
+
+**0.34.0 — GameCube output:** Adds a **GC** host mode and two independent analog L/R assignments. Use the separate **GC L** and **GC R** buttons under **Analog inputs**. Select or detect each source, measure its range and record the released value, then save the profile. Existing four stick axes, including DS3 gyro steering, retain their assignments. Select **GC** in Shared settings to use the GameCube adapter format. Games must accept GameCube controllers and their analog triggers; this does not establish compatibility with a specific racing game. Install the bundled firmware; existing settings migrate with GC L/R unassigned. See [GameCube output and analog L/R](docs/gamecube-output.md).
 
 **0.33.0 GUI r2:** Fixed HOME/Guide registration for controllers that report this button with multiple bits. Releasing the button is no longer registered as a press. If HOME was already assigned in reverse, select HOME, press and release the input button, then choose **Save settings to device** to replace that assignment. Existing saved mappings are retained until you register and save them again. Firmware 0.33.0 is unchanged.
 
@@ -204,13 +208,13 @@ Allocation figures for the current firmware, calculated from its binary and link
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 202,564; persistent storage 49,152 | 1,845,436 |
-| SRAM, 532,480 bytes | Static data 167,216; two stacks 8,192 | 357,072 |
-| One bank copy, 16,384 bytes | Payload 14,164 + header 16 | 2,204 |
+| Flash, 2,097,152 bytes | Code/initial values 212,492; persistent storage 49,152 | 1,835,508 |
+| SRAM, 532,480 bytes | Static data 171,188; two stacks 8,192 | 353,100 |
+| One bank copy, 16,384 bytes | Payload 14,676 + header 16 | 1,692 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode/display records 196 | 3,836 |
 
-Static SRAM consists of vector table 272, initialized data 44,832, and BSS 122,112 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 864 bytes, bank payload 14,164 bytes, and UF2 405,504 bytes.
+Static SRAM consists of vector table 272, initialized data 46,528, and BSS 124,388 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 896 bytes, bank payload 14,676 bytes, and UF2 425,472 bytes.
 
 ## Repository contents and license
 

@@ -15,6 +15,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     private uint SelectedDisplayType => displayType.SelectedItem is DisplayTypes.Choice choice ? choice.Id : original.DisplayType;
     private readonly DarkRadioButton hostS = new() { Text = "S", AutoSize = true },
         hostPro = new() { Text = "Pro", AutoSize = true },
+        hostGc = new() { Text = "GC", AutoSize = true },
         hostAuto = new() { Text = "Auto", AutoSize = true },
         hostX = new() { Text = "X", AutoSize = true };
     internal MouseUdlrSettings Result { get; private set; }
@@ -25,7 +26,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     internal MouseUdlrSettingsDialog(MouseUdlrSettings current, Func<MouseUdlrSettings, MouseUdlrSettings, Task<MouseUdlrSettings>> persist, bool supportsRumble = false)
     {
         original = Result = current; this.persist = persist;
-        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 890));
+        using IDisposable layout = Ui.Form(this, L.T("共通設定", "Shared settings"), new(680, 960));
         TableLayoutPanel root = new() { Dock = DockStyle.Fill, Padding = new(16), ColumnCount = 1, RowCount = 3 };
         root.ColumnStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.Percent, 100));
         root.RowStyles.Add(new(SizeType.AutoSize)); root.RowStyles.Add(new(SizeType.AutoSize));
@@ -75,16 +76,17 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
         Row(paddle, L.T("回転感度", "Rotation sensitivity"), rollingGain, "°/pt");
         TableLayoutPanel host = Group(L.T("出力モード", "Host mode"), 3);
         FlowLayoutPanel modes = new() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new(4, 2, 4, 6) };
-        foreach (RadioButton radio in new[] { hostS, hostAuto, hostX, hostPro }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
+        foreach (RadioButton radio in new[] { hostS, hostAuto, hostX, hostPro, hostGc }) { radio.Margin = new(4, 4, 24, 4); modes.Controls.Add(radio); }
         hostPro.Enabled = supportsRumble; hostPro.AccessibleName = L.T("Pro：Switch Pro互換・振動対応", "Pro: Switch Pro compatible with rumble");
-        hostPro.Checked = current.HostMode == 3;
+        hostPro.Checked = current.HostMode == 3; hostGc.Checked = current.HostMode == 4;
+        hostGc.AccessibleName = L.T("GC：GameCube接続タップ互換・アナログL/R", "GC: GameCube adapter with analog L/R");
         hostS.AccessibleName = L.T("S：Switch互換", "S: Switch compatible");
         hostAuto.AccessibleName = L.T("Auto：Xを優先し、不成立ならSへ一度だけ切替", "Auto: try X first, then S once if needed");
         hostX.AccessibleName = L.T("X : Xbox360互換", "X: Xbox 360 XInput");
         hostS.Checked = current.HostMode == 0; hostX.Checked = current.HostMode == 1; hostAuto.Checked = current.HostMode == 2;
         host.RowStyles.Add(new(SizeType.AutoSize)); host.Controls.Add(modes, 0, host.RowCount++); host.SetColumnSpan(modes, 3);
-        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Pro・DS3への振動転送に対応。DS3はXでも振動を利用できます。\n各プロファイルで振動を有効にしてください。マウスを含むプロファイルはSで動作します。\nモードの変更を保存するとUSBが再接続されます。",
-            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble to original Pro, Switch 2 Pro and DS3; DS3 also supports rumble with X.\nEnable rumble per profile. Profiles with mouse output use S.\nSaving a mode change reconnects USB."));
+        Note(host, L.T("S：Switch互換出力　X : Xbox360互換\nAuto：Xを優先し、5秒で成立しなければSへ一度だけ切替。\nPro：初代Pro・Switch 2 Pro・DS3への振動転送に対応。DS3はXでも振動を利用できます。\n各プロファイルで振動を有効にしてください。マウスを含むプロファイルはSで動作します。\nGC：GameCube接続タップ互換。独立したアナログL/Rを設定できます。\nモードの変更を保存するとUSBが再接続されます。",
+            "S: Switch compatible output   X: Xbox 360 XInput output\nAuto: try X for 5 seconds, then switch to S once if needed.\nPro: rumble to original Pro, Switch 2 Pro and DS3; DS3 also supports rumble with X.\nEnable rumble per profile. Profiles with mouse output use S.\nGC: GameCube adapter with independent analog L/R assignments.\nSaving a mode change reconnects USB."));
         // Keep this entry hidden until PS4 console connection is implemented.
         // Button ps4Files = Ui.Button(L.T("PS4認証ファイル（準備）…", "PS4 credential files (preparation)…"), (_, _) =>
         // {
@@ -127,6 +129,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             control.TextChanged += (_, _) => UpdateSaveButton();
         }
         displayType.SelectedIndexChanged += (_, _) => UpdateSaveButton();
+        hostGc.CheckedChanged += (_, _) => UpdateSaveButton();
         hostPro.CheckedChanged += (_, _) => UpdateSaveButton();
         hostS.CheckedChanged += (_, _) => UpdateSaveButton(); hostX.CheckedChanged += (_, _) => UpdateSaveButton(); hostAuto.CheckedChanged += (_, _) => UpdateSaveButton();
         UpdateSaveButton();
@@ -139,7 +142,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             Trackball = (original.Trackball & ~255u) | (uint)holdThreshold.Value, InertiaThreshold = (uint)inertiaThreshold.Value,
             InertiaDecayPercent = (uint)(inertiaDecay.Value * 100m), InertiaIntervalMs = (uint)inertiaInterval.Value,
             Rolling = (original.Rolling & ~65535u) | (uint)(rollingGain.Value * 10m), DisplayType = SelectedDisplayType,
-            HostMode = hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
+            HostMode = hostGc.Checked ? 4u : hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u, Persisted = true };
     }
     private void SaveFile()
     {
@@ -171,7 +174,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
             inertiaDecay.Value = loaded.InertiaDecayPercent / 100m; inertiaInterval.Value = loaded.InertiaIntervalMs;
             rollingGain.Value = loaded.RollingGain10 / 10m;
             hostS.Checked = loaded.HostMode == 0; hostX.Checked = loaded.HostMode == 1;
-            hostAuto.Checked = loaded.HostMode == 2; hostPro.Checked = loaded.HostMode == 3;
+            hostAuto.Checked = loaded.HostMode == 2; hostPro.Checked = loaded.HostMode == 3; hostGc.Checked = loaded.HostMode == 4;
             displayType.SelectedItem = displayType.Items.Cast<DisplayTypes.Choice>().Single(item => item.Id == loaded.DisplayType);
             UpdateSaveButton();
             status.Text = L.T("共通設定を画面に復帰しました。「デバイスに保存」で反映します。", "Restored shared settings into the editor. Choose “Save to device” to apply them.");
@@ -181,7 +184,7 @@ internal sealed partial class MouseUdlrSettingsDialog : Form
     }
     private bool HasChanges()
     {
-        bool changed = (hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode || SelectedDisplayType != original.DisplayType;
+        bool changed = (hostGc.Checked ? 4u : hostPro.Checked ? 3u : hostAuto.Checked ? 2u : hostX.Checked ? 1u : 0u) != original.HostMode || SelectedDisplayType != original.DisplayType;
         for (int i = 0; i < editors.Length; i++)
         {
             NumericUpDown control = editors[i];

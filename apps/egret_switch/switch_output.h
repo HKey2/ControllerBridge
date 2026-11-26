@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 void spo_init(void);
+void spo_encode(const sw_report *input,uint8_t output[64],uint32_t now_us);
 void spo_stop(void);
 bool spo_receive(const uint8_t *data,uint16_t length,void *context);
 void spo_bus_event(unsigned event,void *context);

@@ -18,7 +18,8 @@
 #define UPR_CMD_REGISTER_BEGIN 48
 #define UPR_CMD_TOGGLE_STATE 57
 // Command 20 byte 39: bit 6 advertises speed-aware button-only routing,
-// bit 7 reports the current Low Speed state; low six bits retain motion metadata.
+// bit 7 reports Low Speed, bit 5 native Pro motion; low five bits retain DS3 metadata.
+#define UPR_INPUT_NATIVE_MOTION 0x20u
 #define UPR_INPUT_SPEED_SUPPORTED 0x40u
 #define UPR_INPUT_LOW_SPEED 0x80u
 // Capability flags in command 20's status/capability word.
@@ -60,6 +61,8 @@ const udk_settings *upr_direction_settings(void);
 bool upr_event(const uc_event *event);
 uint8_t upr_gyro_axes(void);
 bool upr_rumble_enabled(void);
+bool upr_native_motion_enabled(void);
+void upr_native_motion_encode(uint8_t output[36],uint32_t now_us,uint8_t gyro_range,uint8_t accel_range);
 bool upr_low_speed(void);
 bool upr_apply_buttons(const uc_event *event,uint32_t now_us,bool output_ready,sw_report *report);
 bool upr_apply(const uc_event *event,uint32_t now_us,bool output_ready,sw_report *report);

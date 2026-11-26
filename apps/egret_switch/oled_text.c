@@ -66,7 +66,7 @@ static void period_text(char *row,uint32_t us) {
 void oled_text_format(char rows[4][9],uint8_t type,char mode,unsigned slot,const char *name,uint32_t period_us) {
     memset(rows,' ',36);for(unsigned row=0;row<4;++row)rows[row][8]=0;
     if(type==UDISPLAY_OFF || !udisplay_valid(type))return;
-    char output=mode=='X'?'X':'S';
+    char output=mode=='X'?'X':mode=='G'?'G':'S';
     if(type==UDISPLAY_NAME_PERIOD_SLOT) {
         period_text(rows[3],period_us);rows[3][5]=output;
         rows[3][6]=slot<16?(char)('0'+(slot+1)/10):'-';

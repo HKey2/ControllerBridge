@@ -101,7 +101,7 @@ public sealed class ConversionSettings
     }
     internal static ConversionSettings Read(byte[] bytes)
     {
-        if ((bytes[550] & ~15) != 0 || (Wire.U16(bytes, 0) < 11 && (bytes[550] >> 2) > 1) || bytes[551] > 3 || bytes[553] > 1 || bytes[556] > 7 || (Wire.U16(bytes, 0) < 12 ? bytes[851] != 0 : !ButtonLabels.Valid(bytes[851])) || bytes.AsSpan(852, 4).ContainsAnyExcept((byte)0))
+        if ((bytes[550] & ~15) != 0 || (Wire.U16(bytes, 0) < 11 && (bytes[550] >> 2) > 1) || bytes[551] > 3 || bytes[553] > 1 || bytes[556] > 7 || (Wire.U16(bytes, 0) < 12 ? bytes[851] != 0 : !ButtonLabels.Valid(bytes[851])) || (Wire.U16(bytes, 0) < 13 ? bytes[852] != 0 : bytes[852] > 2) || bytes.AsSpan(853, 3).ContainsAnyExcept((byte)0))
             throw new InvalidDataException(L.T("未対応の方向変換設定です。", "Unsupported conversion settings."));
         ConversionSettings result = new() { TrackballTargets = bytes.AsSpan(544, 4).ToArray(), PaddleTargets = bytes.AsSpan(548, 2).ToArray(),
             TrackballMode = (byte)(bytes[550] & 3), PaddleMode = (byte)((bytes[550] >> 2) & 3),

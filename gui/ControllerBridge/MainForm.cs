@@ -30,7 +30,9 @@ internal sealed partial class MainForm : Form
     private readonly NumericUpDown interval = new() { Minimum = 0, Maximum = 255, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown mouseGain = new() { Minimum = 1, Maximum = 256, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
     private readonly NumericUpDown paddleGain = new() { Minimum = 1, Maximum = 10, Increment = .1m, DecimalPlaces = 1, Width = 78, Anchor = AnchorStyles.Left };
-    private readonly CheckBox rumbleOn = new DarkCheckBox { Text = L.T("振動を有効にする", "Enable rumble"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly ComboBox nativeMotionAxis = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 94, Anchor = AnchorStyles.Left, AccessibleName = L.T("DS3ジャイロの出力軸", "DS3 gyro output axis") };
+    private readonly CheckBox nativeMotionOn = new DarkCheckBox { Text = L.T("ジャイロ (Pro)", "Gyro (Pro)"), AutoSize = true, Anchor = AnchorStyles.Left };
+    private readonly CheckBox rumbleOn = new DarkCheckBox { Text = L.T("振動", "Rumble"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox trackballOn = new() { Text = L.T("トラックボール ON", "Trackball ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox paddleOn = new() { Text = L.T("パドル ON", "Paddle ON"), AutoSize = true, Anchor = AnchorStyles.Left };
     private readonly CheckBox invertX = new() { Text = L.T("X方向を反転", "Invert X"), AutoSize = true, Anchor = AnchorStyles.Left };
@@ -112,7 +114,13 @@ internal sealed partial class MainForm : Form
         nameRow.ColumnStyles.Add(new(SizeType.Percent, 100));
         for (int i = 0; i < 5; i++) nameRow.RowStyles.Add(new(SizeType.AutoSize));
         nameRow.Controls.Add(Ui.Label(L.T("プロファイル名", "Profile name"), 9), 0, 0); nameRow.Controls.Add(name, 0, 1); name.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3); nameRow.Controls.Add(rumbleOn, 0, 4);
+        nameRow.Controls.Add(identity, 0, 2); nameRow.Controls.Add(outputStatus, 0, 3); FlowLayoutPanel features = new() { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = Padding.Empty };
+        nativeMotionAxis.Items.AddRange([L.T("DS3: X軸", "DS3: X"), L.T("DS3: Y軸", "DS3: Y"), L.T("DS3: Z軸", "DS3: Z")]);
+        features.Controls.Add(rumbleOn); features.Controls.Add(nativeMotionOn); features.Controls.Add(nativeMotionAxis); nameRow.Controls.Add(features, 0, 4);
+        SetTip(nativeMotionAxis, L.T("DS3の回転1軸をProのX・Y・Z軸のどれへ送るか選びます。他のジャイロ2軸は常に0です。プロファイルごとに保存されます。",
+            "Choose which Pro gyro axis receives the DS3 rotation sensor. The other two gyro axes stay at zero. Saved per profile."));
+        SetTip(nativeMotionOn, L.T("初代Switch Pro・Switch 2 Pro・DS3のセンサーをPro出力へ送ります。DS3は有効化後、約1秒静止させてください。回転1軸の出力先をX・Y・Zから選択でき、残り2軸の角速度は常に0です。この設定が有効なPro出力ではジャイロ→スティック変換を停止します。",
+            "Send original Switch Pro, Switch 2 Pro or DS3 sensors through Pro output. Keep DS3 still for about one second after enabling. Choose X, Y or Z for the DS3 rotation sensor; the other two gyro axes stay at zero. Gyro-to-stick conversion is suspended while native gyro is active in Pro output."));
         SetTip(rumbleOn, L.T("Pro出力では初代Switch Pro・Switch 2 Pro・DUALSHOCK 3のUSB接続に対応します。DS3はX出力にも対応します。ゲームパッド単独のプロファイルで使用でき、DS3の入力調整中は振動を一時停止します。", "Pro output supports original Switch Pro, Switch 2 Pro and DUALSHOCK 3 controllers over USB. DS3 also supports X output. Use a gamepad-only profile; DS3 rumble pauses during input setup."));
         metadata.Controls.Add(nameRow, 0, 0);
         BufferedTableLayoutPanel profileActions = new() { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 4, Padding = new(8, 0, 0, 0) };
@@ -214,6 +222,8 @@ internal sealed partial class MainForm : Form
         };
         InitializeProfileMenu();
         name.TextChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].Name = name.Text; MarkDirty(); };
+        nativeMotionAxis.SelectedIndexChanged += (_, _) => { if (loading || !profiles[selected].Enabled || nativeMotionAxis.SelectedIndex < 0) return; profiles[selected].NativeGyroAxis = (byte)(nativeMotionAxis.SelectedIndex == 0 ? 1 : nativeMotionAxis.SelectedIndex == 1 ? 2 : 0); MarkDirty(); };
+        nativeMotionOn.CheckedChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].NativeMotionEnabled = nativeMotionOn.Checked; MarkDirty(); };
         rumbleOn.CheckedChanged += (_, _) => { if (loading || !profiles[selected].Enabled) return; profiles[selected].RumbleEnabled = rumbleOn.Checked; MarkDirty(); };
         interval.ValueChanged += (_, _) => { if (loading) return; profiles[selected].InputInterval = (byte)interval.Value; MarkDirty(); };
         foreach (MappingEditor mapping in new[] { editor, mouseEditor, combinedEditor }) { mapping.Modified += (_, _) => { MarkDirty(); foreach (MappingEditor other in new[] { editor, mouseEditor, combinedEditor }) other.RefreshPresentation(); }; mapping.PrepareLearningAsync = PrepareLearning; }
@@ -337,7 +347,8 @@ internal sealed partial class MainForm : Form
         SyncOutputControls();
         name.Text = p.Enabled ? p.Name : L.T("未使用", "Unused"); name.ReadOnly = !p.Enabled;
         delete.Text = p.Enabled ? L.T("プロファイル削除", "Delete profile") : L.T("コントローラーを追加", "Add controller"); Ui.ButtonColors(delete, !p.Enabled);
-        rumbleOn.Checked = p.RumbleEnabled;
+        rumbleOn.Checked = p.RumbleEnabled; nativeMotionOn.Checked = p.NativeMotionEnabled;
+        nativeMotionAxis.SelectedIndex = p.NativeGyroAxis == 1 ? 0 : p.NativeGyroAxis == 2 ? 1 : 2;
         interval.Value = p.InputInterval; trackballOn.Checked = p.Mouse.TrackballEnabled; paddleOn.Checked = p.Mouse.PaddleEnabled;
         mouseGain.Value = p.Mouse.TrackballGain; paddleGain.Value = p.Mouse.PaddleGain; paddleAxis.SelectedIndex = (int)p.Mouse.PaddleAxis;
         invertX.Checked = p.Mouse.InvertX; invertY.Checked = p.Mouse.InvertY; invertPaddle.Checked = p.Mouse.InvertPaddle; trackballKeys.Checked = p.Mouse.TrackballToDpad; paddleKeys.Checked = p.Mouse.PaddleToDpad;
@@ -373,6 +384,9 @@ internal sealed partial class MainForm : Form
         UpdateOutputAvailability();
         name.Enabled = enabled && !working; name.BackColor = enabled ? Ui.Input : Ui.Surface;
         interval.Enabled = enabled && !working;
+        nativeMotionOn.Visible = enabled; nativeMotionOn.Enabled = enabled && !working && !SelectedButtonsOnly && profiles[selected].OutputMode == 0 && (caps is null || caps.SupportsNativeMotion);
+        nativeMotionAxis.Visible = enabled && profiles[selected].Vid == 0x054c && profiles[selected].Pid == 0x0268;
+        nativeMotionAxis.Enabled = nativeMotionOn.Enabled && nativeMotionOn.Checked;
         rumbleOn.Visible = enabled; rumbleOn.Enabled = enabled && !working && !SelectedButtonsOnly && profiles[selected].OutputMode == 0 && (caps is null || caps.SupportsRumble);
         delete.Enabled = !working && (enabled || online && CanRegisterSlot(selected) && (CanRegisterInput && caps!.SupportsGuardedRegistration));
         duplicate.Enabled = enabled && !working && ProfileSlots.EmptyBelow(profiles, selected) >= 0;

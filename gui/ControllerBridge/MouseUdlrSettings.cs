@@ -76,7 +76,7 @@ public sealed record MouseUdlrSettings(uint Threshold, uint HoldMs, uint WaitMs,
             throw new InvalidDataException(L.T("共通設定を読み込めません。デバイスのファームウェアを更新してください。", "Cannot read shared settings. Update the device firmware."));
         uint threshold = Wire.U32(data, 8), hold = Wire.U32(data, 12), wait = Wire.U32(data, 16), flags = Wire.U32(data, 20);
         uint buttonMap = Wire.U32(data, 24), paddleButtonMap = Wire.U32(data, 28); ValidateTargets(buttonMap); ValidateTargets(paddleButtonMap);
-        if (threshold is < 1 or > 65535 || hold is < 1 or > 1000 || wait is < 1 or > 1000 || flags > 1 || Wire.U32(data, 36) > 3 ||
+        if (threshold is < 1 or > 65535 || hold is < 1 or > 1000 || wait is < 1 or > 1000 || flags > 1 || Wire.U32(data, 36) > 4 ||
             (Wire.U32(data, 40) & 0xFF000000u) != 0 || !DisplayTypes.IsSupported(Wire.U32(data, 48)) || (Wire.U32(data, 52) & DisplayTypes.RequiredMask) != DisplayTypes.RequiredMask)
             throw new InvalidDataException(L.T("デバイスから受信した共通設定が不正です。", "The device returned invalid shared settings."));
         uint start = Wire.U32(data, 40) & 65535, decay = (Wire.U32(data, 40) >> 16) & 255, interval = Wire.U32(data, 44);
@@ -95,7 +95,7 @@ internal sealed class MouseUdlrSettingsClient(Func<byte, byte[]?, Task<byte[]>> 
         MouseUdlrSettings.ValidateRolling(edited.Rolling); MouseUdlrSettings.ValidateTrackball(edited.Trackball);
         MouseUdlrSettings.ValidateInertia(edited.InertiaThreshold, edited.InertiaDecayPercent, edited.InertiaIntervalMs);
         if (!DisplayTypes.IsSupported(edited.DisplayType)) throw new InvalidDataException("Unsupported display type");
-        if (edited.HostMode > 3) throw new InvalidDataException("Unsupported host mode");
+        if (edited.HostMode > 4) throw new InvalidDataException("Unsupported host mode");
         byte[] args = new byte[56]; "UDSB"u8.CopyTo(args); Wire.W32(args, 4, 11);
         static void Values(byte[] b, int at, MouseUdlrSettings s)
         {

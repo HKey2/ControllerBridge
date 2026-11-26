@@ -189,7 +189,7 @@ bool status_oled_task(uint32_t now,char mode,unsigned slot,uint32_t generation,c
         if(view_valid && ids_seen==ids && generation_seen==generation && mode_seen==(uint8_t)mode &&
            gamepad_next && (int32_t)(now-gamepad_next)<0)return true;
         gamepad_next=now+50000;
-        uint8_t report[14],gamepad[12];
+        uint8_t report[40],gamepad[12];
         unsigned length=ids?ud_input_snapshot(report,sizeof(report)):0;
         bool valid=length && oled_output_decode(report,length,gamepad);
         oled_text_detail_b(rows,ids,valid?gamepad:NULL);
