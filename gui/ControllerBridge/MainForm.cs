@@ -14,6 +14,8 @@ internal sealed partial class MainForm : Form
     private uint cursor, generation, bankGeneration, observedBankGeneration;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 25 };
     private bool polling, working, connecting, loading, closing, syncingOutput;
+    private CancellationTokenSource? connectionAttempt;
+    private TaskCompletionSource? connectionFinished;
     private readonly Lazy<FirmwarePackage> bundledFirmware = new(FirmwarePackage.Load);
     private readonly FirmwareNoticeTracker firmwareNotices = new();
     private DateTime reconnectAfter;
@@ -431,7 +433,22 @@ internal sealed partial class MainForm : Form
     }
     private async Task Connect(bool showErrors = true, bool allowFirmwareNotice = true)
     {
-        if (working || closing || connecting || !showErrors && ModalEditorOpen) return;
+        if (closing) return;
+        if (connecting)
+        {
+            if (showErrors && connectionFinished is not null)
+            {
+                Task finished = connectionFinished.Task;
+                connectionAttempt?.Cancel();
+                await finished;
+                if (!closing) await Connect(showErrors, allowFirmwareNotice);
+            }
+            return;
+        }
+        if (working || !showErrors && ModalEditorOpen) return;
+        using CancellationTokenSource attempt = new(TimeSpan.FromSeconds(30));
+        TaskCompletionSource finishedAttempt = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        connectionAttempt = attempt; connectionFinished = finishedAttempt;
         connecting = true;
         // Background discovery does not disable/re-enable the whole editor.
         // The USB handle remains local to ConnectionRead until every read succeeds.
@@ -443,7 +460,8 @@ internal sealed partial class MainForm : Form
         {
             await ReleaseCalibrationQuiet();
             bridge?.Dispose(); bridge = null;
-            using ConnectionRead read = await ConnectionRead.OpenAsync(bundledFirmware.Value.Version);
+            using ConnectionRead read = await ConnectionRead.OpenAsync(bundledFirmware.Value.Version, attempt.Token);
+            attempt.Token.ThrowIfCancellationRequested();
             if (closing || !showErrors && (working || ModalEditorOpen)) return;
             if (read.Status.Kind != ConnectionKind.Ready)
             {
@@ -478,7 +496,9 @@ internal sealed partial class MainForm : Form
         }
         finally
         {
-            connecting = false; if (showErrors) working = false;
+            connecting = false; connectionAttempt = null; connectionFinished = null;
+            finishedAttempt.TrySetResult();
+            if (showErrors) working = false;
             reconnectAfter = DateTime.UtcNow.AddSeconds(2);
             if (!closing)
             {
@@ -979,7 +999,7 @@ internal sealed partial class MainForm : Form
         if (closing) return; if (working) { e.Cancel = true; return; }
         if (GetSaveState().NeedsSave && MessageBox.Show(this, L.T("デバイスに保存していない設定があります。終了しますか？", "There are unsaved settings. Close ControllerBridge?"),
             L.T("未保存の編集", "Unsaved edits"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
-        e.Cancel = true; closing = true; timer.Stop(); while (polling) await Task.Delay(5);
+        e.Cancel = true; closing = true; connectionAttempt?.Cancel(); timer.Stop(); while (polling) await Task.Delay(5);
         await ReleaseCalibrationQuiet();
         bridge?.Dispose(); bridge = null; timer.Dispose(); tips.Dispose(); BeginInvoke(Close);
     }

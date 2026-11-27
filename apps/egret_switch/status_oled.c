@@ -173,7 +173,7 @@ bool status_oled_task(uint32_t now,char mode,unsigned slot,uint32_t generation,c
     }
     if(!initialized) { begin(INITIALIZING,initialize,sizeof(initialize),now);return true; }
     if(type==UDISPLAY_NAME_PERIOD_SLOT || type==UDISPLAY_DETAIL_A)sample_period(now);
-    uint32_t ids=(type==UDISPLAY_DETAIL_A || type==UDISPLAY_DETAIL_B || type==UDISPLAY_DETAIL_C)?upr_device_ids():0;
+    uint32_t ids=(type==UDISPLAY_DETAIL_A || type==UDISPLAY_DETAIL_B || type==UDISPLAY_DETAIL_C || type==UDISPLAY_SEND_INFO)?upr_device_ids():0;
     char rows[4][9];
     if(type==UDISPLAY_DETAIL_C) {
         // Read existing output totals at 1 Hz, independently of the input report
@@ -183,16 +183,22 @@ bool status_oled_task(uint32_t now,char mode,unsigned slot,uint32_t generation,c
         if(view_valid && next_sample && (int32_t)(now-next_sample)<0)return true;
         sample_pointer(now);
         oled_text_detail_c(rows,ids!=0,pointer_x,pointer_y,pointer_value_valid,input_limit_per_second,reports_per_second,input_value_valid);
-    } else if(type==UDISPLAY_DETAIL_B) {
-        // Sample the already-existing transmit cache at 20 Hz. No per-packet
-        // hook, extra input queue, or display work in the USB interrupt path.
-        if(view_valid && ids_seen==ids && generation_seen==generation && mode_seen==(uint8_t)mode &&
+    } else if(type==UDISPLAY_DETAIL_B || type==UDISPLAY_SEND_INFO) {
+        // Read existing input/output caches at 20 Hz. No per-packet hook,
+        // extra input queue, or display work in the USB interrupt path.
+        if(view_valid && ids_seen==ids && generation_seen==generation && slot_seen==slot && mode_seen==(uint8_t)mode &&
            gamepad_next && (int32_t)(now-gamepad_next)<0)return true;
         gamepad_next=now+50000;
-        uint8_t report[40],gamepad[12];
-        unsigned length=ids?ud_input_snapshot(report,sizeof(report)):0;
-        bool valid=length && oled_output_decode(report,length,gamepad);
-        oled_text_detail_b(rows,ids,valid?gamepad:NULL);
+        if(type==UDISPLAY_DETAIL_B) {
+            udisplay_input input;
+            bool valid=ids && upr_display_input(&input);
+            oled_text_detail_b(rows,ids,valid?&input:NULL);
+        } else {
+            uint8_t report[40];udisplay_output output;
+            unsigned length=ids && slot<16?ud_input_snapshot(report,sizeof(report)):0;
+            bool valid=length && oled_output_decode(report,length,&output);
+            oled_text_send_info(rows,slot,name,upr_button_labels(),valid?&output:NULL);
+        }
     } else {
         if(view_valid && mode_seen==(uint8_t)mode && slot_seen==slot && generation_seen==generation &&
            period_seen==period_us && ids_seen==ids && in_period_seen==in_period_us && bytes_seen==bytes_per_second)return true;

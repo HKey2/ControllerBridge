@@ -120,14 +120,62 @@ static void hex_text(char *text,uint32_t value,unsigned digits) {
     static const char hex[]="0123456789ABCDEF";
     for(unsigned i=0;i<digits;++i)text[i]=hex[(value>>(4*(digits-1-i)))&15];
 }
-void oled_text_detail_b(char rows[4][9],uint32_t device_ids,const uint8_t state[12]) {
+void oled_text_detail_b(char rows[4][9],uint32_t device_ids,const udisplay_input *state) {
     memset(rows,'-',36);for(unsigned row=0;row<4;++row)rows[row][8]=0;
     if(device_ids)hex_text(rows[0],device_ids,8);
     if(!device_ids || !state)return;
-    hex_text(rows[1],state[0]|((uint16_t)state[1]<<8),4);
-    hex_text(rows[1]+4,state[2],2);hex_text(rows[1]+6,state[3],2);
-    for(unsigned axis=0;axis<4;++axis)
-        hex_text(rows[2+axis/2]+4*(axis%2),state[4+2*axis]|((uint16_t)state[5+2*axis]<<8),4);
+    if(state->buttons_valid)hex_text(rows[1],state->buttons,8);
+    for(unsigned axis=0;axis<4;++axis)if(state->valid_axes&(1u<<axis)) {
+        char *cell=rows[2+axis/2]+4*(axis%2);
+        if(state->wide_axes&(1u<<axis))memset(cell,'*',4);
+        else hex_text(cell,state->axes[axis],4);
+    }
+}
+// Six visible cells per name leave room for both brackets. IDs match the GUI's
+// saved presentation choices, including former None=0 as Switch. Four private
+// glyphs retain the PlayStation symbols without a general Unicode font.
+enum { N_EMPTY,N_Y,N_B,N_A,N_X,N_L,N_R,N_ZL,N_ZR,N_MINUS,N_PLUS,N_LSTICK,N_RSTICK,N_HOME,N_CAPTURE,
+    N_LB,N_RB,N_LT,N_RT,N_BACK,N_START,N_GUIDE,N_SQUARE,N_CROSS,N_CIRCLE,N_TRIANGLE,N_L1,N_R1,N_L2,N_R2,
+    N_SELECT,N_L3,N_R3,N_PS,N_SHARE,N_OPTION,N_C,N_Z,N_MODE,N_D,N_RUN,N_III,N_I,N_II,N_V,N_UP,N_DOWN,N_LEFT,N_RIGHT };
+static const char button_names[][7]={
+    "","Y","B","A","X","L","R","ZL","ZR","-","+","LStick","RStick","Home","Capt.",
+    "LB","RB","LT","RT","BACK","START","GUIDE","\x01","\x02","\x03","\x04","L1","R1","L2","R2",
+    "SELECT","L3","R3","PS","SHARE","Option","C","Z","MODE","D","RUN","III","I","II","V","Up","Down","Left","Right"};
+static const uint8_t button_systems[14][14]={
+    {N_Y,N_B,N_A,N_X,N_L,N_R,N_ZL,N_ZR,N_MINUS,N_PLUS,N_LSTICK,N_RSTICK,N_HOME,N_CAPTURE},
+    {N_Y,N_B,N_A,N_X,N_L,N_R,N_ZL,N_ZR,N_MINUS,N_PLUS,N_LSTICK,N_RSTICK,N_HOME,N_CAPTURE},
+    {N_X,N_A,N_B,N_Y,N_LB,N_RB,N_LT,N_RT,N_BACK,N_START,N_LSTICK,N_RSTICK,N_GUIDE,N_EMPTY},
+    {N_SQUARE,N_CROSS,N_CIRCLE,N_TRIANGLE,N_L1,N_R1,N_L2,N_R2,N_SHARE,N_OPTION,N_L3,N_R3,N_PS,N_EMPTY},
+    {N_SQUARE,N_CROSS,N_CIRCLE,N_TRIANGLE,N_L1,N_R1,N_L2,N_R2,N_SELECT,N_START,N_L3,N_R3,N_HOME,N_EMPTY},
+    {N_A,N_B,N_C,N_Y,N_X,N_Z,N_L,N_R,N_EMPTY,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_X,N_A,N_B,N_Y,N_C,N_Z,N_L,N_R,N_EMPTY,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_A,N_B,N_C,N_Y,N_X,N_Z,N_EMPTY,N_EMPTY,N_MODE,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_X,N_A,N_B,N_Y,N_C,N_Z,N_EMPTY,N_EMPTY,N_MODE,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_Y,N_B,N_A,N_X,N_EMPTY,N_EMPTY,N_L,N_R,N_SELECT,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_A,N_B,N_D,N_C,N_EMPTY,N_EMPTY,N_EMPTY,N_EMPTY,N_SELECT,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_EMPTY,N_B,N_A,N_EMPTY,N_EMPTY,N_EMPTY,N_EMPTY,N_EMPTY,N_SELECT,N_START,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_III,N_I,N_II,N_V,N_EMPTY,N_EMPTY,N_EMPTY,N_EMPTY,N_SELECT,N_RUN,N_EMPTY,N_EMPTY,N_HOME,N_EMPTY},
+    {N_SQUARE,N_CROSS,N_CIRCLE,N_TRIANGLE,N_L1,N_R1,N_L2,N_R2,N_SELECT,N_START,N_L3,N_R3,N_PS,N_EMPTY}
+};
+static void button_text(char row[9],uint8_t system,unsigned button) {
+    if(system>=14)system=1;
+    const char *name=button_names[button<14?button_systems[system][button]:N_UP+button-14];
+    char fallback[6]={'B','t','n',(char)('0'+(button+1)/10),(char)('0'+(button+1)%10),0};
+    if(!*name)name=fallback;
+    row[0]='[';unsigned n=0;while(n<6 && name[n]) { row[n+1]=name[n];++n; }row[n+1]=']';
+}
+void oled_text_send_info(char rows[4][9],unsigned slot,const char *name,uint8_t labels,const udisplay_output *state) {
+    // Reuse the existing ASCII/whitespace handling, retaining its first row.
+    oled_text_format(rows,UDISPLAY_NAME,'S',slot,name,0);
+    for(unsigned row=1;row<4;++row)memset(rows[row],' ',8);
+    if(!state) { for(unsigned row=1;row<4;++row)memset(rows[row],'-',8);return; }
+    unsigned row=1;
+    for(unsigned button=0;button<18 && row<3;++button)
+        if(state->buttons&(1u<<button))button_text(rows[row++],labels,button);
+    // Left has a stable priority when both sticks are active. At neutral both
+    // pairs have the same displayed value, so no last-motion history is needed.
+    unsigned axis=(state->axes[0] || state->axes[1])?0:(state->axes[2] || state->axes[3])?2:0;
+    hex_text(rows[3],state->axes[axis],4);hex_text(rows[3]+4,state->axes[axis+1],4);
 }
 static void pointer_axis(char row[9],char axis,int32_t value,bool valid) {
     row[0]=axis;
@@ -151,11 +199,15 @@ void oled_text_detail_c(char rows[4][9],bool connected,int32_t x,int32_t y,bool 
     report_rate(rows[2],'R',limit,limit!=0);
     report_rate(rows[3],'S',reports,reports_valid);
 }
+static const uint8_t button_symbols[4][7]={
+    {31,17,17,17,17,17,31}, {17,17,10,4,10,17,17},
+    {14,17,17,17,17,17,14}, {4,4,10,10,17,17,31}
+};
 void oled_text_render(uint8_t pixels[256],const char rows[4][9]) {
     memset(pixels,0,256);
     for(unsigned row=0;row<4;++row)for(unsigned column=0;column<8 && rows[row][column];++column) {
         unsigned char c=(unsigned char)rows[row][column];
-        const uint8_t *glyph=c>='0'&&c<='9'?digits[c-'0']:c>='A'&&c<='Z'?upper[c-'A']:
+        const uint8_t *glyph=c>=1&&c<=4?button_symbols[c-1]:c>='0'&&c<='9'?digits[c-'0']:c>='A'&&c<='Z'?upper[c-'A']:
             c>='a'&&c<='z'?lower[c-'a']:NULL;
         if(!glyph && c!=' ') {
             const char *p=strchr(punctuation,c);

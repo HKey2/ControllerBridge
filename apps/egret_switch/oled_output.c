@@ -8,10 +8,16 @@ static uint8_t pro_axis(unsigned value,bool invert) {
     if(invert)value=4095-value;
     return (uint8_t)((value*255+2047)/4095);
 }
-bool oled_output_decode(const uint8_t *report,unsigned length,uint8_t state[12]) {
+bool oled_output_decode(const uint8_t *report,unsigned length,udisplay_output *state) {
     uint8_t wire[XW_REPORT_BYTES];sw_report normalized={0};
+    uint16_t buttons=0;
     if((length==14 || length==XW_REPORT_BYTES) && report[0]==0 && report[1]==XW_REPORT_BYTES) {
-        memcpy(state,report+2,12);
+        memcpy(wire,report,14);
+        uint16_t b=report[2]|((uint16_t)report[3]<<8);
+        buttons=((b&0x4000)?SW_Y:0)|((b&0x1000)?SW_B:0)|((b&0x2000)?SW_A:0)|((b&0x8000)?SW_X:0)|
+            ((b&0x100)?SW_L:0)|((b&0x200)?SW_R:0)|(report[4]?SW_ZL:0)|(report[5]?SW_ZR:0)|
+            ((b&0x20)?SW_MINUS:0)|((b&0x10)?SW_PLUS:0)|((b&0x40)?SW_L3:0)|((b&0x80)?SW_R3:0)|
+            ((b&0x400)?SW_HOME:0);
     } else {
         if(length==SW_REPORT_BYTES)memcpy(&normalized,report,SW_REPORT_BYTES);
         else if(length==37 && report[0]==0x21) {
@@ -37,11 +43,12 @@ bool oled_output_decode(const uint8_t *report,unsigned length,uint8_t state[12])
             normalized.rx=pro_axis(report[9]|((unsigned)(report[10]&15)<<8),false);
             normalized.ry=pro_axis((report[10]>>4)|((unsigned)report[11]<<4),true);
         } else return false; // Handshake replies and unavailable reports are not gamepad state.
-        xw_encode(&normalized,wire);memcpy(state,wire+2,12);
-        if(length==37 && report[0]==0x21) { state[2]=report[8];state[3]=report[9]; }
+        xw_encode(&normalized,wire);
+        buttons=(uint16_t)((normalized.buttons0|((uint16_t)normalized.buttons1<<8))&0x3fff);
     }
-    // Only the publicly defined XINPUT_GAMEPAD button bits are meaningful.
-    // Guide/Capture have no public field here; do not change the real output.
-    state[1]&=0xf3;
+    // Reuse XInput's axis units, but preserve real Guide/Capture and fixed
+    // profile button IDs for naming. This projection never changes USB output.
+    state->buttons=buttons|((uint32_t)(wire[2]&15)<<14);
+    for(unsigned i=0;i<4;++i)state->axes[i]=(uint16_t)(wire[6+2*i]|((uint16_t)wire[7+2*i]<<8));
     return true;
 }

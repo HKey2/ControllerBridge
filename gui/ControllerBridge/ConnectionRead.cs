@@ -56,16 +56,19 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
             string.Join("|", candidates.Select(device => (device.InstanceId + "@" + device.Location).ToUpperInvariant())));
     }
 
-    internal static async Task<ConnectionRead> OpenAsync(string bundled)
+    internal static async Task<ConnectionRead> OpenAsync(string bundled, CancellationToken cancellation = default)
     {
         HidBridge? device = null;
+        CancellationTokenRegistration cancel = default;
         try
         {
-            try { device = await HidBridge.ConnectAsync(); }
+            try { device = await HidBridge.ConnectAsync(cancellation); }
             catch (BridgeDiscoveryException ex) when (ex.Matches == 0)
             {
-                return new(WithoutBridge(await Task.Run(UsbDeviceLocation.FindUnconfigured)));
+                return new(WithoutBridge(await Task.Run(UsbDeviceLocation.FindUnconfigured).WaitAsync(cancellation)));
             }
+            cancel = cancellation.Register(static value => ((HidBridge)value!).Dispose(), device);
+            cancellation.ThrowIfCancellationRequested();
             FirmwareInfo? firmware = await device.ReadFirmwareAsync();
             if (firmware is null) return new(new(ConnectionKind.UnknownFirmware, device.DevicePath));
             if (firmware.Version != bundled) return new(new(ConnectionKind.DifferentFirmware, device.DevicePath, firmware.Version));
@@ -76,11 +79,12 @@ internal sealed class ConnectionRead(ConnectionStatus status) : IDisposable
             OutputState? output = state.Caps.SupportsMouseOutput ? await device.ReadOutputStateAsync() : null;
             MouseUdlrSettings shared = await new MouseUdlrSettingsClient(device.RawAsync).ReadAsync();
             HostOutputState host = await device.ReadHostOutputAsync();
+            cancel.Dispose(); cancellation.ThrowIfCancellationRequested();
             ConnectionRead result = new(new(ConnectionKind.Ready, device.DevicePath, firmware.Version))
                 { Bridge = device, Bank = bank, Device = state, Output = output, HostMode = host.Active, SelectedHostMode = shared.HostMode };
             device = null;
             return result;
         }
-        finally { device?.Dispose(); }
+        finally { cancel.Dispose(); device?.Dispose(); }
     }
 }

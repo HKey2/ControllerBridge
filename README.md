@@ -38,7 +38,11 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.34.0 - GUI r2 (firmware 0.34.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.35.0 (firmware 0.35.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+
+**0.35.0 — OLED input views:** **Profile name + transmitted input**, above Detail A in Shared settings, shows the profile name, up to two pressed buttons using the profile's selected button labels, and the active output stick's X/Y values. Names use brackets and fixed abbreviations of at most six characters. **Detail B** now shows raw controller inputs: VID/PID, 32 input button bits, and native X/Y and Rx/Ry values. Install the bundled firmware; existing profile and display selections are retained. See [display formats and limits](docs/oled-display.md).
+
+**0.35.0 — Connection recovery:** If USB communication stops responding, the configurator ends the wait and checks the connection again. **Connect / Reconnect** can restart an automatic connection attempt. Unsaved profile edits are retained, and a save with an unconfirmed reply is not retried automatically. After a communication error during a save, check the device’s saved state after reconnecting. If the previous-transfer message persists, unplug and reconnect USB-C.
 
 **0.34.0 — Native gyro:** In **Pro** output, enable **Gyro (Pro)** for a gamepad profile to use original Switch Pro, Switch 2 Pro or DS3 sensors with the game’s own motion controls. DS3 sends its single rotation sensor to the selected X, Y or Z gyro axis; the other two axes always remain at zero. Keep DS3 still briefly after activation. See [setup and sensor limits](docs/native-motion.md).
 
@@ -48,7 +52,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 **0.33.0 — Button labels:** Choose Switch, Xbox 360, DS3, PS4, or a POLYMEGA system from the system list in the center of the button layout. Use **Save settings to device** to store the choice with each profile. Unnamed buttons remain available for assignment and clearing. A thick blue outline marks a main mapping; an outer purple outline marks an explicit shifted mapping. Labels do not change button positions, mappings, or actual output. Existing settings are preserved and initially use Switch labels. Install the bundled firmware before use. See [button labels and assignment indicators](docs/button-labels.md).
 
-**0.32.0 — OLED display:** Adds a 64×32 OLED status display on GP6/GP7. Shared settings now offers OFF, profile name with measured output polling interval and slot index, a wrapped 30-character name with S/X mode, Detail A with controller VID/PID, IN/OUT polling intervals and input bytes per second, Detail B with hexadecimal gamepad output in a common XInput-format view, or Detail C with signed X/Y mouse output counts per second, the input-rate limit from the current polling interval (R), and actual received reports per second (S). The display defaults to OFF; firmware updates preserve an existing saved display type. Display updates follow the active profile and actual output mode. See [OLED setup and limitations](docs/oled-display.md).
+**0.32.0 — OLED display:** Adds a 64×32 OLED status display on GP6/GP7. Shared settings now offers OFF, profile name with measured output polling interval and slot index, a wrapped 30-character name with S/X mode, Detail A with controller VID/PID, IN/OUT polling intervals and input bytes per second, Detail B with hexadecimal raw controller inputs, or Detail C with signed X/Y mouse output counts per second, the input-rate limit from the current polling interval (R), and actual received reports per second (S). The display defaults to OFF; firmware updates preserve an existing saved display type. Display updates follow the active profile and actual output mode. See [OLED setup and limitations](docs/oled-display.md).
 
 **0.32.0 — USB Low Speed:** Adds USB Low Speed button and D-pad input on boards with R13 removed. Low Speed input uses a dedicated button/D-pad path; analog stick, gyro, rumble and mouse output are unavailable on that connection. Rapid fire, toggle and button shift remain available. Stored profiles are retained. See [Low Speed hardware requirements](docs/compatibility.md#low-speed-and-the-unmodified-board).
 
@@ -208,13 +212,13 @@ Allocation figures for the current firmware, calculated from its binary and link
 
 | Resource | Used or reserved | Remaining |
 |---|---:|---:|
-| Flash, 2,097,152 bytes | Code/initial values 212,492; persistent storage 49,152 | 1,835,508 |
+| Flash, 2,097,152 bytes | Code/initial values 214,652; persistent storage 49,152 | 1,833,348 |
 | SRAM, 532,480 bytes | Static data 171,188; two stacks 8,192 | 353,100 |
 | One bank copy, 16,384 bytes | Payload 14,676 + header 16 | 1,692 |
 | Saved measurement, 4,096 bytes | Payload 3,784 + header 16 | 296 |
 | Common settings, 4,096 bytes | Legacy header/payload 56 + alignment 8 + direction/mode/display records 196 | 3,836 |
 
-Static SRAM consists of vector table 272, initialized data 46,528, and BSS 124,388 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 896 bytes, bank payload 14,676 bytes, and UF2 425,472 bytes.
+Static SRAM consists of vector table 272, initialized data 46,528, and BSS 124,388 bytes. The minimum heap reservation of 2,048 bytes is included in remaining SRAM. These are allocation figures, not measured peak stack/heap values. Profile size is 896 bytes, bank payload 14,676 bytes, and UF2 429,568 bytes.
 
 ## Repository contents and license
 

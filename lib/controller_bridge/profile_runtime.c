@@ -551,6 +551,50 @@ bool upr_event(const uc_event *e) {
     return false;
 }
 uint32_t upr_device_ids(void) { return connected?((uint32_t)vid<<16)|pid:0; }
+uint8_t upr_button_labels(void) { return active<0?1:bank.profiles[active].analog_levels.button_labels; }
+bool upr_display_input(udisplay_input *out) {
+    memset(out,0,sizeof(*out));
+    if(!connected)return false;
+    int anchor=-1;
+    // Keep input usage IDs independent of saved assignments and output modes.
+    for(unsigned i=0;i<field_count;++i) {
+        const observed_field *f=&fields[i];
+        if(f->field.usage_page==9 && f->field.usage>=1 && f->field.usage<=32 && f->valid) {
+            uint32_t value=(uint32_t)f->value;
+            // GIP Guide carries a second, non-button status bit when released.
+            if(input_protocol==UC_PROTOCOL_XBOX_ONE && f->field.report_id==7 && f->field.usage==11 && f->field.bits==2)value&=1;
+            out->buttons_valid=true;
+            if(value)out->buttons|=1u<<(f->field.usage-1);
+        }
+        if(f->field.usage_page==1 && f->field.usage>=0x30 && f->field.usage<=0x35 &&
+           (anchor<0 || (f->field.usage==0x30 && fields[anchor].field.usage!=0x30)))anchor=(int)i;
+    }
+    if(anchor<0)return true;
+    int axes[6]={-1,-1,-1,-1,-1,-1};
+    const observed_field *a=&fields[anchor];
+    // A composite device must not join one interface's X with another's Y.
+    for(unsigned i=0;i<field_count;++i) {
+        const observed_field *f=&fields[i];
+        if(f->iface!=a->iface || f->field.report_id!=a->field.report_id || f->field.usage_page!=1 ||
+           f->field.usage<0x30 || f->field.usage>0x35)continue;
+        unsigned axis=f->field.usage-0x30;if(axes[axis]<0)axes[axis]=(int)i;
+    }
+    // Common HID gamepads use Z/Rz for the second stick; XInput uses Rx/Ry.
+    int selected[4]={axes[0],axes[1],axes[3],axes[4]};
+    if(selected[2]<0 && selected[3]<0) { selected[2]=axes[2];selected[3]=axes[5]; }
+    for(unsigned i=0;i<4;++i)if(selected[i]>=0) {
+        const observed_field *f=&fields[selected[i]];
+        if(!f->valid)continue;
+        out->valid_axes|=(uint8_t)(1u<<i);
+        if(f->field.bits>16) { out->wide_axes|=(uint8_t)(1u<<i);continue; }
+        uint32_t value=(uint32_t)f->value;
+        // Live registration coordinates may be direction-normalized. Undo that
+        // before showing the native received field, including its bit width.
+        if(f->field.flags&UC_FIELD_REVERSED)value=255u-value;
+        out->axes[i]=(uint16_t)(value&((1u<<f->field.bits)-1u));
+    }
+    return true;
+}
 uint8_t upr_gyro_axes(void) { return mapper.gyro_axes; }
 bool upr_low_speed(void) { return low_speed; }
 bool upr_rumble_enabled(void) { return rumble_enabled; }

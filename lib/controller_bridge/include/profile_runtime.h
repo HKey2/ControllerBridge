@@ -1,6 +1,7 @@
 #ifndef PROFILE_RUNTIME_H
 #define PROFILE_RUNTIME_H
 #include "controller_profile.h"
+#include "controller_display.h"
 #include "controller_bridge.h"
 #include "controller_mouse.h"
 #include "controller_paddle_point.h"
@@ -107,6 +108,9 @@ bool upr_set_direction_settings(const udk_settings *settings);
 unsigned upr_field_count(void);
 // Connected controller VID in the high half, PID in the low half; zero if absent.
 uint32_t upr_device_ids(void);
+uint8_t upr_button_labels(void);
+// Read existing received fields only, on the main core at display cadence.
+bool upr_display_input(udisplay_input *state);
 unsigned upr_active_slot(void); // 0..15, 255 for none
 const char *upr_profile_name(void); // at most 48 bytes; NULL without an active profile
 uint8_t upr_input_interval(void);

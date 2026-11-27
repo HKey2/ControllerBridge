@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
 
 namespace ControllerBridge;
 
@@ -178,30 +177,55 @@ internal sealed class BridgeDiscoveryException(int matches, string message) : IO
 internal sealed class HidBridge : IDisposable
 {
     internal bool OutputReconnectPending { get; private set; }
-    private readonly SafeFileHandle? handle;
+    private readonly UsbIo? handle;
+    private int disposed;
     private readonly XInputPortal? portal;
     internal UsbDeviceLocation? UsbLocation => portal?.UsbLocation ?? UsbDeviceLocation.ForHid(DevicePath);
     internal string DevicePath { get; private init; } = "";
     private byte sequence;
     private readonly SemaphoreSlim gate = new(1, 1);
     private InputEventPump? inputEvents;
-    private HidBridge(SafeFileHandle handle, byte sequence) { this.handle = handle; this.sequence = sequence; }
+    private HidBridge(UsbIo handle, byte sequence) { this.handle = handle; this.sequence = sequence; }
     private HidBridge(XInputPortal portal) { this.portal = portal; sequence = portal.Sequence; DevicePath = portal.DevicePath; }
     [StructLayout(LayoutKind.Sequential)] private struct DeviceInterface { public int Size; public Guid Guid; public uint Flags; public IntPtr Reserved; }
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr SetupDiGetClassDevsW(ref Guid guid, string? enumerator, IntPtr parent, uint flags);
     [DllImport("setupapi.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetupDiEnumDeviceInterfaces(IntPtr set, IntPtr device, ref Guid guid, uint index, ref DeviceInterface iface);
     [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetupDiGetDeviceInterfaceDetailW(IntPtr set, ref DeviceInterface iface, IntPtr detail, uint size, out uint required, IntPtr device);
     [DllImport("setupapi.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetupDiDestroyDeviceInfoList(IntPtr set);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
-    [DllImport("hid.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.U1)] private static extern bool HidD_GetFeature(SafeFileHandle handle, [Out] byte[] data, uint size);
-    [DllImport("hid.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.U1)] private static extern bool HidD_SetFeature(SafeFileHandle handle, byte[] data, uint size);
-    private static byte[] Feature(SafeFileHandle handle)
+    private static byte[] Feature(UsbIo handle, UsbDeadline deadline)
     {
         byte[] b = new byte[65];
-        if (!HidD_GetFeature(handle, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスのUSB通信が切れました。USB-Cの接続を確認してください。", "USB communication was interrupted. Check the USB-C connection."));
+        handle.Control(UsbIo.HidGetFeature, [], b, deadline);
         return b[1..];
     }
-    public static Task<HidBridge> ConnectAsync() => Task.Run(() =>
+    public static async Task<HidBridge> ConnectAsync(CancellationToken cancellation = default)
+    {
+        CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        CancellationToken token = timeout.Token;
+        Task<HidBridge> pending = Task.Run(() => Discover(new UsbDeadline(15000, token)));
+        try { return await pending.WaitAsync(token).ConfigureAwait(false); }
+        catch
+        {
+            // An outstanding open/enumeration may finish after cancellation.
+            // It owns only local state and may never be adopted by the form.
+            _ = pending.ContinueWith(task =>
+            {
+                if (task.Status == TaskStatus.RanToCompletion) task.Result.Dispose();
+                else _ = task.Exception;
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw;
+        }
+        finally
+        {
+            // A canceled discovery may still be draining native I/O. Its token's
+            // wait handle must remain alive until that worker has actually ended.
+            if (pending.IsCompleted) timeout.Dispose();
+            else _ = pending.ContinueWith(_ => timeout.Dispose(), CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+    }
+    private static HidBridge Discover(UsbDeadline deadline)
     {
         Guid guid = new("4d1e55b2-f16f-11cf-88cb-001111000030");
         IntPtr set = SetupDiGetClassDevsW(ref guid, null, IntPtr.Zero, 0x12);
@@ -211,6 +235,7 @@ internal sealed class HidBridge : IDisposable
         {
             for (uint index = 0; ; index++)
             {
+                _ = deadline.Remaining;
                 DeviceInterface iface = new() { Size = Marshal.SizeOf<DeviceInterface>() };
                 if (!SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref guid, index, ref iface))
                 {
@@ -232,12 +257,13 @@ internal sealed class HidBridge : IDisposable
                         !path.Contains("vid_cafe&pid_4006", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_045e&pid_4005", StringComparison.OrdinalIgnoreCase) &&
                         !path.Contains("vid_045e&pid_4006", StringComparison.OrdinalIgnoreCase)) continue;
-                    SafeFileHandle h = CreateFileW(path, 0xc0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
-                    if (h.IsInvalid) { h.Dispose(); continue; }
+                    UsbIo h;
+                    try { h = new(path, 0xc0000000); }
+                    catch (Win32Exception) { continue; }
                     bool keep = false;
                     try
                     {
-                        byte[] b = Feature(h);
+                        byte[] b = Feature(h, deadline);
                         if (b.AsSpan(0, 5).SequenceEqual("UC2R\x01"u8)) { matches.Add(new(h, b[6]) { DevicePath = path }); keep = true; }
                     }
                     catch (Win32Exception) { }
@@ -245,12 +271,13 @@ internal sealed class HidBridge : IDisposable
                 }
                 finally { Marshal.FreeHGlobal(detail); }
             }
-            foreach (XInputPortal portal in XInputPortal.Find()) matches.Add(new(portal));
+            foreach (XInputPortal portal in XInputPortal.Find(deadline)) matches.Add(new(portal));
             if (matches.Count != 1) throw new BridgeDiscoveryException(matches.Count, matches.Count == 0 ? L.T("変換デバイスが見つかりません。USB-CをPCへ接続し、再接続を押してください。", "No bridge was found. Connect USB-C to this PC and choose Reconnect.") : L.T("変換デバイスが複数あります。設定するデバイスを1台だけ接続してください。", "Multiple bridges were found. Connect only the bridge you want to configure."));
+            _ = deadline.Remaining;
             HidBridge result = matches[0]; matches.Clear(); return result;
         }
         finally { SetupDiDestroyDeviceInfoList(set); foreach (HidBridge m in matches) m.Dispose(); }
-    });
+    }
     internal async Task<FirmwareInfo?> ReadFirmwareAsync()
     {
         try { return FirmwareInfo.Read(await RawAsync(47)); }
@@ -258,15 +285,24 @@ internal sealed class HidBridge : IDisposable
     }
     private byte[] Command(byte cmd, byte[]? payload = null)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        try { return CommandCore(cmd, payload); }
+        catch (Exception ex) when (ex is Win32Exception or TimeoutException or ObjectDisposedException or OperationCanceledException or UsbTransferPendingException)
+        {
+            Dispose(); throw;
+        }
+    }
+    private byte[] CommandCore(byte cmd, byte[]? payload)
+    {
         if (payload?.Length > 56) throw new ArgumentException("payload");
         byte[] b = new byte[65]; "UC2C"u8.CopyTo(b.AsSpan(1)); b[5] = 1; b[6] = cmd; b[7] = ++sequence; payload?.CopyTo(b, 9);
-        using IDisposable? transaction = portal?.BeginCommand();
-        if (portal is not null) portal.Send(b[1..]);
-        else if (!HidD_SetFeature(handle!, b, 65)) throw new Win32Exception(Marshal.GetLastWin32Error(), L.T("デバイスへ送信できません。接続を確認してください。", "Could not send to the device. Check the connection."));
-        Stopwatch watch = Stopwatch.StartNew();
+        UsbDeadline deadline = new(5000);
+        using IDisposable? transaction = portal?.BeginCommand(deadline);
+        if (portal is not null) portal.Send(b[1..], deadline);
+        else handle!.Control(UsbIo.HidSetFeature, b, [], deadline);
         do
         {
-            byte[] r = portal?.Receive() ?? Feature(handle!);
+            byte[] r = portal?.Receive(deadline) ?? Feature(handle!, deadline);
             if (r.AsSpan(0, 5).SequenceEqual("UC2R\x01"u8) && r[5] == cmd && r[6] == sequence)
             {
                 if (r[7] != 0) throw new BridgeCommandException(r[7], r[7] switch
@@ -279,13 +315,17 @@ internal sealed class HidBridge : IDisposable
                 return r[8..];
             }
             Thread.Sleep(1);
-        } while (watch.ElapsedMilliseconds < 5000);
-        throw new TimeoutException(L.T("デバイスの応答待ちがタイムアウトしました。", "The device response timed out."));
+        } while (deadline.Remaining > 0);
+        throw UsbDeadline.Expired();
     }
     private async Task<T> Run<T>(Func<T> work)
     {
         await gate.WaitAsync().ConfigureAwait(false);
-        try { return await Task.Run(work).ConfigureAwait(false); }
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+            return await Task.Run(work).ConfigureAwait(false);
+        }
         finally { gate.Release(); }
     }
     private Capabilities Caps() => Capabilities.Read(Command(20));
@@ -467,6 +507,7 @@ internal sealed class HidBridge : IDisposable
     });
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         Interlocked.Exchange(ref inputEvents, null)?.Dispose();
         handle?.Dispose(); portal?.Dispose();
     }
