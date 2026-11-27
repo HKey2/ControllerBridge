@@ -865,22 +865,58 @@ internal sealed partial class MainForm : Form
         }
         catch (Exception ex) { Ui.Error(this, ex); }
     }
-    private async Task<SlotBank> ReadCurrentBank()
+    private async Task<SlotBank> ReadCurrentBank(HidBridge? target = null)
     {
-        SlotBank bank = await bridge!.ReadBankAsync();
+        SlotBank bank = await (target ?? bridge!).ReadBankAsync();
         if (bank.Generation != bankGeneration || !Enumerable.Range(0, profiles.Length).All(i => persistedProfiles[i].SameContent(bank.Profiles[i])))
             throw new IOException(L.T("デバイスの設定が変わっています。再読込してください。", "The device settings have changed. Reload them first."));
         return bank;
+    }
+    private HidBridge RequireBankConnection(HidBridge? expected)
+    {
+        if (closing || expected is null || !ReferenceEquals(bridge, expected) || caps?.SupportsBankTransfer != true)
+            throw new IOException(L.T("保存・復帰の対象との接続が変わりました。再接続してから操作をやり直してください。", "The backup/restore connection changed. Reconnect and start the operation again."));
+        return expected;
+    }
+    private void ResetFailedConnection(HidBridge? expected, Exception error)
+    {
+        if (expected is null || !ReferenceEquals(bridge, expected)) return;
+        AbortLearning(); wizard?.ConnectionLost(); expected.Dispose(); bridge = null;
+        calibrationQuiet = null; reconnectAfter = DateTime.UtcNow.AddSeconds(2);
+        ClearDeviceState();
+        SetConnectionDetail(error.Message);
+        SetText(connection, L.T("デバイスの再接続待ち。編集内容は保持しています。", "Waiting for the device to reconnect. Your edits are kept."));
+        UpdateEnabled();
+    }
+    private async Task<T> BankTransfer<T>(HidBridge expected, Func<HidBridge, Task<T>> transfer)
+    {
+        HidBridge target = RequireBankConnection(expected);
+        try { return await transfer(target); }
+        catch (Exception ex)
+        {
+            // A write may already have reached Flash. Reopen and read the device;
+            // never retry an unverified write or reuse its failed input pump.
+            ResetFailedConnection(target, ex);
+            throw;
+        }
     }
     private async Task BackupAll()
     {
         if (!GetSaveState().CanTransfer || bridge is null) return;
         if (!await SaveBeforeAction(L.T("全スロットを保存", "Save all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
-        using SaveFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), FileName = $"ControllerBridge-slots-{DateTime.Now:yyyyMMdd-HHmmss}.json", OverwritePrompt = true };
-        tips.Hide(backup);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        working = true; UpdateEnabled(); await WaitForPoll();
-        try { SlotBackup.Save(dialog.FileName, await ReadCurrentBank()); SetText(saved, L.T("全16スロットと切替設定をファイルに保存しました。", "Saved all 16 slots and profile switching settings to a file.")); }
+        HidBridge target = bridge;
+        working = true; UpdateEnabled(); AbortLearning();
+        try
+        {
+            await WaitForPoll();
+            RequireBankConnection(target);
+            using SaveFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), FileName = $"ControllerBridge-slots-{DateTime.Now:yyyyMMdd-HHmmss}.json", OverwritePrompt = true };
+            tips.Hide(backup);
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            SlotBank bank = await BankTransfer(target, device => ReadCurrentBank(device));
+            SlotBackup.Save(dialog.FileName, bank);
+            SetText(saved, L.T("全16スロットと切替設定をファイルに保存しました。", "Saved all 16 slots and profile switching settings to a file."));
+        }
         catch (Exception ex) { Ui.Error(this, ex); }
         finally { working = false; UpdateEnabled(); }
     }
@@ -888,22 +924,32 @@ internal sealed partial class MainForm : Form
     {
         if (!GetSaveState().CanTransfer || bridge is null) return;
         if (!await SaveBeforeAction(L.T("全スロットを復帰", "Restore all slots")) || !GetSaveState().CanTransfer || bridge is null) return;
-        using OpenFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), Title = L.T("全スロットを復帰", "Restore all slots") };
-        tips.Hide(restore);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        HidBridge target = bridge;
+        uint expectedBank = bankGeneration;
+        // Reserve the operation before the file picker pumps window messages.
+        // A poll already in flight can still disconnect; check again after it.
+        working = true; UpdateEnabled(); AbortLearning();
         try
         {
-            working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
-            MouseUdlrSettings migrationDefaults = await new MouseUdlrSettingsClient(bridge.RawAsync).ReadAsync();
+            await WaitForPoll();
+            RequireBankConnection(target);
+            using OpenFileDialog dialog = new() { Filter = L.T("ControllerBridge バックアップ (*.json)|*.json", "ControllerBridge backup (*.json)|*.json"), Title = L.T("全スロットを復帰", "Restore all slots") };
+            tips.Hide(restore);
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            MouseUdlrSettings migrationDefaults = await BankTransfer(target, device => new MouseUdlrSettingsClient(device.RawAsync).ReadAsync());
             SlotBank loaded = SlotBackup.Load(dialog.FileName, migrationDefaults);
             if (loaded.LegacyConversionApplied) MessageBox.Show(this, LegacyImportNotice(true), L.T("旧設定の変換", "Legacy settings conversion"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             if (MessageBox.Show(this, L.F("全16スロットをこのバックアップで置き換えます。\n登録済み: {0} / 16\n切替方法と選択設定も復帰します。続行しますか？",
                 "Replace all 16 slots with this backup?\nRegistered profiles: {0} / 16\nProfile switching settings and saved selections will also be restored.", loaded.Profiles.Count(p => p.Enabled)),
                 L.T("全スロットを復帰", "Restore all slots"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            working = true; UpdateEnabled(); AbortLearning(); await WaitForPoll();
             SetText(saved, L.T("全スロットを復帰し、読み戻して照合しています…", "Restoring and verifying all slots…"));
-            SlotBank actual = await bridge!.WriteBankAsync(loaded, bankGeneration);
-            ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true); await RefreshDevice();
+            await BankTransfer(target, async device =>
+            {
+                SlotBank actual = await device.WriteBankAsync(loaded, expectedBank);
+                ApplyBank(actual.Profiles, actual.Generation, caps?.SupportsInputDirections == true);
+                await RefreshDevice();
+                return actual;
+            });
             if (caps?.ActiveSlot < profiles.Length) selected = caps.ActiveSlot; RefreshSlots(); BindSelected();
             SetText(saved, L.T("全16スロットと切替設定を復帰しました。", "Restored all 16 slots and profile switching settings."));
         }

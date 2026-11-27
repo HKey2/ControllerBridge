@@ -38,7 +38,7 @@ The reference-board case uses a clear PETG lid with a light-diffusing fin. See t
 
 ## Current version
 
-**Current version: v0.34.0 (firmware 0.34.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
+**Current version: v0.34.0 - GUI r2 (firmware 0.34.0).** The application uses Japanese on Japanese Windows and English otherwise. This README is available in English and Japanese. Detailed documentation and reference screenshots use English; profile names remain as entered.
 
 **0.34.0 — Native gyro:** In **Pro** output, enable **Gyro (Pro)** for a gamepad profile to use original Switch Pro, Switch 2 Pro or DS3 sensors with the game’s own motion controls. DS3 sends its single rotation sensor to the selected X, Y or Z gyro axis; the other two axes always remain at zero. Keep DS3 still briefly after activation. See [setup and sensor limits](docs/native-motion.md).
 
